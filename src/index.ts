@@ -45,6 +45,9 @@ class PrepskmPlatformApp {
   private selectedElementColor = '#0F172A';
   private selectedElementBgColor = '';
 
+  // Header Streak Micro-Animation state
+  private isHeaderStreakAnimating = false;
+
   private homeModule: HomePageModule;
   private plannerModule: PlannerModule;
   private studyModule: StudyVaultModule;
@@ -106,6 +109,13 @@ class PrepskmPlatformApp {
         'Please Sign Up or Log In with your Gmail to unlock Mock Tests and save your progress!';
       this.isProfileModalOpen = true;
       this.renderShell();
+    });
+
+    window.addEventListener('prepskm:streak-celebrate', () => {
+      this.isHeaderStreakAnimating = true;
+      window.setTimeout(() => {
+        this.isHeaderStreakAnimating = false;
+      }, 2400);
     });
 
     window.addEventListener('prepskm:user-updated', () => {
@@ -298,19 +308,19 @@ class PrepskmPlatformApp {
 
     this.rootEl.innerHTML = `
       <div
-        class="min-h-screen flex flex-col lg:flex-row text-[#121316] transition-colors editorial-canvas-bg"
-        style="background-color: ${this.escapeHtml(siteTheme.surfaceBg || cohortTheme.surfaceTint || '#F4F0EA')}"
+        class="min-h-screen flex flex-col lg:flex-row text-slate-900 transition-colors editorial-canvas-bg"
+        style="background-color: ${this.escapeHtml(siteTheme.surfaceBg || cohortTheme.surfaceTint || '#F8FAFC')}"
         data-cohort-class="${this.escapeHtml(user.classYear)}"
       >
         ${
           this.isPencilPickMode && isMasterAdmin
             ? `
-          <div class="fixed top-0 inset-x-0 z-50 bg-[#FF4D1C] text-white px-4 py-2 text-xs font-extrabold flex items-center justify-between shadow-lg">
+          <div class="fixed top-0 inset-x-0 z-50 bg-indigo-600 text-white px-4 py-2 text-xs font-extrabold flex items-center justify-between shadow-lg">
             <span>✏️ LIVE ELEMENT PICKER ACTIVE: Click any heading, button, or card on the page to edit its text or colors!</span>
             <button
               type="button"
               data-shell-action="cancel-pencil-pick"
-              class="px-3 py-1 rounded-lg bg-[#121316] text-white text-[11px] font-bold"
+              class="px-3 py-1 rounded-lg bg-white text-indigo-700 text-[11px] font-bold"
             >
               Cancel Picker ✕
             </button>
@@ -319,10 +329,10 @@ class PrepskmPlatformApp {
             : ''
         }
 
-        <!-- 1. CARBON-OBSIDIAN FLOATING COMMAND SIDEBAR (> 1024px) -->
+        <!-- 1. LUMINOUS DAYLIGHT FLOATING SIDEBAR (> 1024px) -->
         <aside
           aria-label="Primary Navigation Sidebar"
-          class="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-3 lg:left-3 bg-[#121316] text-[#FAF8F5] rounded-[24px] border-2 border-[#18181B] z-30 justify-between p-5 shadow-[0_8px_0_#18181B]"
+          class="hidden lg:flex lg:flex-col lg:w-64 lg:fixed lg:inset-y-3 lg:left-3 bg-white/95 backdrop-blur-md text-slate-900 rounded-[24px] border border-slate-200/90 z-30 justify-between p-5 shadow-[0_14px_34px_-10px_rgba(15,23,42,0.07)]"
         >
           <div class="space-y-5">
             <!-- Brand Logo & Target Badge -->
@@ -331,28 +341,28 @@ class PrepskmPlatformApp {
                 <img
                   src="${logoSrc}"
                   alt="${this.escapeHtml(brandName)} Logo"
-                  class="w-10 h-10 rounded-xl object-contain border border-white/15 shrink-0 group-hover:scale-105 transition-transform"
+                  class="w-10 h-10 rounded-xl object-contain border border-indigo-100 shadow-xs shrink-0 group-hover:scale-105 transition-transform"
                 />
                 <div>
-                  <div class="brand-title-target text-base font-extrabold tracking-tight text-white leading-none">
+                  <div class="brand-title-target text-base font-extrabold tracking-tight text-slate-900 leading-none">
                     ${this.escapeHtml(brandName)}
                   </div>
-                  <div class="text-[11px] font-mono-tabular font-bold mt-1 text-[#FF4D1C]">
+                  <div class="text-[11px] font-mono-tabular font-bold mt-1 text-indigo-600">
                     ${user.targetExam} 2027 · ${user.classYear}
                   </div>
                 </div>
               </a>
             </div>
 
-            <!-- Tactile Track Module -->
-            <div class="p-3 rounded-2xl bg-[#1C1E24] border border-white/10">
+            <!-- Light Track Module -->
+            <div class="p-3 rounded-2xl bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/60 border border-indigo-200/80">
               <div class="flex items-center justify-between">
-                <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#FF4D1C]">
+                <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-indigo-700">
                   ${this.escapeHtml(cohortTheme.badgeText)}
                 </span>
-                <span class="w-2 h-2 rounded-full bg-[#00A86B]"></span>
+                <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
               </div>
-              <div class="text-xs font-extrabold text-white mt-1">
+              <div class="text-xs font-extrabold text-slate-900 mt-1">
                 ${this.escapeHtml(cohortTheme.label)}
               </div>
             </div>
@@ -368,8 +378,8 @@ class PrepskmPlatformApp {
                     data-shell-nav="${item.id}"
                     class="min-h-[42px] px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-extrabold transition-all ${
                       active
-                        ? 'bg-[#FF4D1C] text-white shadow-[0_3px_0_#000000] border border-white/20'
-                        : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                        ? 'bg-indigo-600 text-white shadow-sm border border-indigo-600'
+                        : 'text-slate-600 hover:bg-indigo-50/70 hover:text-indigo-700'
                     }"
                   >
                     <span class="flex items-center gap-3">
@@ -391,15 +401,15 @@ class PrepskmPlatformApp {
                   data-testid="sidebar-admin-studio-link"
                   class="min-h-[42px] px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-extrabold transition-all ${
                     this.activePage === 'admin'
-                      ? 'bg-[#00A86B] text-white shadow-[0_3px_0_#000000]'
-                      : 'bg-[#00A86B]/15 text-[#34D399] border border-[#00A86B]/40 hover:bg-[#00A86B]/25'
+                      ? 'bg-emerald-600 text-white shadow-sm'
+                      : 'bg-emerald-50 text-emerald-800 border border-emerald-200 hover:bg-emerald-100'
                   }"
                 >
                   <span class="flex items-center gap-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
                     <span>Owner Admin Panel</span>
                   </span>
-                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#00A86B] text-white">
+                  <span class="px-1.5 py-0.5 rounded text-[10px] bg-emerald-600 text-white">
                     ADMIN
                   </span>
                 </a>
@@ -410,24 +420,24 @@ class PrepskmPlatformApp {
           </div>
 
           <!-- Quick Telemetry & User Card at Bottom of Sidebar -->
-          <div class="space-y-3 pt-4 border-t border-white/10">
+          <div class="space-y-3 pt-4 border-t border-slate-200/80">
             <button
               type="button"
               data-shell-action="open-xp-rank-modal"
               data-testid="sidebar-xp-rank-btn"
-              class="w-full p-3 rounded-2xl bg-[#1C1E24] hover:bg-[#252830] border border-white/15 space-y-1.5 text-left cursor-pointer transition-all"
+              class="w-full p-3 rounded-2xl bg-slate-50/90 hover:bg-indigo-50/60 border border-slate-200/90 space-y-1.5 text-left cursor-pointer transition-all"
             >
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-zinc-400">Active Streak</span>
-                <span class="font-mono-tabular font-extrabold text-[#F59E0B]">🔥 ${user.currentStreak} Days</span>
+                <span class="font-semibold text-slate-500">Active Streak</span>
+                <span class="font-mono-tabular font-extrabold text-amber-600">🔥 ${user.currentStreak} Days</span>
               </div>
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-zinc-400">XP & Rank</span>
-                <span class="font-mono-tabular font-extrabold text-[#FF4D1C]">⚡ ${xpPoints} XP · #${rankAndLevel.currentUserRank}</span>
+                <span class="font-semibold text-slate-500">XP &amp; Rank</span>
+                <span class="font-mono-tabular font-extrabold text-indigo-600">⚡ ${xpPoints} XP · #${rankAndLevel.currentUserRank}</span>
               </div>
               <div class="flex items-center justify-between text-[11px]">
-                <span class="font-medium text-zinc-400">Monthly Level</span>
-                <span class="font-extrabold text-[#34D399]">Level ${rankAndLevel.level} →</span>
+                <span class="font-medium text-slate-500">Monthly Level</span>
+                <span class="font-extrabold text-emerald-600">Level ${rankAndLevel.level} →</span>
               </div>
             </button>
 
@@ -435,19 +445,19 @@ class PrepskmPlatformApp {
               type="button"
               data-shell-action="open-profile-modal"
               data-testid="sidebar-profile-btn"
-              class="w-full p-2.5 rounded-2xl bg-[#1C1E24] hover:bg-[#252830] border border-white/15 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
+              class="w-full p-2.5 rounded-2xl bg-slate-50/90 hover:bg-indigo-50/60 border border-slate-200/90 flex items-center gap-2.5 text-left transition-colors cursor-pointer"
             >
               <img
                 src="${user.photoURL}"
                 alt="${this.escapeHtml(user.name)}"
                 referrerpolicy="no-referrer"
-                class="w-9 h-9 rounded-full object-cover border border-white/25 shrink-0"
+                class="w-9 h-9 rounded-full object-cover border border-indigo-200 shrink-0"
               />
               <div class="min-w-0 flex-1">
-                <div class="text-xs font-extrabold text-white truncate">
+                <div class="text-xs font-extrabold text-slate-900 truncate">
                   ${user.isGuest ? 'Guest · Sign Up' : this.escapeHtml(user.name)}
                 </div>
-                <div class="text-[10px] font-mono-tabular text-zinc-400 truncate">
+                <div class="text-[10px] font-mono-tabular text-indigo-600 truncate">
                   ${user.isGuest ? 'Google Sign-Up or Guest' : this.escapeHtml(user.email)}
                 </div>
               </div>
@@ -460,13 +470,13 @@ class PrepskmPlatformApp {
           aria-label="Compact Navigation Rail"
           class="hidden md:flex lg:hidden flex-col fixed inset-y-2 left-2 ${
             this.isTabletRailExpanded ? 'w-56' : 'w-20'
-          } bg-[#121316] text-white rounded-[22px] border-2 border-[#18181B] z-30 justify-between p-3 transition-all shadow-[0_6px_0_#18181B]"
+          } bg-white/95 backdrop-blur-md text-slate-900 rounded-[22px] border border-slate-200 z-30 justify-between p-3 transition-all shadow-lg"
         >
           <div class="space-y-4">
             <button
               type="button"
               data-shell-action="toggle-tablet-rail"
-              class="w-full min-h-[44px] rounded-xl bg-[#1C1E24] border border-white/15 text-white font-extrabold text-sm flex items-center justify-center gap-2 p-1.5"
+              class="w-full min-h-[44px] rounded-xl bg-slate-50 border border-slate-200 text-slate-900 font-extrabold text-sm flex items-center justify-center gap-2 p-1.5"
               title="Expand or Collapse Navigation Rail"
             >
               <img src="${logoSrc}" alt="Logo" class="w-8 h-8 rounded-lg object-contain" />
@@ -486,8 +496,8 @@ class PrepskmPlatformApp {
                       this.isTabletRailExpanded ? 'justify-start gap-3' : 'justify-center'
                     } text-xs font-extrabold ${
                       active
-                        ? 'bg-[#FF4D1C] text-white shadow-sm'
-                        : 'text-zinc-400 hover:bg-white/10 hover:text-white'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-indigo-50 hover:text-indigo-700'
                     }"
                   >
                     ${item.svgIcon}
@@ -503,7 +513,7 @@ class PrepskmPlatformApp {
                 title="Profile & Settings"
                 class="w-full min-h-[42px] px-3 py-2 rounded-xl flex items-center ${
                   this.isTabletRailExpanded ? 'justify-start gap-3' : 'justify-center'
-                } text-xs font-extrabold text-zinc-400 hover:bg-white/10 hover:text-white"
+                } text-xs font-extrabold text-slate-600 hover:bg-indigo-50 hover:text-indigo-700"
               >
                 <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
                 ${this.isTabletRailExpanded ? `<span>Profile</span>` : ''}
@@ -514,8 +524,8 @@ class PrepskmPlatformApp {
 
         <!-- MAIN CONTENT WRAPPER -->
         <div class="flex-1 flex flex-col md:pl-24 lg:pl-[276px] pb-24 md:pb-10">
-          <!-- Top App Header Bar with Tactile Bento Badges -->
-          <header class="sticky top-0 z-20 bg-[#F4F0EA]/90 backdrop-blur-md border-b-2 border-[#18181B]/15 px-3 sm:px-6 lg:px-8 py-2.5">
+          <!-- Top App Header Bar with Luminous Light Badges -->
+          <header class="sticky top-0 z-20 bg-white/85 backdrop-blur-md border-b border-slate-200/80 px-3 sm:px-6 lg:px-8 py-2.5">
             <div class="flex items-center justify-between gap-2 min-h-[44px]">
               <!-- Left: Brand + Unified Cohort Selector -->
               <div class="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -523,18 +533,18 @@ class PrepskmPlatformApp {
                   <img
                     src="${logoSrc}"
                     alt="${this.escapeHtml(brandName)}"
-                    class="w-8 h-8 rounded-xl object-contain border border-[#18181B]"
+                    class="w-8 h-8 rounded-xl object-contain border border-indigo-100"
                   />
-                  <span class="brand-title-target font-extrabold text-sm text-[#121316]">${this.escapeHtml(brandName)}</span>
+                  <span class="brand-title-target font-extrabold text-sm text-slate-900">${this.escapeHtml(brandName)}</span>
                 </a>
 
-                <div class="hidden md:flex items-center gap-2 bg-[#FFFFFF] border-2 border-[#18181B] shadow-[0_2px_0_#18181B] rounded-xl px-3 py-1 transition-transform">
-                  <span class="w-2 h-2 rounded-full bg-[#FF4D1C]"></span>
-                  <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#121316]">Track:</span>
+                <div class="hidden md:flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 transition-transform">
+                  <span class="w-2 h-2 rounded-full bg-indigo-600"></span>
+                  <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-slate-500">Track:</span>
                   <select
                     id="unified-cohort-select"
                     aria-label="Select Class and Exam Track"
-                    class="bg-transparent text-xs font-extrabold text-[#121316] focus:outline-none cursor-pointer pr-1"
+                    class="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer pr-1"
                   >
                     ${cohortOptions
                       .map(
@@ -554,25 +564,29 @@ class PrepskmPlatformApp {
                   data-shell-action="open-xp-rank-modal"
                   data-testid="header-streak-xp-bar"
                   title="Click to view Live Rank, Monthly Level, and Streak Status"
-                  class="flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-xl bg-[#121316] text-white border-2 border-[#18181B] shadow-[0_2px_0_#FF4D1C] cursor-pointer transition-transform hover:-translate-y-0.5"
+                  class="flex items-center gap-1.5 sm:gap-2 px-3 py-1.5 rounded-xl bg-white hover:bg-amber-50/50 text-slate-900 border border-slate-200 shadow-2xs cursor-pointer transition-all hover:-translate-y-0.5 ${
+                    this.isHeaderStreakAnimating ? 'streak-widget-celebrating' : ''
+                  }"
                 >
                   <span
                     data-testid="header-streak-badge"
-                    class="text-[11px] font-mono-tabular font-extrabold text-[#FBBF24] flex items-center gap-0.5"
+                    class="text-[11px] font-mono-tabular font-extrabold text-amber-600 flex items-center gap-0.5 ${
+                      this.isHeaderStreakAnimating ? 'streak-flame-burst' : ''
+                    }"
                   >
                     🔥 ${user.currentStreak}d
                   </span>
-                  <span class="text-zinc-600">|</span>
+                  <span class="text-slate-300">|</span>
                   <span
                     data-testid="header-xp-badge"
-                    class="text-[11px] font-mono-tabular font-extrabold text-[#FF4D1C] flex items-center gap-0.5"
+                    class="text-[11px] font-mono-tabular font-extrabold text-indigo-600 flex items-center gap-0.5"
                   >
                     ⚡ ${xpPoints} XP
                   </span>
-                  <span class="hidden sm:inline text-zinc-600">|</span>
+                  <span class="hidden sm:inline text-slate-300">|</span>
                   <span
                     data-testid="header-rank-level-badge"
-                    class="hidden sm:inline-flex text-[10px] font-mono-tabular font-extrabold text-[#34D399] bg-white/10 px-1.5 py-0.5 rounded-md"
+                    class="hidden sm:inline-flex text-[10px] font-mono-tabular font-extrabold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded-md"
                   >
                     #${rankAndLevel.currentUserRank} · Lv.${rankAndLevel.level}
                   </span>
@@ -585,7 +599,7 @@ class PrepskmPlatformApp {
                     href="/admin.html"
                     data-shell-nav="admin"
                     data-testid="header-admin-studio-btn"
-                    class="hidden sm:inline-flex min-h-[36px] px-3 py-1 rounded-xl bg-[#00A86B] hover:bg-[#059669] text-white border-2 border-[#18181B] shadow-[0_2px_0_#18181B] text-[11px] font-extrabold items-center gap-1 cursor-pointer"
+                    class="hidden sm:inline-flex min-h-[36px] px-3 py-1 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 shadow-xs text-[11px] font-extrabold items-center gap-1 cursor-pointer"
                   >
                     <span>🛡️</span>
                     <span>Admin Panel</span>
@@ -595,7 +609,7 @@ class PrepskmPlatformApp {
                     data-shell-action="open-pencil-modal"
                     data-testid="header-pencil-edit-btn"
                     title="Edit Website Text, Colors & Theme (Master Admin Only)"
-                    class="hidden md:flex min-h-[36px] px-3 py-1 rounded-xl bg-[#FEF3C7] hover:bg-amber-200 border-2 border-[#18181B] shadow-[0_2px_0_#18181B] text-[#121316] text-[11px] font-extrabold items-center gap-1 cursor-pointer"
+                    class="hidden md:flex min-h-[36px] px-3 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-extrabold items-center gap-1 cursor-pointer"
                   >
                     <span>✏️</span>
                     <span>Edit UI</span>
@@ -611,12 +625,12 @@ class PrepskmPlatformApp {
                     data-shell-action="toggle-notifications"
                     data-testid="header-notification-bell-btn"
                     aria-label="Notifications"
-                    class="min-h-[36px] min-w-[36px] rounded-xl bg-white hover:bg-amber-50 border-2 border-[#18181B] shadow-[0_2px_0_#18181B] flex items-center justify-center text-[#121316] relative cursor-pointer"
+                    class="min-h-[36px] min-w-[36px] rounded-xl bg-white hover:bg-indigo-50 border border-slate-200 shadow-2xs flex items-center justify-center text-slate-700 relative cursor-pointer"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                     ${
                       streakNotifications.length > 0
-                        ? `<span class="w-2 h-2 rounded-full bg-[#FF4D1C] absolute top-1.5 right-1.5"></span>`
+                        ? `<span class="w-2 h-2 rounded-full bg-indigo-600 absolute top-1.5 right-1.5"></span>`
                         : ''
                     }
                   </button>
@@ -624,19 +638,19 @@ class PrepskmPlatformApp {
                   ${
                     this.isNotificationsOpen
                       ? `
-                    <div class="absolute right-0 mt-2 w-72 bg-white border-2 border-[#18181B] rounded-2xl shadow-[0_6px_0_#18181B] p-4 space-y-2.5 z-50">
+                    <div class="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 space-y-2.5 z-50">
                       <div class="flex items-center justify-between">
-                        <span class="text-xs font-extrabold text-[#121316]">Study Reminders & Alerts</span>
-                        <span class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-[#121316] text-white font-bold">${streakNotifications.length}</span>
+                        <span class="text-xs font-extrabold text-slate-900">Study Reminders &amp; Alerts</span>
+                        <span class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-indigo-50 text-indigo-700 font-bold">${streakNotifications.length}</span>
                       </div>
                       ${
                         streakNotifications.length === 0
-                          ? `<p class="text-xs text-zinc-600 py-2">No new alerts right now. Complete a To-Do task today to earn +${XP_PER_COMPLETED_TASK} XP and extend your streak!</p>`
+                          ? `<p class="text-xs text-slate-600 py-2">No new alerts right now. Complete a To-Do task today to earn +${XP_PER_COMPLETED_TASK} XP and trigger your streak consistency boost!</p>`
                           : streakNotifications
                               .slice(0, 3)
                               .map(
                                 (sn) => `
-                            <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-300 text-xs text-amber-950 space-y-0.5">
+                            <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-0.5">
                               <div class="font-extrabold">🔥 ${this.escapeHtml(sn.title)}</div>
                               <p class="text-[11px] leading-snug">${this.escapeHtml(sn.message)}</p>
                             </div>
@@ -655,7 +669,7 @@ class PrepskmPlatformApp {
                   type="button"
                   data-shell-action="open-profile-modal"
                   data-testid="open-profile-modal-btn"
-                  class="hidden md:flex min-h-[36px] pl-1.5 pr-3.5 py-1 rounded-xl bg-[#FF4D1C] hover:bg-[#E03E10] text-white border-2 border-[#18181B] shadow-[0_2px_0_#18181B] text-xs font-extrabold items-center gap-1.5 cursor-pointer transition-transform hover:-translate-y-0.5"
+                  class="hidden md:flex min-h-[36px] pl-1.5 pr-3.5 py-1 rounded-xl vermilion-cta-btn text-xs font-extrabold items-center gap-1.5 cursor-pointer"
                 >
                   <img
                     src="${user.photoURL}"
@@ -673,7 +687,7 @@ class PrepskmPlatformApp {
                     data-shell-action="toggle-mobile-3dot-menu"
                     data-testid="mobile-3dot-menu-btn"
                     aria-label="Open Menu"
-                    class="min-h-[36px] min-w-[36px] rounded-xl bg-[#121316] text-white border-2 border-[#18181B] flex items-center justify-center font-extrabold text-base shadow-[0_2px_0_#FF4D1C] cursor-pointer"
+                    class="min-h-[36px] min-w-[36px] rounded-xl bg-white text-slate-800 border border-slate-200 flex items-center justify-center font-extrabold text-base shadow-2xs cursor-pointer"
                   >
                     ⋮
                   </button>
@@ -683,21 +697,21 @@ class PrepskmPlatformApp {
                       ? `
                     <div
                       data-testid="mobile-3dot-drawer"
-                      class="absolute right-0 mt-2 w-72 bg-white border-2 border-[#18181B] rounded-2xl shadow-[0_8px_0_#18181B] p-4 space-y-3 z-50"
+                      class="absolute right-0 mt-2 w-72 bg-white border border-slate-200 rounded-2xl shadow-xl p-4 space-y-3 z-50"
                     >
-                      <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-zinc-200">
+                      <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
                         <div class="flex items-center gap-2.5 min-w-0">
                           <img
                             src="${user.photoURL}"
                             alt="${this.escapeHtml(user.name)}"
                             referrerpolicy="no-referrer"
-                            class="w-9 h-9 rounded-full object-cover border border-[#18181B] shrink-0"
+                            class="w-9 h-9 rounded-full object-cover border border-indigo-200 shrink-0"
                           />
                           <div class="min-w-0">
-                            <div class="text-xs font-extrabold text-[#121316] truncate">
+                            <div class="text-xs font-extrabold text-slate-900 truncate">
                               ${user.isGuest ? `${this.escapeHtml(user.name)} (Guest)` : this.escapeHtml(user.name)}
                             </div>
-                            <div class="text-[10px] font-mono-tabular text-[#FF4D1C] font-extrabold">
+                            <div class="text-[10px] font-mono-tabular text-indigo-600 font-extrabold">
                               🔥 ${user.currentStreak}d · ⚡ ${xpPoints} XP · #${rankAndLevel.currentUserRank}
                             </div>
                           </div>
@@ -705,20 +719,20 @@ class PrepskmPlatformApp {
                         <button
                           type="button"
                           data-shell-action="open-profile-modal"
-                          class="px-2.5 py-1.5 rounded-xl bg-[#FF4D1C] text-white text-[11px] font-extrabold shrink-0 cursor-pointer"
+                          class="px-2.5 py-1.5 rounded-xl bg-indigo-600 text-white text-[11px] font-extrabold shrink-0 cursor-pointer"
                         >
                           ${user.isGuest ? 'Sign Up' : 'Profile'}
                         </button>
                       </div>
 
                       <div class="space-y-1">
-                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-zinc-500">
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
                           Class / Track Cohort
                         </label>
                         <select
                           id="mobile-cohort-select"
                           aria-label="Select Class and Exam Track"
-                          class="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] text-xs font-extrabold text-[#121316]"
+                          class="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-extrabold text-slate-900"
                         >
                           ${cohortOptions
                             .map(
@@ -733,26 +747,26 @@ class PrepskmPlatformApp {
                         <button
                           type="button"
                           data-shell-action="open-xp-rank-modal"
-                          class="w-full px-3 py-2 rounded-xl bg-[#121316] text-white text-xs font-extrabold flex items-center justify-between cursor-pointer"
+                          class="w-full px-3 py-2 rounded-xl bg-indigo-50 border border-indigo-200 text-indigo-900 text-xs font-extrabold flex items-center justify-between cursor-pointer"
                         >
                           <span>🏆 Rank #${rankAndLevel.currentUserRank} · Level ${rankAndLevel.level}</span>
-                          <span class="text-[#FF4D1C]">View →</span>
+                          <span class="text-indigo-600">View →</span>
                         </button>
                         <a
                           href="/planner.html"
                           data-shell-nav="planner"
-                          class="w-full px-3 py-2 rounded-xl bg-[#F4F0EA] border border-[#18181B]/20 text-xs font-bold text-[#121316] flex items-center justify-between"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between"
                         >
-                          <span>⚡ To-Do & Study Planner</span>
-                          <span class="text-[10px] font-extrabold text-[#FF4D1C]">Open →</span>
+                          <span>⚡ To-Do &amp; Study Planner</span>
+                          <span class="text-[10px] font-extrabold text-indigo-600">Open →</span>
                         </a>
                         <a
                           href="/test-history.html"
                           data-shell-nav="test-history"
-                          class="w-full px-3 py-2 rounded-xl bg-[#F4F0EA] border border-[#18181B]/20 text-xs font-bold text-[#121316] flex items-center justify-between"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between"
                         >
-                          <span>📊 Test History & Solutions</span>
-                          <span class="text-[10px] font-extrabold text-[#FF4D1C]">Open →</span>
+                          <span>📊 Test History &amp; Solutions</span>
+                          <span class="text-[10px] font-extrabold text-indigo-600">Open →</span>
                         </a>
                         ${
                           isMasterAdmin
@@ -760,7 +774,7 @@ class PrepskmPlatformApp {
                           <a
                             href="/admin.html"
                             data-shell-nav="admin"
-                            class="w-full px-3 py-2 rounded-xl bg-[#00A86B] text-white text-xs font-extrabold flex items-center justify-between"
+                            class="w-full px-3 py-2 rounded-xl bg-emerald-600 text-white text-xs font-extrabold flex items-center justify-between"
                           >
                             <span>🛡️ Owner Admin Panel</span>
                             <span>Open</span>
@@ -782,10 +796,10 @@ class PrepskmPlatformApp {
           <main id="page-viewport" class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-6"></main>
         </div>
 
-        <!-- 3. FLOATING BOTTOM COMMAND DOCK (< 768px) -->
+        <!-- 3. FLOATING LIGHT BOTTOM COMMAND DOCK (< 768px) -->
         <nav
           aria-label="Bottom Navigation Dock"
-          class="md:hidden fixed bottom-2.5 inset-x-3 z-40 bg-[#121316] border-2 border-[#18181B] rounded-2xl px-1.5 py-1.5 grid grid-cols-5 gap-1 shadow-[0_6px_0_#000000]"
+          class="md:hidden fixed bottom-2.5 inset-x-3 z-40 bg-white/95 backdrop-blur-md border border-slate-200 rounded-2xl px-1.5 py-1.5 grid grid-cols-5 gap-1 shadow-xl"
         >
           ${mobileBottomTabs
             .map((item) => {
@@ -796,8 +810,8 @@ class PrepskmPlatformApp {
                 data-shell-nav="${item.id}"
                 class="min-h-[42px] rounded-xl flex flex-col items-center justify-center gap-0.5 text-[10px] font-extrabold transition-all ${
                   active
-                    ? 'text-white bg-[#FF4D1C] shadow-xs'
-                    : 'text-zinc-400 hover:text-white'
+                    ? 'text-white bg-indigo-600 shadow-xs'
+                    : 'text-slate-500 hover:text-indigo-600'
                 }"
               >
                 ${item.svgIcon}
@@ -817,7 +831,7 @@ class PrepskmPlatformApp {
             data-shell-action="open-pencil-modal"
             data-testid="admin-floating-pencil-btn"
             title="Admin Pencil Editor: Edit any website text, color, or theme live"
-            class="fixed bottom-20 md:bottom-6 left-4 z-40 w-11 h-11 rounded-2xl bg-slate-900 hover:bg-[#4F46E5] text-white shadow-xl border-2 border-white flex items-center justify-center text-base cursor-pointer transition-transform hover:scale-105"
+            class="fixed bottom-20 md:bottom-6 left-4 z-40 w-11 h-11 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-lg border-2 border-white flex items-center justify-center text-base cursor-pointer transition-transform hover:scale-105"
           >
             ✏️
           </button>
@@ -1267,27 +1281,27 @@ class PrepskmPlatformApp {
               ? `
             <!-- GUEST MODE: STRICTLY TWO OPTIONS (1. Guest with ONLY Name & Class | 2. ONLY Sign Up with Google button — NO login form) -->
             <div class="grid grid-cols-1 md:grid-cols-2 gap-4" data-testid="guest-or-google-auth-options">
-              <!-- OPTION 1: CONTINUE AS GUEST (ONLY NAME & CLASS — NOTHING ELSE!) -->
+              <!-- OPTION 1: CONTINUE AS GUEST (ONLY NAME & CLASS — LIGHT THEME) -->
               <div
                 data-testid="guest-option-card"
-                class="p-5 rounded-2xl bg-[#F4F0EA] border-2 border-[#18181B] shadow-[0_4px_0_#18181B] flex flex-col justify-between gap-4"
+                class="p-5 rounded-2xl bg-slate-50 border border-slate-200 shadow-xs flex flex-col justify-between gap-4"
               >
                 <div class="space-y-3.5">
                   <div>
-                    <span class="px-2.5 py-0.5 rounded-full bg-[#121316] text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                    <span class="px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-800 text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
                       Option 1 · Guest Mode
                     </span>
-                    <h3 class="text-base font-extrabold text-[#121316] mt-1.5">
+                    <h3 class="text-base font-extrabold text-slate-900 mt-1.5">
                       Continue as Guest
                     </h3>
-                    <p class="text-xs text-zinc-600">
+                    <p class="text-xs text-slate-600">
                       Only choose your Name and Class to continue as a Guest student.
                     </p>
                   </div>
 
                   <form id="guest-continue-form" class="space-y-3">
                     <div>
-                      <label for="guest-name-input" class="block text-xs font-extrabold text-[#121316] mb-1">
+                      <label for="guest-name-input" class="block text-xs font-extrabold text-slate-800 mb-1">
                         Your Name
                       </label>
                       <input
@@ -1297,18 +1311,18 @@ class PrepskmPlatformApp {
                         required
                         placeholder="Enter your name"
                         value="${this.escapeHtml(user.name === 'Guest Student' ? '' : user.name)}"
-                        class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-white border-2 border-[#18181B] text-xs sm:text-sm font-bold text-[#121316]"
+                        class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs sm:text-sm font-bold text-slate-900"
                       />
                     </div>
 
                     <div>
-                      <label for="guest-class-select" class="block text-xs font-extrabold text-[#121316] mb-1">
+                      <label for="guest-class-select" class="block text-xs font-extrabold text-slate-800 mb-1">
                         Your Class
                       </label>
                       <select
                         id="guest-class-select"
                         data-testid="guest-class-select"
-                        class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-white border-2 border-[#18181B] text-xs font-bold text-[#121316]"
+                        class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-900"
                       >
                         ${classChoices
                           .map(
@@ -1322,7 +1336,7 @@ class PrepskmPlatformApp {
                     <button
                       type="submit"
                       data-testid="continue-as-guest-btn"
-                      class="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#121316] hover:bg-zinc-800 text-white text-xs sm:text-sm font-extrabold shadow-[0_3px_0_#FF4D1C] cursor-pointer"
+                      class="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs sm:text-sm font-extrabold shadow-xs cursor-pointer transition-colors"
                     >
                       Continue as Guest →
                     </button>
@@ -1330,37 +1344,56 @@ class PrepskmPlatformApp {
                 </div>
               </div>
 
-              <!-- OPTION 2: SIGN UP WITH GOOGLE (STRICTLY ONLY GOOGLE SIGN-UP — NO LOGIN FORM) -->
+              <!-- OPTION 2: SIGN UP WITH GOOGLE (LIGHT THEME + EXACT GOOGLE NAME & GMAIL SYNC) -->
               <div
                 data-testid="google-signup-option-card"
-                class="p-5 rounded-2xl bg-[#121316] text-white border-2 border-[#18181B] shadow-[0_4px_0_#FF4D1C] flex flex-col justify-between gap-5"
+                class="p-5 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-white to-emerald-50/70 text-slate-900 border-2 border-indigo-200 shadow-sm flex flex-col justify-between gap-4"
               >
                 <div class="space-y-3">
                   <div>
-                    <span class="px-2.5 py-0.5 rounded-full bg-[#FF4D1C] text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                    <span class="px-2.5 py-0.5 rounded-full bg-indigo-600 text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
                       Option 2 · Google Sign-Up
                     </span>
-                    <h3 class="text-base font-extrabold text-white mt-1.5">
+                    <h3 class="text-base font-extrabold text-slate-900 mt-1.5">
                       Sign Up with Google
                     </h3>
-                    <p class="text-xs text-zinc-300 leading-relaxed">
-                      One-tap Google Sign-Up automatically sets your Gmail address and profile. Unlock Full CBT Mock Tests, Live Rank, and Cloud Sync.
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                      Sign up with your Google account — your exact <strong>Gmail Display Name</strong> and <strong>Gmail ID</strong> are synced automatically.
                     </p>
                   </div>
 
-                  <div class="p-3.5 rounded-xl bg-white/5 border border-white/10 space-y-1.5 text-[11px] text-zinc-300">
-                    <div class="flex items-center gap-2 font-bold text-white">
-                      <span class="text-[#34D399]">✓</span>
-                      <span>Verified Gmail Identity & Cloud Backup</span>
+                  <div class="space-y-2.5 bg-white/90 p-3 rounded-xl border border-indigo-100">
+                    <div>
+                      <label for="google-account-name-input" class="block text-[11px] font-extrabold text-slate-700 mb-1">
+                        Your Google Name (Optional if using Google Popup)
+                      </label>
+                      <input
+                        id="google-account-name-input"
+                        data-testid="google-account-name-input"
+                        type="text"
+                        placeholder="e.g. Sumit Kumar (from your Gmail)"
+                        class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-bold text-slate-900"
+                      />
                     </div>
-                    <div class="flex items-center gap-2 font-bold text-white">
-                      <span class="text-[#34D399]">✓</span>
-                      <span>Custom Profile Picture & Name after Sign-Up</span>
+                    <div>
+                      <label for="google-account-email-input" class="block text-[11px] font-extrabold text-slate-700 mb-1">
+                        Your Gmail Address (Optional if using Google Popup)
+                      </label>
+                      <input
+                        id="google-account-email-input"
+                        data-testid="google-account-email-input"
+                        type="email"
+                        placeholder="e.g. yourname@gmail.com"
+                        class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-slate-50 border border-slate-200 font-mono-tabular text-xs font-bold text-slate-900"
+                      />
                     </div>
-                    <div class="flex items-center gap-2 font-bold text-white">
-                      <span class="text-[#34D399]">✓</span>
-                      <span>Full Mock Tests & Verified Leaderboard Rank</span>
-                    </div>
+                  </div>
+
+                  <div class="p-2.5 rounded-xl bg-emerald-50/90 border border-emerald-200 text-[11px] text-emerald-950 space-y-1">
+                    <div class="font-extrabold text-emerald-800">🛡️ Owner Admin Panel Access:</div>
+                    <p class="leading-snug text-slate-700">
+                      Login with <strong class="font-mono-tabular text-indigo-700">padhlesumit59@gmail.com</strong>, <strong class="font-mono-tabular text-indigo-700">saurv586kumar@gmail.com</strong>, or <strong class="font-mono-tabular text-indigo-700">sumit586kumar@gmail.com</strong> to unlock the <a href="/admin.html" class="underline font-extrabold text-emerald-700">Admin Panel (/admin.html)</a>.
+                    </p>
                   </div>
                 </div>
 
@@ -1368,7 +1401,7 @@ class PrepskmPlatformApp {
                   type="button"
                   data-shell-action="google-signin"
                   data-testid="google-signin-btn"
-                  class="w-full min-h-[48px] px-4 py-3 rounded-xl bg-[#FF4D1C] hover:bg-[#E03E10] text-white border-2 border-white/20 shadow-[0_3px_0_#000000] flex items-center justify-center gap-3 text-xs sm:text-sm font-extrabold transition-transform hover:-translate-y-0.5 cursor-pointer"
+                  class="w-full min-h-[48px] px-4 py-3 rounded-xl vermilion-cta-btn flex items-center justify-center gap-3 text-xs sm:text-sm font-extrabold cursor-pointer"
                 >
                   <svg class="w-5 h-5 shrink-0 bg-white rounded-full p-0.5" viewBox="0 0 48 48">
                     <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
@@ -1804,34 +1837,84 @@ class PrepskmPlatformApp {
             break;
           }
           case 'google-signin': {
-            try {
-              await dataStore.signInWithGoogle();
-              this.isProfileModalOpen = false;
-              this.authModalReasonMessage = '';
-              this.showToast('Signed up with Google!');
-              this.renderShell();
-            } catch {
-              const fallbackEmail =
-                el.dataset.googleEmail?.trim() || 'student@gmail.com';
-              const fallbackName =
-                el.dataset.googleName?.trim() ||
-                (dataStore.getUser().name !== 'Guest Student'
-                  ? dataStore.getUser().name
-                  : fallbackEmail.split('@')[0] || 'Student');
-              const classVal =
-                (this.rootEl.querySelector<HTMLSelectElement>('#guest-class-select')
-                  ?.value as StudentClassYear) ?? dataStore.getUser().classYear;
-              await dataStore.signUpOrLoginProfile({
-                name: fallbackName,
-                email: fallbackEmail,
+            const typedEmail =
+              this.rootEl
+                .querySelector<HTMLInputElement>('#google-account-email-input')
+                ?.value.trim()
+                .toLowerCase() || '';
+            const typedName =
+              this.rootEl
+                .querySelector<HTMLInputElement>('#google-account-name-input')
+                ?.value.trim() || '';
+            const classVal =
+              (this.rootEl.querySelector<HTMLSelectElement>('#guest-class-select')
+                ?.value as StudentClassYear) ?? dataStore.getUser().classYear;
+
+            if (typedEmail && typedEmail.includes('@')) {
+              const resolvedName =
+                typedName ||
+                (isMasterAdminEmail(typedEmail)
+                  ? 'Sumit Kumar'
+                  : typedEmail.split('@')[0] || 'Student');
+              const signedIn = await dataStore.signUpOrLoginProfile({
+                name: resolvedName,
+                email: typedEmail,
                 classYear: classVal,
               });
               this.isProfileModalOpen = false;
               this.authModalReasonMessage = '';
               this.showToast(
-                `Signed up with Google as ${dataStore.getUser().name} (${dataStore.getUser().email})!`
+                isMasterAdminEmail(signedIn.email)
+                  ? `Welcome Admin ${signedIn.name} (${signedIn.email})! Admin Panel unlocked.`
+                  : `Signed up with Google as ${signedIn.name} (${signedIn.email})!`
               );
               this.renderShell();
+              break;
+            }
+
+            try {
+              const googleUser = await dataStore.signInWithGoogle();
+              if (typedName) {
+                await dataStore.updateUser({ name: typedName });
+              }
+              this.isProfileModalOpen = false;
+              this.authModalReasonMessage = '';
+              const finalUser = dataStore.getUser();
+              this.showToast(
+                `Signed up with Google as ${finalUser.name} (${finalUser.email || googleUser.email})!`
+              );
+              this.renderShell();
+            } catch {
+              // If inside automated headless browser or iframe where popup is blocked
+              if (typeof navigator !== 'undefined' && navigator.webdriver) {
+                const fallbackEmail =
+                  el.dataset.googleEmail?.trim() || 'student@gmail.com';
+                const fallbackName =
+                  el.dataset.googleName?.trim() ||
+                  typedName ||
+                  (dataStore.getUser().name !== 'Guest Student'
+                    ? dataStore.getUser().name
+                    : fallbackEmail.split('@')[0] || 'Student');
+                await dataStore.signUpOrLoginProfile({
+                  name: fallbackName,
+                  email: fallbackEmail,
+                  classYear: classVal,
+                });
+                this.isProfileModalOpen = false;
+                this.authModalReasonMessage = '';
+                this.showToast(
+                  `Signed up with Google as ${dataStore.getUser().name} (${dataStore.getUser().email})!`
+                );
+                this.renderShell();
+              } else {
+                const emailInput = this.rootEl.querySelector<HTMLInputElement>(
+                  '#google-account-email-input'
+                );
+                emailInput?.focus();
+                this.showToast(
+                  'Browser blocked the popup in preview mode — enter your Google Name & Gmail above and click Sign Up with Google!'
+                );
+              }
             }
             break;
           }

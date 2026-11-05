@@ -105,7 +105,15 @@ import {
 
 export const MASTER_ADMIN_EMAIL = 'saurv586kumar@gmail.com';
 export const LEGACY_MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
+export const OWNER_GOOGLE_ADMIN_EMAIL = 'padhlesumit59@gmail.com';
 export const SECONDARY_ADMIN_EMAIL = 'sumitiitair01@gmail.com';
+
+export const AUTHORIZED_ADMIN_EMAILS = [
+  MASTER_ADMIN_EMAIL,
+  LEGACY_MASTER_ADMIN_EMAIL,
+  OWNER_GOOGLE_ADMIN_EMAIL,
+  SECONDARY_ADMIN_EMAIL,
+] as const;
 
 export const firebaseConfig = {
   apiKey: 'AIzaSyDBP0nnOKLP3dk4or8xblLjZmIUKwRosjM',
@@ -137,7 +145,9 @@ export function isMasterAdminEmail(email?: string | null): boolean {
   const normalized = String(email).trim().toLowerCase();
   return (
     normalized === MASTER_ADMIN_EMAIL.toLowerCase() ||
-    normalized === LEGACY_MASTER_ADMIN_EMAIL.toLowerCase()
+    normalized === LEGACY_MASTER_ADMIN_EMAIL.toLowerCase() ||
+    normalized === OWNER_GOOGLE_ADMIN_EMAIL.toLowerCase() ||
+    normalized === SECONDARY_ADMIN_EMAIL.toLowerCase()
   );
 }
 
@@ -754,22 +764,30 @@ export class PrepskmDataStore {
     this.isCloudAuthenticated = true;
     const uid = sanitizeId(fbUser.uid);
     const userPath = `users/${uid}`;
-    const fbEmail = fbUser.email || this.currentUser.email;
+    const providerProfile = fbUser.providerData?.find((p) => p?.email || p?.displayName) ?? fbUser.providerData?.[0];
+    const fbEmail = (fbUser.email || providerProfile?.email || this.currentUser.email || '').trim().toLowerCase();
+    const googleName = (fbUser.displayName || providerProfile?.displayName || '').trim();
+    const googlePhoto = fbUser.photoURL || providerProfile?.photoURL || '';
     const derivedName =
-      fbUser.displayName?.trim() ||
+      googleName ||
       (isMasterAdminEmail(fbEmail) ? 'Sumit Kumar' : fbEmail.split('@')[0] || 'Student');
 
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       if (snap.exists()) {
         const remoteUser = snap.data() as Partial<AspirantUser>;
+        const resolvedName =
+          googleName ||
+          (remoteUser.name && remoteUser.name !== 'Guest Student' && remoteUser.name !== 'Student'
+            ? remoteUser.name
+            : derivedName);
         this.currentUser = {
           uid: remoteUser.uid ?? uid,
           email: fbEmail || remoteUser.email || '',
-          name: fbUser.displayName?.trim() || remoteUser.name || derivedName,
+          name: resolvedName,
           classYear: remoteUser.classYear ?? this.currentUser.classYear ?? 'Class 12',
           targetExam: remoteUser.targetExam ?? this.currentUser.targetExam ?? 'JEE',
-          photoURL: fbUser.photoURL || remoteUser.photoURL || MENTOR_AVATAR_PATH,
+          photoURL: googlePhoto || remoteUser.photoURL || MENTOR_AVATAR_PATH,
           isGuest: false,
           currentStreak: Math.max(1, remoteUser.currentStreak ?? this.currentUser.currentStreak ?? 1),
           xpPoints: remoteUser.xpPoints ?? this.currentUser.xpPoints ?? 0,
@@ -777,6 +795,9 @@ export class PrepskmDataStore {
           lastActiveDate: remoteUser.lastActiveDate ?? new Date().toISOString().slice(0, 10),
           createdAt: remoteUser.createdAt ?? new Date().toISOString(),
         };
+        if (googleName || fbEmail) {
+          void setDoc(doc(db, 'users', uid), this.currentUser, { merge: true }).catch(() => {});
+        }
       } else {
         const newProfile: AspirantUser = {
           uid,
@@ -784,7 +805,7 @@ export class PrepskmDataStore {
           name: derivedName.slice(0, 90),
           classYear: this.currentUser.classYear || 'Class 12',
           targetExam: this.currentUser.targetExam || 'JEE',
-          photoURL: fbUser.photoURL || MENTOR_AVATAR_PATH,
+          photoURL: googlePhoto || MENTOR_AVATAR_PATH,
           isGuest: false,
           currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
           xpPoints: this.currentUser.xpPoints ?? 0,
@@ -806,6 +827,17 @@ export class PrepskmDataStore {
       await this.syncLeaderboardWithFirestore(uid);
     } catch (error) {
       console.warn('Firestore user profile sync fallback:', userPath, error);
+      // Even if Firestore read fails, ensure the exact Google account Name & Email are set
+      this.currentUser = {
+        ...this.currentUser,
+        uid,
+        email: fbEmail,
+        name: derivedName.slice(0, 90),
+        photoURL: googlePhoto || this.currentUser.photoURL || MENTOR_AVATAR_PATH,
+        isGuest: false,
+        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
+      };
+      this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
     }
 
     this.notifyAuthListeners();
@@ -1112,17 +1144,50 @@ export class PrepskmDataStore {
     return plan;
   }
 
-  public async signInWithGoogle(): Promise<void> {
+  public async signInWithGoogle(): Promise<AspirantUser> {
     if (typeof navigator !== 'undefined' && navigator.webdriver) {
       throw new Error('Headless browser Google Sign-Up fallback');
     }
     const provider = new GoogleAuthProvider();
-    await Promise.race([
-      signInWithPopup(auth, provider),
-      new Promise<never>((_, reject) =>
-        window.setTimeout(() => reject(new Error('Popup timeout fallback')), 2500)
-      ),
-    ]);
+    provider.addScope('profile');
+    provider.addScope('email');
+    provider.setCustomParameters({ prompt: 'select_account' });
+
+    const credential = await signInWithPopup(auth, provider);
+    const fbUser = credential.user;
+    const providerProfile =
+      fbUser.providerData?.find((p) => p?.email || p?.displayName) ?? fbUser.providerData?.[0];
+    const exactEmail = (fbUser.email || providerProfile?.email || '').trim().toLowerCase();
+    const exactName = (
+      fbUser.displayName ||
+      providerProfile?.displayName ||
+      (exactEmail ? exactEmail.split('@')[0] : 'Student')
+    ).trim();
+    const exactPhoto = fbUser.photoURL || providerProfile?.photoURL || this.currentUser.photoURL || MENTOR_AVATAR_PATH;
+
+    const oldUid = this.currentUser.uid;
+    const newUid = isMasterAdminEmail(exactEmail)
+      ? 'admin_sumit_master'
+      : sanitizeId(fbUser.uid || `user_${exactEmail}`);
+
+    this.currentUser = {
+      ...this.currentUser,
+      uid: newUid,
+      email: exactEmail,
+      name: exactName.slice(0, 90),
+      photoURL: exactPhoto,
+      isGuest: false,
+      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
+      lastActiveDate: new Date().toISOString().slice(0, 10),
+    };
+
+    if (oldUid !== newUid) {
+      this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
+    }
+    this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+    this.recalculateLocalUserLeaderboardEntry();
+    await this.onFirebaseUserChanged(fbUser);
+    return this.getUser();
   }
 
   public async signInWithEmail(email: string, password: string): Promise<void> {

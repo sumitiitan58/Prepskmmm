@@ -1618,9 +1618,74 @@ export function generateChapterPnCQuestions(
   };
 }
 
+export interface StreakMicroAnimationState {
+  shouldAnimate: boolean;
+  isDailyGoalReached: boolean;
+  xpAwarded: number;
+  progressPercent: number;
+  streakCount: number;
+  headline: string;
+  encouragementText: string;
+  badgeLabel: string;
+}
 
+/**
+ * Computes visual feedback and micro-animation state for the Streak Widget
+ * when a student completes a daily study task.
+ */
+export function computeStreakMicroAnimationState(params: {
+  completedTodayCount: number;
+  dailyGoalTarget: number;
+  currentStreak: number;
+  streakIncremented: boolean;
+  taskTitle?: string;
+}): StreakMicroAnimationState {
+  const safeCompleted = Math.max(0, Math.floor(params.completedTodayCount || 0));
+  const safeGoal = Math.max(1, Math.floor(params.dailyGoalTarget || 4));
+  const safeStreak = Math.max(0, Math.floor(params.currentStreak || 0));
+  const progressPercent = Math.min(100, Math.round((safeCompleted / safeGoal) * 100));
+  const isDailyGoalReached = safeCompleted >= safeGoal;
+  const shouldAnimate = safeCompleted > 0;
+  const cleanTitle = (params.taskTitle || 'Daily Study Task').trim();
 
+  if (!shouldAnimate) {
+    return {
+      shouldAnimate: false,
+      isDailyGoalReached: false,
+      xpAwarded: 0,
+      progressPercent: 0,
+      streakCount: safeStreak,
+      headline: 'Complete 1 Task Today to Ignite Your Streak',
+      encouragementText: 'Check off any planned task below to trigger your +75 XP consistency boost.',
+      badgeLabel: 'Awaiting First Task',
+    };
+  }
 
+  if (isDailyGoalReached) {
+    return {
+      shouldAnimate: true,
+      isDailyGoalReached: true,
+      xpAwarded: 75,
+      progressPercent: 100,
+      streakCount: Math.max(1, safeStreak),
+      headline: `Daily Goal Crushed! ${Math.max(1, safeStreak)}-Day Streak Locked In`,
+      encouragementText: `"${cleanTitle}" completed (+75 XP). Your consistency is building top-1% exam momentum!`,
+      badgeLabel: '+75 XP · Goal Complete!',
+    };
+  }
 
-
+  const remaining = Math.max(0, safeGoal - safeCompleted);
+  return {
+    shouldAnimate: true,
+    isDailyGoalReached: false,
+    xpAwarded: 75,
+    progressPercent,
+    streakCount: Math.max(1, safeStreak),
+    headline: params.streakIncremented
+      ? `Streak Ignited! ${Math.max(1, safeStreak)}-Day Consistency Active`
+      : `Consistency Boost! ${safeCompleted}/${safeGoal} Daily Tasks Done`,
+    encouragementText: `"${cleanTitle}" completed (+75 XP). Just ${remaining} more task${remaining === 1 ? '' : 's'} to hit 100% daily target!`,
+    badgeLabel: '+75 XP · Streak Active',
+  };
+}
 

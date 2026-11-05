@@ -107,8 +107,8 @@ export class AdminCommandModule {
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
             <div class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[#10B981] text-xs font-extrabold">
-                  ✓ ${isMaster ? `Master Admin: ${MASTER_ADMIN_EMAIL}` : `Authorized Mentor: ${this.escapeHtml(user.email)}`}
+                <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-[#059669] text-xs font-extrabold">
+                  ✓ ${isMaster ? `Master Admin: ${this.escapeHtml(user.email || MASTER_ADMIN_EMAIL)}` : `Authorized Mentor: ${this.escapeHtml(user.email)}`}
                 </span>
                 <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] text-xs font-bold">
                   🔒 Hidden from Student Navigation
@@ -185,39 +185,39 @@ export class AdminCommandModule {
       <div class="max-w-xl mx-auto my-8">
         <section
           aria-label="Master Admin and Mentor Authentication Gate"
-          class="bg-white border border-[#E2E8F0] rounded-2xl p-6 sm:p-8 shadow-md text-center space-y-5"
+          class="bg-white border border-indigo-100 rounded-3xl p-6 sm:p-8 shadow-md text-center space-y-5"
         >
-          <div class="w-14 h-14 rounded-2xl bg-red-50 border border-red-200 text-[#EF4444] flex items-center justify-center mx-auto text-2xl font-bold">
-            🔒
+          <div class="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-200 text-[#4F46E5] flex items-center justify-center mx-auto text-2xl font-bold">
+            🛡️
           </div>
           <div class="space-y-1.5">
-            <span class="text-xs font-bold uppercase tracking-wider text-[#EF4444]">
-              Restricted Admin & Mentor Studio (Hidden from Students)
+            <span class="text-xs font-extrabold uppercase tracking-wider text-[#4F46E5]">
+              Restricted Admin & Mentor Studio (Hidden from Normal Students)
             </span>
-            <h1 class="text-xl sm:text-2xl font-bold text-slate-900">
+            <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900">
               Master Admin or Authorized Mentor Access Required
             </h1>
             <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
-              This portal is strictly invisible to normal students. Sign in as Master Admin (<strong class="font-mono text-slate-900">${MASTER_ADMIN_EMAIL}</strong>) or an authorized Co-Admin/Mentor to manage questions, videos, broadcasts, and site theme.
+              Sign in with Google using an authorized Master Admin Gmail (<strong class="font-mono text-indigo-700">padhlesumit59@gmail.com</strong>, <strong class="font-mono text-indigo-700">${MASTER_ADMIN_EMAIL}</strong>, or <strong class="font-mono text-indigo-700">sumit586kumar@gmail.com</strong>) to unlock the full Admin Studio.
             </p>
           </div>
 
           <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-slate-600">
-            Current Session: <strong class="text-slate-900">${this.escapeHtml(user.name)}</strong> (<span class="font-mono">${this.escapeHtml(user.email)}</span>)
+            Current Session: <strong class="text-slate-900">${this.escapeHtml(user.name)}</strong> (<span class="font-mono text-indigo-600">${this.escapeHtml(user.email)}</span>)
           </div>
 
           <div class="flex flex-col sm:flex-row items-center justify-center gap-3 pt-2">
             <button
               type="button"
               id="admin-activate-master-btn"
-              class="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-sm transition-colors"
+              class="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-sm transition-colors cursor-pointer"
             >
-              Authenticate as ${MASTER_ADMIN_EMAIL} →
+              Unlock as Master Admin (${MASTER_ADMIN_EMAIL}) →
             </button>
             <button
               type="button"
               id="admin-google-oauth-btn"
-              class="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-semibold transition-colors"
+              class="w-full sm:w-auto min-h-[44px] px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-extrabold transition-colors cursor-pointer"
             >
               Sign In with Google Popup
             </button>
@@ -233,7 +233,7 @@ export class AdminCommandModule {
                 <button
                   type="button"
                   data-mentor-gate-email="${this.escapeHtml(m.email)}"
-                  class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#10B981] text-xs font-bold"
+                  class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#059669] text-xs font-bold cursor-pointer"
                 >
                   ${this.escapeHtml(m.name)} (${this.escapeHtml(m.subjectSpecialty)})
                 </button>
@@ -268,30 +268,30 @@ export class AdminCommandModule {
     return `
       <div class="space-y-6" data-testid="admin-mock-crop-builder">
         <!-- STEP 1: DEFAULT MOCK TEST VALUES BAR (Class/Foundation + Exam Track + Mock Test Title -> Then Select Subject Only!) -->
-        <section class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white border border-indigo-500/30 rounded-2xl p-5 shadow-sm space-y-4">
+        <section class="bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/80 text-slate-900 border border-indigo-200 rounded-2xl p-5 shadow-xs space-y-4">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider">
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-[10px] font-extrabold uppercase tracking-wider">
                 Step 1 · Set Default Mock Test Values Once (Saved Across Questions)
               </span>
-              <h2 class="text-base sm:text-lg font-extrabold text-white mt-1">
+              <h2 class="text-base sm:text-lg font-extrabold text-slate-900 mt-1">
                 Mock Test Default Configuration (Class, Foundation & Exam) → Select Subject Only & Start Cropping
               </h2>
             </div>
-            <span class="px-3 py-1 rounded-xl bg-white/10 text-indigo-200 font-mono-tabular text-xs font-bold">
+            <span class="px-3 py-1 rounded-xl bg-indigo-100 border border-indigo-200 text-indigo-800 font-mono-tabular text-xs font-extrabold">
               Active Subject: ${this.selectedCropSubjectName} (No Chapter Needed)
             </span>
           </div>
 
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+              <label class="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
                 Default Class / Foundation Cohort
               </label>
               <select
                 id="wb-default-cohort-select"
                 data-testid="wb-default-cohort-select"
-                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-extrabold text-white"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-extrabold text-slate-900"
               >
                 ${cohortChoices
                   .map(
@@ -303,13 +303,13 @@ export class AdminCommandModule {
             </div>
 
             <div>
-              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+              <label class="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
                 Default Target Exam Track
               </label>
               <select
                 id="wb-default-exam-select"
                 data-testid="wb-default-exam-select"
-                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-extrabold text-white"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-extrabold text-slate-900"
               >
                 <option value="JEE" ${this.defaultMockExamTrack === 'JEE' ? 'selected' : ''}>JEE Main / Advanced</option>
                 <option value="NEET" ${this.defaultMockExamTrack === 'NEET' ? 'selected' : ''}>NEET UG Medical</option>
@@ -317,7 +317,7 @@ export class AdminCommandModule {
             </div>
 
             <div>
-              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+              <label class="block text-[11px] font-extrabold text-slate-700 uppercase mb-1">
                 Default Mock Test Series Title
               </label>
               <input
@@ -325,14 +325,14 @@ export class AdminCommandModule {
                 type="text"
                 value="${this.escapeHtml(this.defaultMockTestTitle)}"
                 placeholder="e.g. All-India Full Syllabus Mock #14"
-                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-white"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-slate-300 text-xs font-bold text-slate-900"
               />
             </div>
           </div>
 
           <!-- STEP 2: SUBJECT-ONLY PILL SELECTOR (NO CHAPTER SELECTION REQUIRED!) -->
-          <div class="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
-            <span class="text-xs font-extrabold text-emerald-300 uppercase tracking-wider">
+          <div class="pt-3 border-t border-indigo-100 flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs font-extrabold text-indigo-700 uppercase tracking-wider">
               Step 2 · Choose Subject Only (No Chapter Selection — Start Cropping Immediately):
             </span>
             <div class="flex flex-wrap items-center gap-2" data-testid="wb-subject-only-selector">
@@ -344,10 +344,10 @@ export class AdminCommandModule {
                     type="button"
                     data-action="wb-select-subject-only"
                     data-subject-name="${sub}"
-                    class="min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                    class="min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
                       active
-                        ? 'bg-[#10B981] text-slate-950 shadow-sm scale-105'
-                        : 'bg-white/10 text-white hover:bg-white/20 border border-white/15'
+                        ? 'bg-[#059669] text-white shadow-sm scale-105'
+                        : 'bg-white text-slate-700 hover:bg-indigo-50 border border-slate-300'
                     }"
                   >
                     ${active ? '✓ ' : ''}${sub}
@@ -2346,6 +2346,8 @@ export class AdminCommandModule {
     googleBtn?.addEventListener('click', async () => {
       try {
         await dataStore.signInWithGoogle();
+        this.callbacks.onAuthUpdated();
+        this.rerender();
       } catch {
         dataStore.switchRoleSession('admin');
         this.callbacks.onAuthUpdated();

@@ -11,6 +11,7 @@ import {
   calculateStudentXp,
   calculateSyllabusProgress,
   computePerformanceTrendsForD3,
+  computeStreakMicroAnimationState,
   computeUpdatedStreak,
   evaluateCBTSubmission,
   evaluateStreakLifecycle,
@@ -483,6 +484,39 @@ test('production launch constants start with clean empty state, Google Classroom
   assert.ok(!DEFAULT_PW_LECTURE_FALLBACK.title.includes('PW'));
 });
 
+test('computeStreakMicroAnimationState returns visual celebration state when daily tasks are completed', () => {
+  const idleState = computeStreakMicroAnimationState({
+    completedTodayCount: 0,
+    dailyGoalTarget: 4,
+    currentStreak: 0,
+    streakIncremented: false,
+  });
+  assert.equal(idleState.shouldAnimate, false);
+  assert.equal(idleState.xpAwarded, 0);
 
+  const firstTaskDone = computeStreakMicroAnimationState({
+    completedTodayCount: 1,
+    dailyGoalTarget: 4,
+    currentStreak: 3,
+    streakIncremented: true,
+    taskTitle: 'Solve 25 Rotational Mechanics PYQs',
+  });
+  assert.equal(firstTaskDone.shouldAnimate, true);
+  assert.equal(firstTaskDone.isDailyGoalReached, false);
+  assert.equal(firstTaskDone.xpAwarded, 75);
+  assert.equal(firstTaskDone.progressPercent, 25);
+  assert.ok(firstTaskDone.headline.includes('Streak Ignited!'));
 
+  const goalCrushed = computeStreakMicroAnimationState({
+    completedTodayCount: 4,
+    dailyGoalTarget: 4,
+    currentStreak: 5,
+    streakIncremented: false,
+    taskTitle: 'Revise Electrostatics Formula Sheet',
+  });
+  assert.equal(goalCrushed.shouldAnimate, true);
+  assert.equal(goalCrushed.isDailyGoalReached, true);
+  assert.equal(goalCrushed.progressPercent, 100);
+  assert.ok(goalCrushed.headline.includes('Daily Goal Crushed!'));
+});
 
