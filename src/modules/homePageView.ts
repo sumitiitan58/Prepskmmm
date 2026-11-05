@@ -156,15 +156,18 @@ export class HomePageModule {
     const leaderboardStandings = dataStore.getLeaderboardStandings();
     const currentWeekKey = getCurrentWeekKey();
 
-    // Syllabus Progress Tracker Data
+    // Syllabus Progress Tracker Data (Backed by Dynamic Syllabus Topics & Weightages)
     const syllabusProgress = dataStore.getSyllabusProgressSummary(user.targetExam);
     const completedTopicSet = new Set(dataStore.getCompletedSyllabusTopics());
-    const examSyllabusTopics = SYLLABUS_TOPICS.filter(
-      (t) =>
-        t.examTypes.includes(user.targetExam) &&
-        subjects.includes(t.subject) &&
-        (this.selectedSyllabusSubject === 'ALL' || t.subject === this.selectedSyllabusSubject)
-    );
+    const examSyllabusTopics = dataStore
+      .getSyllabusTopics(user.targetExam)
+      .filter(
+        (t) =>
+          subjects.includes(t.subject) &&
+          (this.selectedSyllabusSubject === 'ALL' ||
+            t.subject === this.selectedSyllabusSubject)
+      );
+    const rankAndLevel = dataStore.getStudentRankAndMonthlyLevel();
 
     this.containerEl.innerHTML = `
       <div class="space-y-5">
@@ -193,7 +196,7 @@ export class HomePageModule {
               href="/mentorship.html"
               class="flex-1 sm:flex-initial min-h-[36px] px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold inline-flex items-center justify-center gap-1 shadow-2xs"
             >
-              <span>PW Batches & Lectures</span>
+              <span>Video Batches &amp; Lectures</span>
               <span>→</span>
             </a>
             <a
@@ -994,12 +997,20 @@ export class HomePageModule {
                     Live Student Standings
                   </h3>
                 </div>
-                <span
-                  data-testid="current-user-rank-badge"
-                  class="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-xs font-mono-tabular font-extrabold text-amber-800"
-                >
-                  Rank #${leaderboardStandings.currentUserRank}
-                </span>
+                <div class="flex items-center gap-1.5">
+                  <span
+                    data-testid="current-user-level-badge"
+                    class="px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-mono-tabular font-extrabold text-[#4F46E5]"
+                  >
+                    ⭐ Lv.${rankAndLevel.level}
+                  </span>
+                  <span
+                    data-testid="current-user-rank-badge"
+                    class="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-xs font-mono-tabular font-extrabold text-amber-800"
+                  >
+                    Rank #${leaderboardStandings.currentUserRank}
+                  </span>
+                </div>
               </div>
 
               ${
@@ -1009,10 +1020,10 @@ export class HomePageModule {
                   <div>
                     <div class="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
                       <span>🥇 #${leaderboardStandings.currentUserRank}</span>
-                      <span>${this.escapeHtml(leaderboardStandings.currentUserEntry.name)} (You)</span>
+                      <span>${this.escapeHtml(leaderboardStandings.currentUserEntry.name)} (${user.isGuest ? 'Guest Preview' : 'Signed In'})</span>
                     </div>
                     <div class="text-[11px] font-mono-tabular text-slate-600 mt-0.5">
-                      🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} Task XP
+                      🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} XP · ⭐ Level ${rankAndLevel.level}
                     </div>
                   </div>
                   <div class="text-sm font-mono-tabular font-extrabold text-[#4F46E5]">
@@ -1101,7 +1112,7 @@ export class HomePageModule {
                   href="/mentorship.html"
                   class="min-h-[40px] px-3 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center transition-colors"
                 >
-                  PW Batches & Chat
+                  Lectures &amp; Chat
                 </a>
                 <a
                   href="/test-history.html"

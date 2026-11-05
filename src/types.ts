@@ -58,6 +58,8 @@ export interface AspirantUser {
   totalFocusMinutes?: number;
   subjectFocusMinutes?: Record<SubjectName, number>;
   xpPoints?: number;
+  monthlyLevel?: number;
+  lastPromotedMonth?: string;
   completedSyllabusTopics?: string[];
   lastActiveDate: string;
   createdAt: string;
@@ -252,6 +254,8 @@ export interface LeaderboardEntry {
   currentStreak: number;
   compositePoints: number;
   xpPoints?: number;
+  monthlyLevel?: number;
+  isGuest?: boolean;
   weekKey?: string;
 }
 

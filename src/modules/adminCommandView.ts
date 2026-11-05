@@ -96,7 +96,7 @@ export class AdminCommandModule {
       { id: 'mentors_broadcast', label: '3. Mentors & Broadcast' },
       { id: 'theme_brand', label: '4. Theme & Logo Customizer' },
       { id: 'materials', label: '5. PDF Vault Uploader' },
-      { id: 'structure', label: '6. Classes & Chapters' },
+      { id: 'structure', label: '6. Chapters & Weightage' },
       { id: 'mentorship', label: '7. Admin Chat & Call Centre' },
     ];
 
@@ -1374,37 +1374,155 @@ export class AdminCommandModule {
     const classes = dataStore.getClasses();
     const subjects = dataStore.getSubjects();
     const chapters = dataStore.getChapters();
+    const syllabusTopics = dataStore.getSyllabusTopics();
 
     return `
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
-          <h2 class="text-base font-bold text-slate-900">1. Manage Classes (${classes.length})</h2>
-          <form id="add-class-form" class="flex gap-2">
-            <input
-              id="new-class-name"
-              type="text"
-              required
-              placeholder="e.g., Foundation Class 8"
-              class="flex-1 min-h-[40px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
-            />
-            <button type="submit" class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold">
-              + Add
-            </button>
-          </form>
-          <div class="divide-y divide-slate-100">
-            ${classes
-              .map(
-                (c) => `
-              <div class="py-2.5 flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-800">${this.escapeHtml(c.name)}</span>
-                <button
-                  type="button"
-                  data-action="del-class"
-                  data-id="${c.id}"
-                  class="text-slate-400 hover:text-[#EF4444]"
+      <div class="space-y-6">
+        <!-- Syllabus Chapters & Exam Weightage Manager -->
+        <section
+          data-testid="admin-syllabus-weightage-manager"
+          class="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] text-xs font-extrabold uppercase tracking-wider">
+                Syllabus Progress & Infinite Practice Chapter Bank
+              </span>
+              <h2 class="text-lg font-extrabold text-slate-900 mt-1">
+                Manage Syllabus Chapters & Exam Weightage (${syllabusTopics.length} Chapters)
+              </h2>
+              <p class="text-xs text-slate-500">
+                Add chapters and set their official JEE/NEET exam weightage. Every chapter added here automatically appears in the Student Syllabus Tracker and CBT Infinite Practice (with 100 P&amp;C questions per chapter).
+              </p>
+            </div>
+          </div>
+
+          <form
+            id="admin-add-syllabus-topic-form"
+            data-testid="admin-add-syllabus-topic-form"
+            class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0]"
+          >
+            <div class="sm:col-span-2">
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Subject</label>
+              <select
+                id="syl-topic-subject"
+                data-testid="syl-topic-subject"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-extrabold text-slate-900"
+              >
+                <option value="Physics">Physics</option>
+                <option value="Chemistry">Chemistry</option>
+                <option value="Math">Math</option>
+                <option value="Biology">Biology</option>
+              </select>
+            </div>
+
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Chapter / Topic Name</label>
+              <input
+                id="syl-topic-chapter-name"
+                data-testid="syl-topic-chapter-name"
+                type="text"
+                required
+                placeholder="e.g., Wave Optics & Interference"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-semibold text-slate-900"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Exam Weightage</label>
+              <input
+                id="syl-topic-weightage"
+                data-testid="syl-topic-weightage"
+                type="text"
+                required
+                value="10% Weightage"
+                placeholder="e.g., 10% Weightage"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-mono-tabular font-bold text-[#4F46E5]"
+              />
+            </div>
+
+            <div class="sm:col-span-2">
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Exam Track &amp; Hrs</label>
+              <div class="flex gap-1.5">
+                <select
+                  id="syl-topic-exam"
+                  data-testid="syl-topic-exam"
+                  class="flex-1 min-h-[40px] px-2 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-bold text-slate-900"
                 >
-                  Delete
-                </button>
+                  <option value="JEE">JEE</option>
+                  <option value="NEET">NEET</option>
+                </select>
+                <input
+                  id="syl-topic-hours"
+                  type="number"
+                  min="2"
+                  max="60"
+                  value="12"
+                  title="Estimated Hours"
+                  class="w-16 min-h-[40px] px-2 py-2 rounded-xl bg-white border border-[#E2E8F0] text-xs font-mono-tabular font-bold text-slate-900"
+                />
+              </div>
+            </div>
+
+            <div class="sm:col-span-2">
+              <button
+                type="submit"
+                data-testid="admin-add-syllabus-btn"
+                class="w-full min-h-[40px] px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+              >
+                + Add Chapter
+              </button>
+            </div>
+          </form>
+
+          <!-- Existing Syllabus Chapters & Inline Weightage Editor -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-2.5 max-h-80 overflow-y-auto pr-1">
+            ${syllabusTopics
+              .map(
+                (t) => `
+              <div
+                data-testid="admin-syllabus-topic-row"
+                class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-2 text-xs"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-1.5">
+                    <span class="px-2 py-0.5 rounded bg-indigo-50 text-[#4F46E5] font-extrabold text-[10px]">
+                      ${this.escapeHtml(t.subject)} · ${this.escapeHtml((t.examTypes ?? ['JEE']).join('/'))}
+                    </span>
+                    <span class="font-bold text-slate-900 truncate">${this.escapeHtml(t.chapterName)}</span>
+                  </div>
+                  <div class="text-[11px] text-slate-500 mt-1 flex items-center gap-2">
+                    <span>Est: ${t.estimatedHours}h</span>
+                    <span>·</span>
+                    <span class="text-emerald-700 font-semibold">100 P&amp;C Qs Ready</span>
+                  </div>
+                </div>
+
+                <div class="flex items-center gap-1.5 shrink-0">
+                  <input
+                    type="text"
+                    value="${this.escapeHtml(t.weightageLabel)}"
+                    data-syllabus-weightage-input="${t.id}"
+                    aria-label="Weightage for ${this.escapeHtml(t.chapterName)}"
+                    class="w-28 min-h-[32px] px-2 py-1 rounded-lg bg-white border border-slate-300 font-mono-tabular text-[11px] font-bold text-[#4F46E5]"
+                  />
+                  <button
+                    type="button"
+                    data-action="save-syllabus-weightage"
+                    data-id="${t.id}"
+                    class="min-h-[32px] px-2.5 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-[#10B981] font-extrabold text-[11px] cursor-pointer"
+                  >
+                    Save
+                  </button>
+                  <button
+                    type="button"
+                    data-action="del-syllabus-topic"
+                    data-id="${t.id}"
+                    class="min-h-[32px] px-2 py-1 rounded-lg bg-red-50 hover:bg-red-100 text-[#EF4444] font-bold text-[11px] cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
               </div>
             `
               )
@@ -1412,94 +1530,131 @@ export class AdminCommandModule {
           </div>
         </section>
 
-        <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
-          <h2 class="text-base font-bold text-slate-900">2. Manage Subjects (${subjects.length})</h2>
-          <form id="add-subject-form" class="space-y-2">
-            <select
-              id="new-subject-class"
-              class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
-            >
-              ${classes.map((c) => `<option value="${c.id}">${this.escapeHtml(c.name)}</option>`).join('')}
-            </select>
-            <div class="flex gap-2">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900">1. Manage Classes (${classes.length})</h2>
+            <form id="add-class-form" class="flex gap-2">
               <input
-                id="new-subject-name"
+                id="new-class-name"
                 type="text"
                 required
-                placeholder="e.g., Physical Chemistry"
-                class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+                placeholder="e.g., Foundation Class 8"
+                class="flex-1 min-h-[40px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
               />
               <button type="submit" class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold">
                 + Add
               </button>
-            </div>
-          </form>
-          <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-            ${subjects
-              .map((s) => {
-                const cls = classes.find((c) => c.id === s.classId);
-                return `
-                <div class="py-2 flex items-center justify-between text-xs">
-                  <span><strong>${this.escapeHtml(s.name)}</strong> <span class="text-slate-400">(${this.escapeHtml(cls?.name ?? '')})</span></span>
+            </form>
+            <div class="divide-y divide-slate-100">
+              ${classes
+                .map(
+                  (c) => `
+                <div class="py-2.5 flex items-center justify-between text-xs">
+                  <span class="font-semibold text-slate-800">${this.escapeHtml(c.name)}</span>
                   <button
                     type="button"
-                    data-action="del-subject"
-                    data-id="${s.id}"
+                    data-action="del-class"
+                    data-id="${c.id}"
                     class="text-slate-400 hover:text-[#EF4444]"
                   >
                     Delete
                   </button>
                 </div>
-              `;
-              })
-              .join('')}
-          </div>
-        </section>
-
-        <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
-          <h2 class="text-base font-bold text-slate-900">3. Manage Chapters (${chapters.length})</h2>
-          <form id="add-chapter-form" class="space-y-2">
-            <select
-              id="new-chapter-subject"
-              class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
-            >
-              ${subjects
-                .map((s) => `<option value="${s.id}" data-class-id="${s.classId}">${this.escapeHtml(s.name)} (${s.classId})</option>`)
+              `
+                )
                 .join('')}
-            </select>
-            <div class="flex gap-2">
-              <input
-                id="new-chapter-name"
-                type="text"
-                required
-                placeholder="e.g., Alternating Current & LCR"
-                class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
-              />
-              <button type="submit" class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold">
-                + Add
-              </button>
             </div>
-          </form>
-          <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
-            ${chapters
-              .map(
-                (ch) => `
-              <div class="py-2 flex items-center justify-between text-xs">
-                <span class="font-medium text-slate-800 truncate">${this.escapeHtml(ch.name)}</span>
-                <button
-                  type="button"
-                  data-action="del-chapter"
-                  data-id="${ch.id}"
-                  class="text-slate-400 hover:text-[#EF4444] shrink-0"
-                >
-                  Delete
+          </section>
+
+          <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900">2. Manage Subjects (${subjects.length})</h2>
+            <form id="add-subject-form" class="space-y-2">
+              <select
+                id="new-subject-class"
+                class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+              >
+                ${classes.map((c) => `<option value="${c.id}">${this.escapeHtml(c.name)}</option>`).join('')}
+              </select>
+              <div class="flex gap-2">
+                <input
+                  id="new-subject-name"
+                  type="text"
+                  required
+                  placeholder="e.g., Physical Chemistry"
+                  class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+                />
+                <button type="submit" class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold">
+                  + Add
                 </button>
               </div>
-            `
-              )
-              .join('')}
-          </div>
-        </section>
+            </form>
+            <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+              ${subjects
+                .map((s) => {
+                  const cls = classes.find((c) => c.id === s.classId);
+                  return `
+                  <div class="py-2 flex items-center justify-between text-xs">
+                    <span><strong>${this.escapeHtml(s.name)}</strong> <span class="text-slate-400">(${this.escapeHtml(cls?.name ?? '')})</span></span>
+                    <button
+                      type="button"
+                      data-action="del-subject"
+                      data-id="${s.id}"
+                      class="text-slate-400 hover:text-[#EF4444]"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                `;
+                })
+                .join('')}
+            </div>
+          </section>
+
+          <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+            <h2 class="text-base font-bold text-slate-900">3. Manage Chapters (${chapters.length})</h2>
+            <form id="add-chapter-form" class="space-y-2">
+              <select
+                id="new-chapter-subject"
+                class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+              >
+                ${subjects
+                  .map((s) => `<option value="${s.id}" data-class-id="${s.classId}">${this.escapeHtml(s.name)} (${s.classId})</option>`)
+                  .join('')}
+              </select>
+              <div class="flex gap-2">
+                <input
+                  id="new-chapter-name"
+                  type="text"
+                  required
+                  placeholder="e.g., Alternating Current & LCR"
+                  class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+                />
+                <button type="submit" class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold">
+                  + Add
+                </button>
+              </div>
+            </form>
+            <div class="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+              ${chapters
+                .map(
+                  (ch) => `
+                <div class="py-2 flex items-center justify-between text-xs">
+                  <span class="font-medium text-slate-800 truncate">${this.escapeHtml(ch.name)}</span>
+                  <button
+                    type="button"
+                    data-action="del-chapter"
+                    data-id="${ch.id}"
+                    class="text-slate-400 hover:text-[#EF4444] shrink-0"
+                  >
+                    Delete
+                  </button>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          </section>
+        </div>
       </div>
     `;
   }
@@ -2686,6 +2841,46 @@ export class AdminCommandModule {
       this.rerender();
     });
 
+    // Syllabus Chapters & Exam Weightage Form
+    const addSylTopicForm = this.containerEl.querySelector<HTMLFormElement>(
+      '#admin-add-syllabus-topic-form'
+    );
+    addSylTopicForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const subject =
+        (addSylTopicForm.querySelector<HTMLSelectElement>('#syl-topic-subject')
+          ?.value as SubjectName) ?? 'Physics';
+      const chapterName =
+        addSylTopicForm
+          .querySelector<HTMLInputElement>('#syl-topic-chapter-name')
+          ?.value.trim() ?? '';
+      const weightageLabel =
+        addSylTopicForm
+          .querySelector<HTMLInputElement>('#syl-topic-weightage')
+          ?.value.trim() || '8% Weightage';
+      const targetExam =
+        (addSylTopicForm.querySelector<HTMLSelectElement>('#syl-topic-exam')
+          ?.value as TargetExam) ?? 'JEE';
+      const estimatedHours =
+        Number(
+          addSylTopicForm.querySelector<HTMLInputElement>('#syl-topic-hours')
+            ?.value
+        ) || 12;
+      if (!chapterName) return;
+
+      await dataStore.addSyllabusTopic({
+        subject,
+        chapterName,
+        weightageLabel,
+        estimatedHours,
+        examTypes: [targetExam],
+      });
+      this.callbacks.onShowToast(
+        `Added "${chapterName}" (${weightageLabel}) to ${subject} Syllabus & 100-Q P&C Bank!`
+      );
+      this.rerender();
+    });
+
     // Material PDF File Input & Uploader Form
     const pdfFileInput =
       this.containerEl.querySelector<HTMLInputElement>('#mat-pdf-file');
@@ -2950,6 +3145,32 @@ export class AdminCommandModule {
           case 'del-chapter': {
             if (el.dataset.id) {
               await dataStore.deleteChapter(el.dataset.id);
+              this.rerender();
+            }
+            break;
+          }
+          case 'save-syllabus-weightage': {
+            const topicId = el.dataset.id;
+            if (topicId) {
+              const wInput = this.containerEl?.querySelector<HTMLInputElement>(
+                `[data-syllabus-weightage-input="${topicId}"]`
+              );
+              const nextWeightage = wInput?.value.trim() || '8% Weightage';
+              await dataStore.updateSyllabusTopic(topicId, {
+                weightageLabel: nextWeightage,
+              });
+              this.callbacks.onShowToast(
+                `Updated chapter exam weightage to "${nextWeightage}"!`
+              );
+              this.rerender();
+            }
+            break;
+          }
+          case 'del-syllabus-topic': {
+            const topicId = el.dataset.id;
+            if (topicId) {
+              await dataStore.deleteSyllabusTopic(topicId);
+              this.callbacks.onShowToast('Removed chapter from syllabus');
               this.rerender();
             }
             break;

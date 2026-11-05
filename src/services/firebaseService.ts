@@ -78,6 +78,7 @@ import type {
   StudyTask,
   SubjectEntity,
   SubjectName,
+  SyllabusTopicItem,
   TargetExam,
   TaskPriority,
   TestSubmission,
@@ -86,9 +87,11 @@ import type {
 } from '../types';
 import {
   calculateLeaderboardCompositePoints,
+  calculateMonthlyStudentLevel,
   calculateStudentXp,
   calculateSyllabusProgress,
   computeUpdatedFocusStats,
+  evaluateStreakLifecycle,
   evaluateStreakRiskStatus,
   generatePersonalizedStudyPlan,
   getCurrentWeekKey,
@@ -269,6 +272,7 @@ const STORAGE_KEYS = {
   ADMIN_QUESTIONS: 'prepskm_admin_questions_v5_launch',
   FOCUS_SESSIONS: 'prepskm_focus_sessions_v5_launch',
   GROUP_CALL_SCHEDULE: 'prepskm_group_call_schedule_v5_launch',
+  SYLLABUS_TOPICS: 'prepskm_syllabus_topics_v5_launch',
 };
 
 function sanitizeId(id: string): string {
@@ -287,6 +291,7 @@ export class PrepskmDataStore {
   private classes: ClassEntity[];
   private subjects: SubjectEntity[];
   private chapters: ChapterEntity[];
+  private syllabusTopics: SyllabusTopicItem[];
   private materials: StudyMaterialItem[];
   private vaultSections: string[];
   private videoSections: string[];
@@ -367,8 +372,13 @@ export class PrepskmDataStore {
     this.classes = this.loadLocal(STORAGE_KEYS.CLASSES, [...INITIAL_CLASSES]);
     this.subjects = this.loadLocal(STORAGE_KEYS.SUBJECTS, [...INITIAL_SUBJECTS]);
     this.chapters = this.loadLocal(STORAGE_KEYS.CHAPTERS, [...INITIAL_CHAPTERS]);
+    this.syllabusTopics = this.loadLocal(STORAGE_KEYS.SYLLABUS_TOPICS, [...SYLLABUS_TOPICS]);
     this.materials = this.loadLocal(STORAGE_KEYS.MATERIALS, [...INITIAL_MATERIALS]);
     this.vaultSections = this.loadLocal(STORAGE_KEYS.VAULT_SECTIONS, [...DEFAULT_VAULT_SECTIONS]);
+    if (!this.vaultSections.includes('Google Classroom')) {
+      this.vaultSections.push('Google Classroom');
+      this.saveLocal(STORAGE_KEYS.VAULT_SECTIONS, this.vaultSections);
+    }
     this.videoSections = this.loadLocal(STORAGE_KEYS.VIDEO_SECTIONS, [...DEFAULT_VIDEO_SECTIONS]);
     this.videos = this.loadLocal(STORAGE_KEYS.VIDEOS, [...INITIAL_VIDEOS]);
     this.videoDoubts = this.loadLocal(STORAGE_KEYS.VIDEO_DOUBTS, [...INITIAL_VIDEO_DOUBTS]);
@@ -685,6 +695,21 @@ export class PrepskmDataStore {
         },
         () => {}
       );
+
+      onSnapshot(
+        collection(db, 'syllabus_topics'),
+        (snap) => {
+          if (!snap.empty) {
+            const remote = snap.docs.map((d) => d.data() as SyllabusTopicItem);
+            const merged = new Map<string, SyllabusTopicItem>();
+            for (const item of this.syllabusTopics) merged.set(item.id, item);
+            for (const item of remote) merged.set(item.id, item);
+            this.syllabusTopics = Array.from(merged.values());
+            this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
+          }
+        },
+        () => {}
+      );
     } catch {
       // Offline fallback
     }
@@ -858,18 +883,25 @@ export class PrepskmDataStore {
           'aspirant_rohan_03',
           'aspirant_meera_04',
           'local_aspirant_01',
+          'guest_aspirant',
         ]);
         const remoteEntries = snap.docs
           .map((d) => d.data() as LeaderboardEntry)
-          .filter((item) => !dummyIds.has(item.uid) && (!item.weekKey || item.weekKey === currentWeek));
+          .filter(
+            (item) =>
+              !dummyIds.has(item.uid) &&
+              !item.isGuest &&
+              !item.uid.startsWith('guest_') &&
+              (!item.weekKey || item.weekKey === currentWeek)
+          );
         const mergedMap = new Map<string, LeaderboardEntry>();
         for (const item of this.leaderboard) {
-          if (!dummyIds.has(item.uid)) {
+          if (!dummyIds.has(item.uid) || item.uid === this.currentUser.uid) {
             mergedMap.set(item.uid, item);
           }
         }
         for (const item of remoteEntries) {
-          mergedMap.set(item.uid, item);
+          mergedMap.set(item.uid, { ...item, isGuest: false });
         }
         this.leaderboard = Array.from(mergedMap.values());
         this.saveLocal(STORAGE_KEYS.LEADERBOARD, this.leaderboard);
@@ -910,11 +942,13 @@ export class PrepskmDataStore {
       bestMockScore: bestSubmissionScore,
       currentStreak: user.currentStreak,
       xpPoints,
+      monthlyLevel: user.monthlyLevel ?? 1,
+      isGuest: Boolean(user.isGuest),
       weekKey: currentWeek,
       compositePoints,
     };
 
-    // Filter out any legacy dummy IDs or expired weeks
+    // Filter out any legacy dummy IDs, expired weeks, or other guest entries
     const dummyIds = new Set([
       'aspirant_ishaan_01',
       'aspirant_ananya_02',
@@ -923,7 +957,10 @@ export class PrepskmDataStore {
       'local_aspirant_01',
     ]);
     this.leaderboard = this.leaderboard.filter(
-      (e) => !dummyIds.has(e.uid) && (!e.weekKey || e.weekKey === currentWeek)
+      (e) =>
+        !dummyIds.has(e.uid) &&
+        (!e.weekKey || e.weekKey === currentWeek) &&
+        (!e.isGuest || e.uid === user.uid)
     );
 
     const existingIndex = this.leaderboard.findIndex((e) => e.uid === user.uid);
@@ -944,6 +981,7 @@ export class PrepskmDataStore {
         await setDoc(doc(db, 'leaderboard', uid), {
           ...entry,
           uid,
+          isGuest: false,
         });
       } catch {
         // Saved locally
@@ -954,6 +992,45 @@ export class PrepskmDataStore {
   public getLeaderboardStandings() {
     this.recalculateLocalUserLeaderboardEntry();
     return rankLeaderboardEntries(this.leaderboard, this.currentUser.uid);
+  }
+
+  public getStudentRankAndMonthlyLevel() {
+    const standings = this.getLeaderboardStandings();
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
+    const streakEval = evaluateStreakLifecycle(
+      this.currentUser.currentStreak,
+      this.currentUser.lastActiveDate,
+      todayIso,
+      completedTasksCount
+    );
+    const levelInfo = calculateMonthlyStudentLevel(
+      this.currentUser.monthlyLevel ?? 1,
+      standings.currentUserRank,
+      0
+    );
+    return {
+      ...standings,
+      ...levelInfo,
+      streakEval,
+      xpPoints: this.currentUser.xpPoints ?? 0,
+      isGuest: this.currentUser.isGuest,
+    };
+  }
+
+  public async updateStreakLifecycleAction(mode: 'extend' | 'end_reset'): Promise<AspirantUser> {
+    const todayIso = new Date().toISOString().slice(0, 10);
+    if (mode === 'end_reset') {
+      return this.updateUser({
+        currentStreak: 0,
+        lastActiveDate: '',
+      });
+    }
+    const nextStreak = Math.max(1, (this.currentUser.currentStreak || 0) + 1);
+    return this.updateUser({
+      currentStreak: nextStreak,
+      lastActiveDate: todayIso,
+    });
   }
 
   public getDailyGoalTarget(): number {
@@ -1072,14 +1149,11 @@ export class PrepskmDataStore {
     // Remove old guest entry from leaderboard so only the signed-in user remains
     this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    await this.pushCurrentUserLeaderboardToCloud();
+    this.recalculateLocalUserLeaderboardEntry();
+    void this.pushCurrentUserLeaderboardToCloud();
     this.notifyAuthListeners();
 
-    try {
-      await setDoc(doc(db, 'users', newUid), this.currentUser);
-    } catch {
-      // Saved locally
-    }
+    void setDoc(doc(db, 'users', newUid), this.currentUser).catch(() => {});
 
     return this.getUser();
   }
@@ -1188,22 +1262,111 @@ export class PrepskmDataStore {
       name: (partial.name ?? this.currentUser.name).slice(0, 100),
     };
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    await this.pushCurrentUserLeaderboardToCloud();
+    this.recalculateLocalUserLeaderboardEntry();
+    void this.pushCurrentUserLeaderboardToCloud();
     this.notifyAuthListeners();
 
     const uid = sanitizeId(auth.currentUser?.uid || this.currentUser.uid);
-    try {
-      await setDoc(doc(db, 'users', uid), {
-        ...this.currentUser,
-        uid,
-      });
-    } catch {
-      // Saved locally
-    }
+    void setDoc(doc(db, 'users', uid), {
+      ...this.currentUser,
+      uid,
+    }).catch(() => {});
     return this.getUser();
   }
 
   // --- Syllabus Progress Tracker (JEE / NEET Subject & Chapter Completion) ---
+  public getSyllabusTopics(exam?: TargetExam, subject?: SubjectName): SyllabusTopicItem[] {
+    return this.syllabusTopics.filter((t) => {
+      if (exam && !t.examTypes.includes(exam)) return false;
+      if (subject && t.subject !== subject) return false;
+      return true;
+    });
+  }
+
+  public async addSyllabusTopic(params: {
+    subject: SubjectName;
+    chapterName: string;
+    weightageLabel: string;
+    estimatedHours?: number;
+    examTypes?: TargetExam[];
+  }): Promise<SyllabusTopicItem> {
+    const cleanChapter = params.chapterName.trim();
+    const rawWeight = params.weightageLabel.trim() || '10% Weightage';
+    const normalizedWeight = rawWeight.toLowerCase().includes('weightage')
+      ? rawWeight
+      : rawWeight.includes('%')
+        ? `${rawWeight} Weightage`
+        : `${rawWeight}% Weightage`;
+
+    const newTopic: SyllabusTopicItem = {
+      id: sanitizeId(`syl_${params.subject.toLowerCase()}_${Date.now()}`),
+      subject: params.subject,
+      chapterName: cleanChapter,
+      weightageLabel: normalizedWeight,
+      estimatedHours: Math.max(2, Math.min(60, Math.round(Number(params.estimatedHours) || 12))),
+      examTypes:
+        params.examTypes && params.examTypes.length > 0
+          ? params.examTypes
+          : params.subject === 'Biology'
+            ? ['NEET']
+            : params.subject === 'Math'
+              ? ['JEE']
+              : ['JEE', 'NEET'],
+    };
+
+    this.syllabusTopics = [...this.syllabusTopics, newTopic];
+    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
+
+    // Also mirror in ChapterEntity list so legacy dropdowns stay synced
+    const matchingSubject = this.subjects.find((s) => s.name === params.subject);
+    if (matchingSubject) {
+      this.chapters.push({
+        id: newTopic.id,
+        classId: matchingSubject.classId,
+        subjectId: matchingSubject.id,
+        name: `${cleanChapter} (${normalizedWeight})`,
+      });
+      this.saveLocal(STORAGE_KEYS.CHAPTERS, this.chapters);
+    }
+
+    void setDoc(doc(db, 'syllabus_topics', newTopic.id), newTopic).catch(() => {});
+
+    return newTopic;
+  }
+
+  public async updateSyllabusTopic(
+    topicId: string,
+    partial: Partial<Pick<SyllabusTopicItem, 'chapterName' | 'weightageLabel' | 'estimatedHours' | 'examTypes' | 'subject'>>
+  ): Promise<SyllabusTopicItem | undefined> {
+    const idx = this.syllabusTopics.findIndex((t) => t.id === topicId);
+    if (idx < 0) return undefined;
+    const rawWeight = partial.weightageLabel?.trim();
+    const normalizedWeight = rawWeight
+      ? rawWeight.toLowerCase().includes('weightage')
+        ? rawWeight
+        : rawWeight.includes('%')
+          ? `${rawWeight} Weightage`
+          : `${rawWeight}% Weightage`
+      : this.syllabusTopics[idx].weightageLabel;
+
+    const updated: SyllabusTopicItem = {
+      ...this.syllabusTopics[idx],
+      ...partial,
+      weightageLabel: normalizedWeight,
+    };
+    this.syllabusTopics[idx] = updated;
+    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
+
+    void setDoc(doc(db, 'syllabus_topics', updated.id), updated).catch(() => {});
+    return updated;
+  }
+
+  public async deleteSyllabusTopic(topicId: string): Promise<void> {
+    this.syllabusTopics = this.syllabusTopics.filter((t) => t.id !== topicId);
+    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
+    void deleteDoc(doc(db, 'syllabus_topics', topicId)).catch(() => {});
+  }
+
   public getCompletedSyllabusTopics(): string[] {
     return [...(this.currentUser.completedSyllabusTopics || [])];
   }
@@ -1211,7 +1374,7 @@ export class PrepskmDataStore {
   public getSyllabusProgressSummary(exam?: TargetExam) {
     const targetExam = exam ?? this.currentUser.targetExam;
     return calculateSyllabusProgress(
-      SYLLABUS_TOPICS,
+      this.syllabusTopics,
       this.getCompletedSyllabusTopics(),
       targetExam
     );
@@ -1400,20 +1563,22 @@ export class PrepskmDataStore {
     target.isCompleted = !target.isCompleted;
     this.saveLocal(STORAGE_KEYS.TASKS, this.tasks);
 
-    // Every completed To-Do list task grants +75 XP and maintains active streak
+    // Every completed To-Do list task grants +75 XP and updates streak lifecycle (extends or ends)
     const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
-    const completedTopicsCount = (this.currentUser.completedSyllabusTopics || []).length;
-    const newXp = calculateStudentXp(completedTasksCount, completedTopicsCount);
-    const newStreak =
-      completedTasksCount > 0
-        ? Math.max(1, this.currentUser.currentStreak || 1)
-        : this.currentUser.currentStreak;
+    const newXp = calculateStudentXp(completedTasksCount, 0);
+    const todayIso = new Date().toISOString().slice(0, 10);
+    const streakEval = evaluateStreakLifecycle(
+      this.currentUser.currentStreak,
+      this.currentUser.lastActiveDate,
+      todayIso,
+      completedTasksCount
+    );
 
     this.currentUser = {
       ...this.currentUser,
       xpPoints: newXp,
-      currentStreak: newStreak,
-      lastActiveDate: new Date().toISOString().slice(0, 10),
+      currentStreak: streakEval.currentStreak,
+      lastActiveDate: streakEval.lastActiveDate,
     };
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
     await this.pushCurrentUserLeaderboardToCloud();

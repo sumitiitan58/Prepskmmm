@@ -6,15 +6,18 @@ import {
   calculateDailyGoalProgress,
   calculateLeaderboardCompositePoints,
   calculateMentorshipPrice,
+  calculateMonthlyStudentLevel,
   calculatePollPercentages,
   calculateStudentXp,
   calculateSyllabusProgress,
   computePerformanceTrendsForD3,
   computeUpdatedStreak,
   evaluateCBTSubmission,
+  evaluateStreakLifecycle,
   evaluateStreakRiskStatus,
   formatDuration,
   generateAIStudyDiagnosis,
+  generateChapterPnCQuestions,
   generatePersonalizedStudyPlan,
   getCurrentWeekKey,
   getSubjectsForExam,
@@ -26,7 +29,9 @@ import {
 } from './examLogic';
 import {
   CBT_QUESTION_BANK,
+  DEFAULT_PW_LECTURE_FALLBACK,
   DEFAULT_USER,
+  DEFAULT_VAULT_SECTIONS,
   INITIAL_CHAPTERS,
   INITIAL_LEADERBOARD,
   INITIAL_MATERIALS,
@@ -169,7 +174,7 @@ test('generatePersonalizedStudyPlan prioritizes Weak subjects with highest weekl
   );
 });
 
-test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single user as Rank #1 and multi-user Top 10 accurately', () => {
+test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single user as Rank #1 and hide Guest users from signed-up users', () => {
   const pts = calculateLeaderboardCompositePoints(80, 50, 5);
   assert.equal(pts, 1910);
 
@@ -183,6 +188,7 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
       bestMockScore: 24,
       currentStreak: 1,
       compositePoints: 1600,
+      isGuest: false,
     },
   ];
   const soloRanked = rankLeaderboardEntries(soloEntries, 'u_solo');
@@ -190,7 +196,17 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
   assert.equal(soloRanked.top10[0].rank, 1);
   assert.equal(soloRanked.currentUserRank, 1);
 
-  const sampleEntries: LeaderboardEntry[] = [
+  const mixedEntries: LeaderboardEntry[] = [
+    {
+      uid: 'guest_aspirant',
+      name: 'Guest Student',
+      targetExam: 'JEE',
+      taskCompletionRate: 100,
+      bestMockScore: 60,
+      currentStreak: 5,
+      compositePoints: 3000,
+      isGuest: true,
+    },
     {
       uid: 'u2',
       name: 'Riya',
@@ -199,6 +215,7 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
       bestMockScore: 56,
       currentStreak: 12,
       compositePoints: 2460,
+      isGuest: false,
     },
     {
       uid: 'u1',
@@ -208,13 +225,20 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
       bestMockScore: 50,
       currentStreak: 5,
       compositePoints: 1910,
+      isGuest: false,
     },
   ];
 
-  const ranked = rankLeaderboardEntries(sampleEntries, 'u1');
-  assert.equal(ranked.top10[0].uid, 'u2');
-  assert.equal(ranked.top10[0].rank, 1);
-  assert.equal(ranked.currentUserRank, 2);
+  // When signed-up user u1 views leaderboard, guest_aspirant is filtered out!
+  const rankedForSignedUp = rankLeaderboardEntries(mixedEntries, 'u1');
+  assert.equal(rankedForSignedUp.totalParticipants, 2);
+  assert.equal(rankedForSignedUp.top10[0].uid, 'u2');
+  assert.equal(rankedForSignedUp.currentUserRank, 2);
+
+  // When guest_aspirant views leaderboard, they see their own rank alongside signed-up users!
+  const rankedForGuest = rankLeaderboardEntries(mixedEntries, 'guest_aspirant');
+  assert.equal(rankedForGuest.totalParticipants, 3);
+  assert.equal(rankedForGuest.currentUserRank, 1);
 });
 
 test('calculateBacklogKillerPlan computes daily extra quota and generates micro-tasks', () => {
@@ -412,7 +436,41 @@ test('calculateStudentXp awards +75 XP per completed task and getCurrentWeekKey 
   assert.match(wk, /^2026-W\d{2}$/);
 });
 
-test('production launch constants start with clean empty state and only Master Admin Sumit Kumar mentor', () => {
+test('evaluateStreakLifecycle extends streak on consecutive days and ends/resets to 0 on missed day', () => {
+  const extended = evaluateStreakLifecycle(3, '2026-11-03', '2026-11-04', 2);
+  assert.equal(extended.currentStreak, 4);
+  assert.equal(extended.status, 'EXTENDED');
+
+  const endedMissedDay = evaluateStreakLifecycle(5, '2026-11-01', '2026-11-04', 0);
+  assert.equal(endedMissedDay.currentStreak, 0);
+  assert.equal(endedMissedDay.status, 'ENDED_RESET');
+});
+
+test('calculateMonthlyStudentLevel promotes Rank #1 to #20 by +1 level each month', () => {
+  const rank1 = calculateMonthlyStudentLevel(1, 1, 2);
+  assert.equal(rank1.level, 3);
+  assert.equal(rank1.eligibleForMonthlyPromotion, true);
+  assert.equal(rank1.nextLevelAfterMonth, 4);
+
+  const rank25 = calculateMonthlyStudentLevel(2, 25, 0);
+  assert.equal(rank25.level, 2);
+  assert.equal(rank25.eligibleForMonthlyPromotion, false);
+  assert.equal(rank25.nextLevelAfterMonth, 2);
+});
+
+test('generateChapterPnCQuestions builds 100 P&C questions per chapter and returns multiples of selected chapters', () => {
+  const selectedThree = SYLLABUS_TOPICS.slice(0, 3);
+  const pncSet = generateChapterPnCQuestions(selectedThree, 5);
+  assert.equal(pncSet.chapterPoolSize, 100);
+  assert.equal(pncSet.questionsPerChapter, 5);
+  assert.equal(pncSet.totalQuestions, 15);
+  assert.equal(pncSet.questions.length, 15);
+
+  const fullSingleChapter = generateChapterPnCQuestions([SYLLABUS_TOPICS[0]], 100);
+  assert.equal(fullSingleChapter.questions.length, 100);
+});
+
+test('production launch constants start with clean empty state, Google Classroom section, and no PW branding', () => {
   assert.equal(DEFAULT_USER.isGuest, true);
   assert.equal(INITIAL_TASKS.length, 0);
   assert.equal(INITIAL_MATERIALS.length, 0);
@@ -421,7 +479,10 @@ test('production launch constants start with clean empty state and only Master A
   assert.equal(INITIAL_LEADERBOARD.length, 0);
   assert.equal(INITIAL_MENTORS.length, 1);
   assert.equal(INITIAL_MENTORS[0].email.toLowerCase(), 'sumit586kumar@gmail.com');
+  assert.ok(DEFAULT_VAULT_SECTIONS.includes('Google Classroom'));
+  assert.ok(!DEFAULT_PW_LECTURE_FALLBACK.title.includes('PW'));
 });
+
 
 
 

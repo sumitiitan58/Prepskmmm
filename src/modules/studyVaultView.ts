@@ -90,11 +90,21 @@ export class StudyVaultModule {
         desc: 'Daily Practice Problems (DPPs) with Timed Target Sets & Answer Keys',
         icon: `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`,
       },
+      {
+        gradient: 'from-cyan-50 via-white to-emerald-50',
+        headerGrad: 'from-emerald-600 via-teal-600 to-cyan-600',
+        border: 'border-cyan-200 hover:border-teal-600',
+        badge: 'bg-teal-600 text-white',
+        text: 'text-teal-700',
+        desc: 'Dedicated Google Classroom Assignment & Resource Connector + Calendar Sync',
+        icon: `<svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 14l9-5-9-5-9 5 9 5zm0 0l6.16-3.422a12.083 12.083 0 01.665 6.479A11.952 11.952 0 0012 20.055a11.952 11.952 0 00-6.824-2.998 12.078 12.078 0 01.665-6.479L12 14z"/></svg>`,
+      },
     ];
     if (sectionName === 'PYQs') return palettes[0];
     if (sectionName === 'Formula Sheets') return palettes[1];
     if (sectionName === 'Hand-written Notes') return palettes[2];
     if (sectionName === 'DPPs') return palettes[3];
+    if (sectionName === 'Google Classroom') return palettes[4];
     return palettes[index % palettes.length];
   }
 
@@ -160,6 +170,11 @@ export class StudyVaultModule {
       // VIEW 1: STUDY VAULT SECTION DIRECTORY HUB (/study.html)
       // Clicking any section opens a dedicated page for that section!
       // =========================================================================
+      const classroomItems = workspaceConnector.getClassroomResources(
+        user.classYear,
+        user.targetExam
+      );
+
       this.containerEl.innerHTML = `
         <div class="space-y-6" data-testid="study-vault-directory-page">
           <!-- Class-Specific Vault Banner -->
@@ -175,7 +190,7 @@ export class StudyVaultModule {
                 Select a Study Vault Section to Open Its Dedicated Page
               </h1>
               <p class="text-xs sm:text-sm text-white/90">
-                Click any section card below (PYQs, Formula Sheets, Hand-written Notes, or DPPs) to open a dedicated full-screen page with compact wide PDFs.
+                Click any section card below (PYQs, Formula Sheets, Hand-written Notes, DPPs, or Google Classroom) to open its dedicated full-screen workspace.
               </p>
             </div>
             <div class="shrink-0 bg-white/15 border border-white/25 rounded-2xl px-4 py-3 text-center">
@@ -184,25 +199,30 @@ export class StudyVaultModule {
             </div>
           </section>
 
-          <!-- Dedicated Section Folder Cards Grid -->
+          <!-- Dedicated Section Folder Cards Grid (Including Dedicated Google Classroom Section) -->
           <section aria-label="Study Material Sections" class="space-y-3">
             <div class="flex items-center justify-between px-1">
               <h2 class="text-xs sm:text-sm font-extrabold uppercase tracking-wider text-slate-700">
-                Study Vault Sections (${sections.length} Categories) — Click Any Section to Open New Page
+                Study Vault Sections (${sections.length} Categories) — Click Any Section to Open
               </h2>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="vault-section-folders">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4" data-testid="vault-section-folders">
               ${sections
                 .map((sec, idx) => {
                   const st = this.getSectionStyle(sec, idx);
+                  const isClassroomSec = sec === 'Google Classroom';
                   const secMaterials = allMaterials.filter((m) => m.section === sec);
+                  const countBadge = isClassroomSec
+                    ? `${classroomItems.length} Classwork`
+                    : `${secMaterials.length} PDFs`;
 
                   return `
                     <button
                       type="button"
                       data-action="open-section-folder"
                       data-section="${this.escapeHtml(sec)}"
+                      data-testid="vault-section-card-${sec.toLowerCase().replace(/[^a-z0-9]+/g, '-')}"
                       class="text-left rounded-2xl p-5 bg-gradient-to-br ${st.gradient} border-2 ${st.border} shadow-sm hover:shadow-md transition-all flex flex-col justify-between gap-4 group cursor-pointer"
                     >
                       <div class="flex items-center justify-between gap-2">
@@ -210,7 +230,7 @@ export class StudyVaultModule {
                           ${st.icon}
                         </span>
                         <span class="px-2.5 py-1 rounded-full bg-white border border-slate-200 font-mono-tabular text-xs font-extrabold ${st.text}">
-                          ${secMaterials.length} PDFs
+                          ${countBadge}
                         </span>
                       </div>
                       <div class="space-y-1.5">
@@ -222,7 +242,7 @@ export class StudyVaultModule {
                         </p>
                       </div>
                       <div class="pt-2 border-t border-slate-200/60 flex items-center justify-between text-xs font-extrabold ${st.text}">
-                        <span>Open ${this.escapeHtml(sec)} Page</span>
+                        <span>Open ${this.escapeHtml(sec)}</span>
                         <span class="group-hover:translate-x-1 transition-transform">→</span>
                       </div>
                     </button>
@@ -231,9 +251,6 @@ export class StudyVaultModule {
                 .join('')}
               </div>
             </section>
-
-            <!-- Google Classroom Resources & Assignment Connector + Google Calendar/Tasks Multi-Device Sync Hub -->
-            ${this.renderGoogleClassroomAndCalendarSyncHub()}
 
             <!-- In-App Secure PDF Viewer Modal -->
             ${this.renderSecurePdfModal()}
@@ -249,10 +266,11 @@ export class StudyVaultModule {
     }
 
     // =========================================================================
-    // VIEW 2: DEDICATED SECTION PAGE (/study.html?section=PYQs)
+    // VIEW 2: DEDICATED SECTION PAGE (/study.html?section=...)
     // =========================================================================
     const activeSecStyle = this.getSectionStyle(this.activeOpenedSection, 0);
     const isAdmin = dataStore.isMasterAdmin();
+    const isClassroomSection = this.activeOpenedSection === 'Google Classroom';
 
     this.containerEl.innerHTML = `
       <div class="space-y-5" data-testid="study-vault-dedicated-section-page">
@@ -272,7 +290,11 @@ export class StudyVaultModule {
             </button>
 
             <span class="px-3 py-1 rounded-full bg-white/20 text-xs font-mono-tabular font-extrabold">
-              ${filteredMaterials.length} PDFs in ${this.escapeHtml(this.activeOpenedSection)}
+              ${
+                isClassroomSection
+                  ? 'Google Classroom Direct Sync'
+                  : `${filteredMaterials.length} PDFs in ${this.escapeHtml(this.activeOpenedSection)}`
+              }
             </span>
           </div>
 
@@ -282,46 +304,62 @@ export class StudyVaultModule {
                 Dedicated Section Page · ${this.escapeHtml(cohortTheme.label)}
               </span>
               <h1 class="text-xl sm:text-2xl font-extrabold mt-0.5">
-                ${this.escapeHtml(this.activeOpenedSection)} — Complete PDF Archive
+                ${
+                  isClassroomSection
+                    ? 'Google Classroom Connector & Multi-Device Sync'
+                    : `${this.escapeHtml(this.activeOpenedSection)} — Complete PDF Archive`
+                }
               </h1>
               <p class="text-xs sm:text-sm text-white/90 mt-1">
                 ${activeSecStyle.desc}
               </p>
             </div>
 
-            <input
-              id="vault-search-input"
-              type="search"
-              value="${this.escapeHtml(this.searchQuery)}"
-              placeholder="Search inside ${this.escapeHtml(this.activeOpenedSection)}..."
-              aria-label="Search study materials"
-              class="min-h-[40px] px-3.5 py-2 rounded-xl bg-white text-slate-900 text-xs placeholder:text-slate-400 focus:outline-none w-full sm:w-64 shadow-sm"
-            />
+            ${
+              !isClassroomSection
+                ? `
+              <input
+                id="vault-search-input"
+                type="search"
+                value="${this.escapeHtml(this.searchQuery)}"
+                placeholder="Search inside ${this.escapeHtml(this.activeOpenedSection)}..."
+                aria-label="Search study materials"
+                class="min-h-[40px] px-3.5 py-2 rounded-xl bg-white text-slate-900 text-xs placeholder:text-slate-400 focus:outline-none w-full sm:w-64 shadow-sm"
+              />
+            `
+                : ''
+            }
           </div>
         </section>
 
-        <!-- Subject Filter Bar for Dedicated Section Page -->
+        <!-- Section Switcher Bar -->
         <section class="bg-white border border-[#E2E8F0] rounded-2xl p-3.5 sm:p-4 shadow-2xs flex flex-wrap items-center justify-between gap-2">
-          <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-            ${(['ALL', ...uniqueSubjectNames] as const)
-              .map(
-                (subName) => `
-              <button
-                type="button"
-                data-action="filter-subject-name"
-                data-subject="${subName}"
-                class="min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0 ${
-                  this.selectedSubjectName === subName
-                    ? 'bg-[#4F46E5] text-white shadow-2xs'
-                    : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-600 hover:bg-slate-100'
-                }"
-              >
-                ${subName === 'ALL' ? 'All Subjects' : subName}
-              </button>
-            `
-              )
-              .join('')}
-          </div>
+          ${
+            !isClassroomSection
+              ? `
+            <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              ${(['ALL', ...uniqueSubjectNames] as const)
+                .map(
+                  (subName) => `
+                <button
+                  type="button"
+                  data-action="filter-subject-name"
+                  data-subject="${subName}"
+                  class="min-h-[34px] px-3.5 py-1.5 rounded-xl text-xs font-bold transition-colors shrink-0 ${
+                    this.selectedSubjectName === subName
+                      ? 'bg-[#4F46E5] text-white shadow-2xs'
+                      : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-600 hover:bg-slate-100'
+                  }"
+                >
+                  ${subName === 'ALL' ? 'All Subjects' : subName}
+                </button>
+              `
+                )
+                .join('')}
+            </div>
+          `
+              : `<div class="text-xs font-extrabold text-teal-700">🎓 Dedicated Google Classroom Section</div>`
+          }
 
           <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
             ${sections
@@ -345,129 +383,143 @@ export class StudyVaultModule {
           </div>
         </section>
 
-        <!-- COMPACT-HEIGHT, WIDE HORIZONTAL PDF ROW LIST -->
-        <section
-          aria-label="Compact Wide Study Material PDF List"
-          data-testid="compact-pdf-list"
-          class="bg-white border border-[#E2E8F0] rounded-2xl p-3 sm:p-4 shadow-sm space-y-2"
-        >
-          <div class="flex items-center justify-between px-2 py-1 border-b border-slate-100">
-            <div class="flex items-center gap-2">
-              <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
-              <span class="text-xs font-extrabold text-slate-800">
-                ${this.escapeHtml(this.activeOpenedSection)} — Study Material PDFs
+        ${
+          isClassroomSection
+            ? `
+          <!-- DEDICATED GOOGLE CLASSROOM SECTION CONTENT -->
+          ${this.renderGoogleClassroomAndCalendarSyncHub()}
+        `
+            : `
+          <!-- COMPACT-HEIGHT, WIDE HORIZONTAL PDF ROW LIST -->
+          <section
+            aria-label="Compact Wide Study Material PDF List"
+            data-testid="compact-pdf-list"
+            class="bg-white border border-[#E2E8F0] rounded-2xl p-3 sm:p-4 shadow-sm space-y-2"
+          >
+            <div class="flex items-center justify-between px-2 py-1 border-b border-slate-100">
+              <div class="flex items-center gap-2">
+                <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+                <span class="text-xs font-extrabold text-slate-800">
+                  ${this.escapeHtml(this.activeOpenedSection)} — Study Material PDFs
+                </span>
+              </div>
+              <span class="text-[11px] font-mono-tabular text-slate-500">
+                ${filteredMaterials.length} PDFs
               </span>
             </div>
-            <span class="text-[11px] font-mono-tabular text-slate-500">
-              ${filteredMaterials.length} PDFs
-            </span>
-          </div>
 
-          ${
-            filteredMaterials.length === 0
-              ? `
-            <div class="p-8 text-center space-y-3">
-              <div class="text-sm font-bold text-slate-900">No PDFs uploaded in ${this.escapeHtml(this.activeOpenedSection)} yet</div>
-              <p class="text-xs text-slate-500 max-w-md mx-auto">
-                New verified ${this.escapeHtml(this.activeOpenedSection)} PDFs will appear here as soon as they are published, or you can import resources from Google Classroom below.
-              </p>
-              <button
-                type="button"
-                data-action="reset-vault-filters"
-                class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold"
-              >
-                Reset Section Filter
-              </button>
-            </div>
-          `
-              : `
-            <div class="divide-y divide-slate-100">
-              ${filteredMaterials
-                .map((mat, idx) => {
-                  const clsObj = classes.find((c) => c.id === mat.classId);
-                  const subObj = subjects.find((s) => s.id === mat.subjectId);
-                  const st = this.getSectionStyle(mat.section, idx);
-                  const subName = subObj?.name ?? 'Physics';
-                  const cohortLabel = mat.cohortTag || clsObj?.name || 'JEE';
+            ${
+              filteredMaterials.length === 0
+                ? `
+              <div class="p-8 text-center space-y-3">
+                <div class="text-sm font-bold text-slate-900">No PDFs uploaded in ${this.escapeHtml(this.activeOpenedSection)} yet</div>
+                <p class="text-xs text-slate-500 max-w-md mx-auto">
+                  New verified ${this.escapeHtml(this.activeOpenedSection)} PDFs will appear here as soon as they are published, or you can open the Google Classroom section to import resources.
+                </p>
+                <div class="flex items-center justify-center gap-2">
+                  <button
+                    type="button"
+                    data-action="open-section-folder"
+                    data-section="Google Classroom"
+                    class="min-h-[38px] px-4 py-1.5 rounded-xl bg-teal-600 text-white text-xs font-bold cursor-pointer"
+                  >
+                    Open Google Classroom Section →
+                  </button>
+                  <button
+                    type="button"
+                    data-action="reset-vault-filters"
+                    class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Reset Filter
+                  </button>
+                </div>
+              </div>
+            `
+                : `
+              <div class="divide-y divide-slate-100">
+                ${filteredMaterials
+                  .map((mat, idx) => {
+                    const clsObj = classes.find((c) => c.id === mat.classId);
+                    const subObj = subjects.find((s) => s.id === mat.subjectId);
+                    const st = this.getSectionStyle(mat.section, idx);
+                    const subName = subObj?.name ?? 'Physics';
+                    const cohortLabel = mat.cohortTag || clsObj?.name || 'JEE';
 
-                  return `
-                    <article
-                      data-testid="compact-pdf-row"
-                      class="py-2.5 px-2.5 sm:px-3.5 hover:bg-gradient-to-r hover:from-indigo-50/40 hover:to-emerald-50/30 rounded-xl transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                    >
-                      <!-- Left: Compact PDF Icon + Wide Title + Inline Badges -->
-                      <div class="flex items-center gap-3 min-w-0 flex-1">
-                        <div class="w-9 h-9 rounded-xl ${st.badge} flex items-center justify-center text-[10px] font-mono-tabular font-extrabold shrink-0 shadow-2xs">
-                          PDF
-                        </div>
-                        <div class="min-w-0 flex-1">
-                          <div class="flex items-center gap-2 flex-wrap">
-                            <h3 class="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
-                              ${this.escapeHtml(mat.title)}
-                            </h3>
+                    return `
+                      <article
+                        data-testid="compact-pdf-row"
+                        class="py-2.5 px-2.5 sm:px-3.5 hover:bg-gradient-to-r hover:from-indigo-50/40 hover:to-emerald-50/30 rounded-xl transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
+                      >
+                        <div class="flex items-center gap-3 min-w-0 flex-1">
+                          <div class="w-9 h-9 rounded-xl ${st.badge} flex items-center justify-center text-[10px] font-mono-tabular font-extrabold shrink-0 shadow-2xs">
+                            PDF
                           </div>
-                          <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] sm:text-[11px]">
-                            <span class="px-1.5 py-0.2 rounded font-bold bg-indigo-50 text-[#4F46E5]">
-                              ${this.escapeHtml(mat.section)}
-                            </span>
-                            <span class="px-1.5 py-0.2 rounded font-bold bg-emerald-50 text-[#10B981]">
-                              ${this.escapeHtml(subName)}
-                            </span>
-                            <span class="px-1.5 py-0.2 rounded font-semibold bg-amber-50 text-amber-800">
-                              ${this.escapeHtml(cohortLabel)}
-                            </span>
-                            <span class="text-slate-400 font-mono-tabular">
-                              · ${mat.pagesCount}p · ${mat.downloads} dl
-                            </span>
+                          <div class="min-w-0 flex-1">
+                            <div class="flex items-center gap-2 flex-wrap">
+                              <h3 class="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                                ${this.escapeHtml(mat.title)}
+                              </h3>
+                            </div>
+                            <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] sm:text-[11px]">
+                              <span class="px-1.5 py-0.2 rounded font-bold bg-indigo-50 text-[#4F46E5]">
+                                ${this.escapeHtml(mat.section)}
+                              </span>
+                              <span class="px-1.5 py-0.2 rounded font-bold bg-emerald-50 text-[#10B981]">
+                                ${this.escapeHtml(subName)}
+                              </span>
+                              <span class="px-1.5 py-0.2 rounded font-semibold bg-amber-50 text-amber-800">
+                                ${this.escapeHtml(cohortLabel)}
+                              </span>
+                              <span class="text-slate-400 font-mono-tabular">
+                                · ${mat.pagesCount}p · ${mat.downloads} dl
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
 
-                      <!-- Right: Compact Action Buttons (Preview & Download for Students; Edit PDF strictly for Master Admin) -->
-                      <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                        <button
-                          type="button"
-                          data-action="preview-material"
-                          data-material-id="${mat.id}"
-                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
-                        >
-                          Preview
-                        </button>
-                        ${
-                          isAdmin
-                            ? `
+                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
                           <button
                             type="button"
-                            data-action="open-edit-material"
+                            data-action="preview-material"
                             data-material-id="${mat.id}"
-                            data-testid="edit-pdf-material-btn"
-                            class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                            class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
                           >
-                            ✏️ Edit PDF
+                            Preview
                           </button>
-                        `
-                            : ''
-                        }
-                        <button
-                          type="button"
-                          data-action="download-material"
-                          data-material-id="${mat.id}"
-                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors cursor-pointer"
-                        >
-                          ⬇ PDF
-                        </button>
-                      </div>
-                    </article>
-                  `;
-                })
-                .join('')}
-            </div>
-          `
-          }
-        </section>
-
-        <!-- Google Classroom Resources & Assignment Connector + Google Calendar/Tasks Multi-Device Sync Hub -->
-        ${this.renderGoogleClassroomAndCalendarSyncHub()}
+                          ${
+                            isAdmin
+                              ? `
+                            <button
+                              type="button"
+                              data-action="open-edit-material"
+                              data-material-id="${mat.id}"
+                              data-testid="edit-pdf-material-btn"
+                              class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                            >
+                              ✏️ Edit PDF
+                            </button>
+                          `
+                              : ''
+                          }
+                          <button
+                            type="button"
+                            data-action="download-material"
+                            data-material-id="${mat.id}"
+                            class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors cursor-pointer"
+                          >
+                            ⬇ PDF
+                          </button>
+                        </div>
+                      </article>
+                    `;
+                  })
+                  .join('')}
+              </div>
+            `
+            }
+          </section>
+        `
+        }
 
         <!-- In-App Secure PDF Viewer Modal -->
         ${this.renderSecurePdfModal()}

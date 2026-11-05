@@ -27,40 +27,15 @@ const AVATAR_CHOICES = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=160&auto=format&fit=crop&q=80',
 ];
 
-interface PrepAiChatMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  text: string;
-  timestamp: string;
-}
-
 class PrepskmPlatformApp {
   private rootEl: HTMLElement;
   private activePage: PageId;
   private isProfileModalOpen = false;
+  private isXpRankModalOpen = false;
   private authModalReasonMessage = '';
   private isNotificationsOpen = false;
   private isMobile3DotMenuOpen = false;
   private isTabletRailExpanded = false;
-
-  // Floating Prep AI + Whiteboard Studio State
-  private isPrepAiModalOpen = false;
-  private prepAiActiveTab: 'ai' | 'whiteboard' = 'ai';
-  private prepAiMessages: PrepAiChatMessage[] = [
-    {
-      id: 'welcome_ai',
-      role: 'assistant',
-      text: 'Hi! I am Prep AI (powered by Gemini). Ask me any JEE Main, JEE Advanced, NEET, or Class 9–12 concept, formula shortcut, or study strategy—or switch to the Whiteboard tab to sketch diagrams and export your notes as a PDF!',
-      timestamp: 'Just now',
-    },
-  ];
-  private isPrepAiLoading = false;
-  private whiteboardNotesTitle = 'My Revision & Formula Notes';
-  private whiteboardNotesText = '';
-  private whiteboardPenColor = '#4F46E5';
-  private whiteboardPenSize = 3;
-  private whiteboardEraser = false;
-  private whiteboardDataUrl = '';
 
   // Floating Admin Pencil Live Website Customizer State (Master Admin Only)
   private isPencilModalOpen = false;
@@ -226,6 +201,7 @@ class PrepskmPlatformApp {
     const logoSrc = siteTheme.logoDataUrl || DEFAULT_BRAND_LOGO_SVG;
     const brandName = siteTheme.brandName || 'prepskm.in';
     const xpPoints = user.xpPoints ?? 0;
+    const rankAndLevel = dataStore.getStudentRankAndMonthlyLevel();
 
     const path = window.location.pathname.toLowerCase();
     const isLegacyLive = path.includes('live.html');
@@ -280,8 +256,8 @@ class PrepskmPlatformApp {
       },
       {
         id: 'mentorship',
-        label: 'PW Batches & Mentorship',
-        shortLabel: 'Batches',
+        label: 'Lectures & Mentorship',
+        shortLabel: 'Lectures',
         href: '/mentorship.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>`,
         accentDot: 'bg-rose-500',
@@ -293,7 +269,7 @@ class PrepskmPlatformApp {
       navItems[1], // Planner
       navItems[2], // Study
       navItems[3], // CBT Test
-      navItems[5], // PW Batches & Mentorship
+      navItems[5], // Lectures & Mentorship
     ];
 
     const cohortOptions = [
@@ -403,18 +379,6 @@ class PrepskmPlatformApp {
                 })
                 .join('')}
 
-              <button
-                type="button"
-                data-shell-action="open-prep-ai-modal"
-                class="w-full min-h-[42px] px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-bold bg-gradient-to-r from-indigo-50 to-violet-50 text-[#4F46E5] hover:from-indigo-100 hover:to-violet-100 border border-indigo-200 transition-all cursor-pointer"
-              >
-                <span class="flex items-center gap-3">
-                  <span>✨</span>
-                  <span>Prep AI & Whiteboard</span>
-                </span>
-                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-[#4F46E5] text-white">AI+PDF</span>
-              </button>
-
               ${
                 isMasterAdmin
                   ? `
@@ -444,20 +408,25 @@ class PrepskmPlatformApp {
 
           <!-- Quick Stats & User Card at Bottom of Desktop Sidebar -->
           <div class="space-y-3 pt-4 border-t border-slate-100">
-            <div class="p-3 rounded-xl bg-gradient-to-br from-indigo-50/70 via-white to-emerald-50/60 border border-[#E2E8F0] space-y-1.5">
+            <button
+              type="button"
+              data-shell-action="open-xp-rank-modal"
+              data-testid="sidebar-xp-rank-btn"
+              class="w-full p-3 rounded-xl bg-gradient-to-br from-indigo-50/80 via-white to-emerald-50/70 hover:from-indigo-100/70 border border-[#E2E8F0] space-y-1.5 text-left cursor-pointer transition-all"
+            >
               <div class="flex items-center justify-between text-xs">
                 <span class="font-semibold text-slate-600">Active Streak</span>
                 <span class="font-mono-tabular font-bold text-amber-600">🔥 ${user.currentStreak} Days</span>
               </div>
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-600">XP / HP Earned</span>
-                <span class="font-mono-tabular font-bold text-[#4F46E5]">⚡ ${xpPoints} XP</span>
+                <span class="font-semibold text-slate-600">XP & Rank</span>
+                <span class="font-mono-tabular font-bold text-[#4F46E5]">⚡ ${xpPoints} XP · #${rankAndLevel.currentUserRank}</span>
               </div>
               <div class="flex items-center justify-between text-[11px]">
-                <span class="font-medium text-slate-500">Task Reward</span>
-                <span class="font-bold text-[#10B981]">+${XP_PER_COMPLETED_TASK} XP / task</span>
+                <span class="font-medium text-slate-500">Monthly Level</span>
+                <span class="font-bold text-[#10B981]">Level ${rankAndLevel.level} (View Rank →)</span>
               </div>
-            </div>
+            </button>
 
             <button
               type="button"
@@ -473,10 +442,10 @@ class PrepskmPlatformApp {
               />
               <div class="min-w-0 flex-1">
                 <div class="text-xs font-bold text-slate-900 truncate">
-                  ${user.isGuest ? 'Sign Up / Log In' : this.escapeHtml(user.name)}
+                  ${user.isGuest ? 'Guest · Sign Up' : this.escapeHtml(user.name)}
                 </div>
                 <div class="text-[10px] font-mono-tabular text-slate-500 truncate">
-                  ${user.isGuest ? 'Click to create profile' : this.escapeHtml(user.email)}
+                  ${user.isGuest ? 'Continue as Guest or Sign Up' : this.escapeHtml(user.email)}
                 </div>
               </div>
             </button>
@@ -542,7 +511,7 @@ class PrepskmPlatformApp {
 
         <!-- MAIN CONTENT WRAPPER -->
         <div class="flex-1 flex flex-col md:pl-20 lg:pl-64 pb-20 md:pb-8">
-          <!-- Top App Header Bar with Streak & XP Badges -->
+          <!-- Top App Header Bar with Clickable Streak & XP Badges -->
           <header class="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-3 sm:px-6 lg:px-8 py-2">
             <div class="flex items-center justify-between gap-2 min-h-[44px]">
               <!-- Left: Mobile Logo + Desktop/Tablet Unified Cohort Selector -->
@@ -573,17 +542,19 @@ class PrepskmPlatformApp {
                 </div>
               </div>
 
-              <!-- Right: Top Streak + XP Badges + Notification Bell + Profile / Sign-Up CTA -->
+              <!-- Right: Clickable Streak + XP / Rank / Level Badge + Notification Bell + Profile CTA -->
               <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
-                <!-- Streak & XP / HP Counter Pills in Header -->
-                <div
+                <!-- Clickable Streak & XP / Rank / Level Counter Pill in Header -->
+                <button
+                  type="button"
+                  data-shell-action="open-xp-rank-modal"
                   data-testid="header-streak-xp-bar"
-                  class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-50 via-white to-indigo-50 border border-amber-200/80 shadow-2xs"
+                  title="Click to view Live Rank, Monthly Level, and Streak Status"
+                  class="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1 rounded-xl bg-gradient-to-r from-amber-50 via-white to-indigo-50 hover:from-amber-100 hover:to-indigo-100 border border-amber-200/90 shadow-2xs cursor-pointer transition-all"
                 >
                   <span
                     data-testid="header-streak-badge"
                     class="text-[11px] font-mono-tabular font-extrabold text-amber-700 flex items-center gap-0.5"
-                    title="Active Daily Study Streak"
                   >
                     🔥 ${user.currentStreak}d
                   </span>
@@ -591,11 +562,17 @@ class PrepskmPlatformApp {
                   <span
                     data-testid="header-xp-badge"
                     class="text-[11px] font-mono-tabular font-extrabold text-[#4F46E5] flex items-center gap-0.5"
-                    title="Total XP (+75 XP per completed To-Do task)"
                   >
                     ⚡ ${xpPoints} XP
                   </span>
-                </div>
+                  <span class="hidden sm:inline text-slate-300">|</span>
+                  <span
+                    data-testid="header-rank-level-badge"
+                    class="hidden sm:inline-flex text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200"
+                  >
+                    #${rankAndLevel.currentUserRank} · Lv.${rankAndLevel.level}
+                  </span>
+                </button>
 
                 ${
                   isMasterAdmin
@@ -650,7 +627,7 @@ class PrepskmPlatformApp {
                       </div>
                       ${
                         streakNotifications.length === 0
-                          ? `<p class="text-xs text-slate-500 py-2">No new alerts right now. Complete a To-Do task today to earn +${XP_PER_COMPLETED_TASK} XP!</p>`
+                          ? `<p class="text-xs text-slate-500 py-2">No new alerts right now. Complete a To-Do task today to earn +${XP_PER_COMPLETED_TASK} XP and extend your streak!</p>`
                           : streakNotifications
                               .slice(0, 3)
                               .map(
@@ -686,7 +663,7 @@ class PrepskmPlatformApp {
                     referrerpolicy="no-referrer"
                     class="w-5 h-5 rounded-full object-cover border border-white/50"
                   />
-                  <span>${user.isGuest ? 'Sign Up / Log In' : this.escapeHtml(user.name)}</span>
+                  <span>${user.isGuest ? 'Guest / Sign Up' : this.escapeHtml(user.name)}</span>
                 </button>
 
                 <!-- MOBILE 3-DOT MENU BUTTON (⋮) -->
@@ -721,7 +698,7 @@ class PrepskmPlatformApp {
                               ${user.isGuest ? 'Guest Student' : this.escapeHtml(user.name)}
                             </div>
                             <div class="text-[10px] font-mono-tabular text-[#4F46E5] font-bold">
-                              🔥 ${user.currentStreak}d Streak · ⚡ ${xpPoints} XP
+                              🔥 ${user.currentStreak}d · ⚡ ${xpPoints} XP · #${rankAndLevel.currentUserRank}
                             </div>
                           </div>
                         </div>
@@ -755,11 +732,11 @@ class PrepskmPlatformApp {
                       <div class="space-y-1 pt-1">
                         <button
                           type="button"
-                          data-shell-action="open-prep-ai-modal"
-                          class="w-full px-3 py-2 rounded-xl bg-indigo-50 text-xs font-extrabold text-[#4F46E5] flex items-center justify-between cursor-pointer"
+                          data-shell-action="open-xp-rank-modal"
+                          class="w-full px-3 py-2 rounded-xl bg-amber-50 text-xs font-extrabold text-amber-900 flex items-center justify-between cursor-pointer"
                         >
-                          <span>✨ Prep AI & Whiteboard</span>
-                          <span>Open →</span>
+                          <span>🏆 Rank #${rankAndLevel.currentUserRank} · Level ${rankAndLevel.level}</span>
+                          <span>View →</span>
                         </button>
                         <a
                           href="/planner.html"
@@ -831,18 +808,6 @@ class PrepskmPlatformApp {
             .join('')}
         </nav>
 
-        <!-- FLOATING PREP AI & INTERACTIVE WHITEBOARD STUDIO BUTTON (Visible to All Students) -->
-        <button
-          type="button"
-          data-shell-action="open-prep-ai-modal"
-          data-testid="floating-prep-ai-btn"
-          title="Open Floating Prep AI (Gemini) & Interactive Whiteboard (Export Notes as PDF)"
-          class="fixed bottom-16 md:bottom-6 right-4 z-40 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#4F46E5] via-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-xl border-2 border-white flex items-center gap-2 text-xs font-extrabold cursor-pointer transition-transform hover:scale-105"
-        >
-          <span class="text-base">✨</span>
-          <span>Prep AI & Whiteboard</span>
-        </button>
-
         ${
           isMasterAdmin
             ? `
@@ -860,11 +825,11 @@ class PrepskmPlatformApp {
             : ''
         }
 
-        <!-- Student Sign-Up / Profile Modal -->
+        <!-- Student Sign-Up / Simple Profile Modal -->
         ${this.renderProfileAndAuthModal()}
 
-        <!-- Floating Prep AI (Gemini) + Whiteboard PDF Studio Modal -->
-        ${this.renderPrepAiAndWhiteboardModal()}
+        <!-- XP, Live Rank, Monthly Level & Streak Extend/End Popup Modal -->
+        ${this.renderXpRankLevelModal()}
 
         <!-- Floating Admin Pencil Live Customizer Modal (Master Admin Only) -->
         ${isMasterAdmin ? this.renderAdminPencilModal() : ''}
@@ -904,401 +869,188 @@ class PrepskmPlatformApp {
 
     dataStore.applySiteThemeToDocument();
     this.bindShellEvents();
-    if (this.isPrepAiModalOpen && this.prepAiActiveTab === 'whiteboard') {
-      this.initWhiteboardCanvas();
-    }
   }
 
-  private renderPrepAiAndWhiteboardModal(): string {
-    if (!this.isPrepAiModalOpen) return '';
+  private renderXpRankLevelModal(): string {
+    if (!this.isXpRankModalOpen) return '';
     const user = dataStore.getUser();
+    const rankInfo = dataStore.getStudentRankAndMonthlyLevel();
 
     return `
       <div
-        id="prep-ai-whiteboard-modal"
-        data-testid="prep-ai-whiteboard-modal"
         role="dialog"
         aria-modal="true"
-        aria-label="Floating Prep AI and Whiteboard Studio"
-        class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+        aria-label="Live Rank, Monthly Level and Streak Status"
+        data-testid="xp-rank-level-modal"
+        class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
       >
-        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col overflow-hidden">
-          <!-- Header & 2-Tab Switcher -->
-          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 shrink-0">
-            <div class="flex items-center gap-2.5">
-              <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#4F46E5] to-violet-600 text-white flex items-center justify-center font-extrabold text-base shadow-sm">
-                ✨
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                🏆 Live Standings · Monthly Level · Streak Lifecycle
+              </span>
+              <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
+                Your Rank, XP & Monthly Level Progression
+              </h2>
+            </div>
+            <button
+              type="button"
+              data-shell-action="close-xp-rank-modal"
+              data-testid="close-xp-rank-modal-btn"
+              class="min-h-[34px] px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+            >
+              Close ✕
+            </button>
+          </div>
+
+          <!-- Top 3 Metric Cards: Live Rank, Monthly Level, Active Streak -->
+          <div class="grid grid-cols-3 gap-2.5">
+            <div class="p-3 rounded-xl bg-indigo-50/80 border border-indigo-200 text-center">
+              <div class="text-[10px] font-extrabold uppercase text-[#4F46E5]">Live Rank</div>
+              <div data-testid="modal-live-rank-val" class="text-xl font-mono-tabular font-extrabold text-slate-900 mt-0.5">
+                #${rankInfo.currentUserRank}
               </div>
-              <div>
-                <h2 class="text-sm sm:text-base font-extrabold text-slate-900">
-                  Prep AI Doubt Solver & Smart Whiteboard
-                </h2>
-                <p class="text-[11px] text-slate-500">
-                  Ask Gemini AI any JEE/NEET concept or sketch notes & export directly to PDF
-                </p>
+              <div class="text-[10px] text-slate-500 font-semibold">
+                of ${rankInfo.totalParticipants} Joined
               </div>
             </div>
 
-            <div class="flex items-center gap-2">
-              <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
-                <button
-                  type="button"
-                  data-shell-action="switch-prep-ai-tab"
-                  data-tab="ai"
-                  data-testid="tab-prep-ai-btn"
-                  class="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                    this.prepAiActiveTab === 'ai'
-                      ? 'bg-[#4F46E5] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }"
-                >
-                  🤖 Prep AI
-                </button>
-                <button
-                  type="button"
-                  data-shell-action="switch-prep-ai-tab"
-                  data-tab="whiteboard"
-                  data-testid="tab-whiteboard-btn"
-                  class="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
-                    this.prepAiActiveTab === 'whiteboard'
-                      ? 'bg-[#4F46E5] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }"
-                >
-                  🎨 Whiteboard & PDF
-                </button>
+            <div class="p-3 rounded-xl bg-emerald-50/80 border border-emerald-200 text-center">
+              <div class="text-[10px] font-extrabold uppercase text-emerald-700">Monthly Level</div>
+              <div data-testid="modal-monthly-level-val" class="text-xl font-mono-tabular font-extrabold text-emerald-900 mt-0.5">
+                Level ${rankInfo.level}
               </div>
+              <div class="text-[10px] text-emerald-700 font-bold">
+                ${rankInfo.eligibleForMonthlyPromotion ? 'Top 20 → +1 Lv/Mo' : 'Rank 1–20 → +1 Lv'}
+              </div>
+            </div>
+
+            <div class="p-3 rounded-xl bg-amber-50/80 border border-amber-200 text-center">
+              <div class="text-[10px] font-extrabold uppercase text-amber-700">Study Streak</div>
+              <div data-testid="modal-streak-days-val" class="text-xl font-mono-tabular font-extrabold text-amber-900 mt-0.5">
+                🔥 ${user.currentStreak}d
+              </div>
+              <div class="text-[10px] text-amber-800 font-semibold">
+                ⚡ ${rankInfo.xpPoints} XP
+              </div>
+            </div>
+          </div>
+
+          <!-- Monthly Level Promotion Rule Banner -->
+          <div class="p-3.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white space-y-1 shadow-xs">
+            <div class="flex items-center justify-between text-xs font-extrabold">
+              <span>📈 Monthly Level-Up Rule (Rank #1 to #20)</span>
+              <span class="px-2 py-0.5 rounded-full bg-white/20 text-[10px]">Next: Level ${rankInfo.nextLevelAfterMonth}</span>
+            </div>
+            <p class="text-[11px] text-indigo-100 leading-relaxed">
+              ${this.escapeHtml(rankInfo.ruleSummary)}
+            </p>
+          </div>
+
+          <!-- Streak Extend & End Lifecycle Controls -->
+          <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5">
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-xs font-extrabold text-slate-900">
+                  🔥 Streak Lifecycle (Extend or End)
+                </div>
+                <p class="text-[11px] text-slate-500">
+                  ${this.escapeHtml(rankInfo.streakEval.statusMessage)}
+                </p>
+              </div>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
-                data-shell-action="close-prep-ai-modal"
-                class="min-h-[34px] px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+                data-shell-action="streak-extend-day"
+                data-testid="streak-extend-btn"
+                class="flex-1 min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-extrabold cursor-pointer transition-colors"
               >
-                ✕
+                🔥 Extend Streak (+1 Day)
+              </button>
+              <button
+                type="button"
+                data-shell-action="streak-end-reset"
+                data-testid="streak-end-btn"
+                class="flex-1 min-h-[36px] px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-xs font-extrabold cursor-pointer transition-colors"
+              >
+                ⏹️ End Streak (Reset to 0d)
               </button>
             </div>
           </div>
 
-          ${
-            this.prepAiActiveTab === 'ai'
-              ? `
-            <!-- TAB 1: PREP AI (GEMINI) -->
-            <div class="flex-1 flex flex-col min-h-0 space-y-3 overflow-hidden">
-              <!-- Quick Prompt Chips -->
-              <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 shrink-0">
-                ${[
-                  'Explain Rotational Rolling Motion & IAOR shortcuts',
-                  'Important Organic Chemistry Named Reactions for JEE/NEET',
-                  'How to increase Mock Test score from 120 to 200+?',
-                  'Electrostatics Gauss Law & Capacitor formula summary',
-                ]
-                  .map(
-                    (chip) => `
-                  <button
-                    type="button"
-                    data-shell-action="prep-ai-quick-prompt"
-                    data-prompt="${this.escapeHtml(chip)}"
-                    class="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[#4F46E5] text-[11px] font-bold whitespace-nowrap cursor-pointer shrink-0"
-                  >
-                    ✦ ${this.escapeHtml(chip)}
-                  </button>
-                `
-                  )
-                  .join('')}
-              </div>
-
-              <!-- Chat History Scroll Box -->
-              <div
-                id="prep-ai-chat-scroll"
-                data-testid="prep-ai-chat-messages"
-                class="flex-1 overflow-y-auto p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 min-h-[260px] max-h-[360px]"
-              >
-                ${this.prepAiMessages
-                  .map(
-                    (msg) => `
-                  <div class="flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}">
-                    <div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
-                      msg.role === 'user'
-                        ? 'bg-[#4F46E5] text-white font-semibold'
-                        : 'bg-white border border-[#E2E8F0] text-slate-800 shadow-2xs whitespace-pre-line'
-                    }">
-                      <div class="flex items-center justify-between gap-3 mb-1 text-[10px] ${
-                        msg.role === 'user' ? 'text-indigo-100' : 'text-[#4F46E5] font-extrabold'
-                      }">
-                        <span>${msg.role === 'user' ? this.escapeHtml(user.name) : '✨ Prep AI · Gemini'}</span>
-                        <span>${this.escapeHtml(msg.timestamp)}</span>
-                      </div>
-                      <div>${this.escapeHtml(msg.text)}</div>
-                    </div>
-                  </div>
-                `
-                  )
-                  .join('')}
-                ${
-                  this.isPrepAiLoading
-                    ? `
-                  <div class="flex justify-start">
-                    <div class="rounded-2xl px-4 py-2.5 bg-white border border-indigo-200 text-xs font-bold text-[#4F46E5] animate-pulse">
-                      ✨ Prep AI is solving your doubt...
-                    </div>
-                  </div>
-                `
-                    : ''
-                }
-              </div>
-
-              <!-- Prompt Input Form -->
-              <form id="prep-ai-form" class="flex items-center gap-2 shrink-0">
-                <input
-                  id="prep-ai-input"
-                  data-testid="prep-ai-input"
-                  type="text"
-                  required
-                  placeholder="Ask any Physics, Chemistry, Math, or Biology doubt..."
-                  class="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-[#4F46E5]"
-                />
-                <button
-                  type="submit"
-                  data-testid="prep-ai-send-btn"
-                  ${this.isPrepAiLoading ? 'disabled' : ''}
-                  class="min-h-[42px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm cursor-pointer shrink-0"
-                >
-                  ${this.isPrepAiLoading ? 'Thinking...' : 'Ask Prep AI →'}
-                </button>
-              </form>
+          <!-- Live Leaderboard Standings (Guest vs Signed-Up Visibility Rule) -->
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <h3 class="text-xs font-extrabold uppercase tracking-wider text-slate-700">
+                Live Leaderboard (${rankInfo.totalParticipants} Real Joined)
+              </h3>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                user.isGuest
+                  ? 'bg-amber-100 text-amber-800'
+                  : 'bg-emerald-100 text-emerald-800'
+              }">
+                ${user.isGuest ? 'Guest Preview (Visible Only to You)' : 'Public Verified Standings'}
+              </span>
             </div>
-          `
-              : `
-            <!-- TAB 2: INTERACTIVE WHITEBOARD & EXPORT NOTES AS PDF -->
-            <div class="flex-1 flex flex-col min-h-0 space-y-3 overflow-y-auto">
-              <!-- Whiteboard Toolbar -->
-              <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[11px] font-bold text-slate-600 mr-1">Pen:</span>
-                  ${[
-                    { color: '#4F46E5', label: 'Indigo' },
-                    { color: '#0F172A', label: 'Black' },
-                    { color: '#EF4444', label: 'Red' },
-                    { color: '#10B981', label: 'Green' },
-                    { color: '#F59E0B', label: 'Amber' },
-                  ]
-                    .map(
-                      (sw) => `
-                    <button
-                      type="button"
-                      data-shell-action="set-wb-color"
-                      data-color="${sw.color}"
-                      title="${sw.label}"
-                      class="w-6 h-6 rounded-full border-2 cursor-pointer ${
-                        !this.whiteboardEraser && this.whiteboardPenColor === sw.color
-                          ? 'border-slate-900 scale-110'
-                          : 'border-white shadow-2xs'
-                      }"
-                      style="background-color: ${sw.color}"
-                    ></button>
-                  `
-                    )
-                    .join('')}
-                  <button
-                    type="button"
-                    data-shell-action="toggle-wb-eraser"
-                    class="px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
-                      this.whiteboardEraser
-                        ? 'bg-slate-900 text-white border-slate-900'
-                        : 'bg-white text-slate-700 border-slate-200'
-                    }"
-                  >
-                    🧹 Eraser
-                  </button>
-                  <button
-                    type="button"
-                    data-shell-action="clear-wb-canvas"
-                    class="px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 border border-red-200 text-[11px] font-bold cursor-pointer"
-                  >
-                    🗑️ Clear Board
-                  </button>
-                </div>
 
+            ${
+              user.isGuest
+                ? `
+              <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 font-semibold flex items-center justify-between gap-2">
+                <span>You are viewing as <strong>Guest</strong>. Your rank is visible only on your device and hidden from other students until you Sign Up.</span>
                 <button
                   type="button"
-                  data-shell-action="export-whiteboard-pdf"
-                  data-testid="export-whiteboard-pdf-btn"
-                  class="px-3.5 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  data-shell-action="open-profile-modal"
+                  class="shrink-0 px-2.5 py-1 rounded-lg bg-[#4F46E5] text-white text-[10px] font-extrabold cursor-pointer"
                 >
-                  <span>⬇ Save & Download Notes as PDF</span>
+                  Sign Up →
                 </button>
               </div>
+            `
+                : ''
+            }
 
-              <!-- Whiteboard Canvas + Text Notes Split -->
-              <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
-                <div class="lg:col-span-7 flex flex-col space-y-1.5">
-                  <div class="text-[11px] font-bold text-slate-600 flex items-center justify-between">
-                    <span>✏️ Freehand Diagram & Formula Whiteboard</span>
-                    <span class="text-[10px] text-slate-400">Draw with mouse or touch</span>
+            <div class="divide-y divide-slate-100 border border-[#E2E8F0] rounded-xl overflow-hidden bg-white">
+              ${rankInfo.top10
+                .map((entry) => {
+                  const isMe = entry.uid === user.uid;
+                  return `
+                  <div class="px-3.5 py-2.5 flex items-center justify-between text-xs ${
+                    isMe ? 'bg-indigo-50/70 font-extrabold' : ''
+                  }">
+                    <div class="flex items-center gap-2.5 min-w-0">
+                      <span class="w-6 h-6 rounded-lg ${
+                        entry.rank === 1
+                          ? 'bg-amber-400 text-slate-950'
+                          : entry.rank <= 3
+                            ? 'bg-indigo-100 text-[#4F46E5]'
+                            : 'bg-slate-100 text-slate-700'
+                      } font-mono-tabular font-extrabold flex items-center justify-center text-[11px] shrink-0">
+                        #${entry.rank}
+                      </span>
+                      <div class="truncate">
+                        <span class="text-slate-900">${this.escapeHtml(entry.name)}</span>
+                        ${isMe ? `<span class="ml-1 text-[10px] text-[#4F46E5]">(You)</span>` : ''}
+                        <div class="text-[10px] text-slate-500 font-semibold">
+                          ${entry.targetExam} · Lv.${entry.monthlyLevel ?? 1} · 🔥 ${entry.currentStreak}d
+                        </div>
+                      </div>
+                    </div>
+                    <div class="text-right font-mono-tabular shrink-0">
+                      <div class="font-extrabold text-[#4F46E5]">${entry.compositePoints} pts</div>
+                      <div class="text-[10px] text-slate-500">⚡ ${entry.xpPoints ?? 0} XP</div>
+                    </div>
                   </div>
-                  <div class="rounded-xl border-2 border-indigo-200 bg-white overflow-hidden shadow-inner">
-                    <canvas
-                      id="prep-whiteboard-canvas"
-                      data-testid="prep-whiteboard-canvas"
-                      width="520"
-                      height="260"
-                      class="w-full h-[230px] bg-white cursor-crosshair touch-none"
-                    ></canvas>
-                  </div>
-                </div>
-
-                <div class="lg:col-span-5 flex flex-col space-y-2">
-                  <div>
-                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Note Title</label>
-                    <input
-                      id="wb-notes-title"
-                      type="text"
-                      value="${this.escapeHtml(this.whiteboardNotesTitle)}"
-                      placeholder="e.g., Rotational Mechanics Formula Sheet"
-                      class="w-full min-h-[36px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-900"
-                    />
-                  </div>
-                  <div class="flex-1 flex flex-col">
-                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Written Notes & Key Formulas</label>
-                    <textarea
-                      id="wb-notes-textarea"
-                      data-testid="wb-notes-textarea"
-                      rows="7"
-                      placeholder="Write your lecture notes, derivations, or key points here. Click 'Save & Download Notes as PDF' to export both your whiteboard drawing and written notes!"
-                      class="w-full flex-1 p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-slate-900 leading-relaxed focus:outline-none focus:border-[#4F46E5]"
-                    >${this.escapeHtml(this.whiteboardNotesText)}</textarea>
-                  </div>
-                </div>
-              </div>
+                `;
+                })
+                .join('')}
             </div>
-          `
-          }
+          </div>
         </div>
       </div>
     `;
-  }
-
-  private initWhiteboardCanvas(): void {
-    const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
-    if (!canvas) return;
-    const ctx = canvas.getContext('2d');
-    if (!ctx) return;
-
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-    if (this.whiteboardDataUrl) {
-      const img = new Image();
-      img.onload = () => {
-        ctx.drawImage(img, 0, 0);
-      };
-      img.src = this.whiteboardDataUrl;
-    }
-
-    let drawing = false;
-    const getPos = (e: MouseEvent | TouchEvent) => {
-      const rect = canvas.getBoundingClientRect();
-      const clientX = 'touches' in e ? e.touches[0]?.clientX ?? 0 : e.clientX;
-      const clientY = 'touches' in e ? e.touches[0]?.clientY ?? 0 : e.clientY;
-      return {
-        x: ((clientX - rect.left) / rect.width) * canvas.width,
-        y: ((clientY - rect.top) / rect.height) * canvas.height,
-      };
-    };
-
-    const startDraw = (e: MouseEvent | TouchEvent) => {
-      drawing = true;
-      const pos = getPos(e);
-      ctx.beginPath();
-      ctx.moveTo(pos.x, pos.y);
-    };
-
-    const moveDraw = (e: MouseEvent | TouchEvent) => {
-      if (!drawing) return;
-      if ('touches' in e) e.preventDefault();
-      const pos = getPos(e);
-      ctx.lineCap = 'round';
-      ctx.lineJoin = 'round';
-      ctx.strokeStyle = this.whiteboardEraser ? '#FFFFFF' : this.whiteboardPenColor;
-      ctx.lineWidth = this.whiteboardEraser ? 18 : this.whiteboardPenSize;
-      ctx.lineTo(pos.x, pos.y);
-      ctx.stroke();
-    };
-
-    const endDraw = () => {
-      if (!drawing) return;
-      drawing = false;
-      ctx.closePath();
-      this.whiteboardDataUrl = canvas.toDataURL('image/png');
-    };
-
-    canvas.addEventListener('mousedown', startDraw);
-    canvas.addEventListener('mousemove', moveDraw);
-    window.addEventListener('mouseup', endDraw);
-    canvas.addEventListener('touchstart', startDraw, { passive: false });
-    canvas.addEventListener('touchmove', moveDraw, { passive: false });
-    canvas.addEventListener('touchend', endDraw);
-  }
-
-  private exportWhiteboardAndNotesAsPdf(): void {
-    const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
-    if (canvas) {
-      this.whiteboardDataUrl = canvas.toDataURL('image/png');
-    }
-    const titleInput = this.rootEl.querySelector<HTMLInputElement>('#wb-notes-title');
-    const notesInput = this.rootEl.querySelector<HTMLTextAreaElement>('#wb-notes-textarea');
-    if (titleInput) this.whiteboardNotesTitle = titleInput.value.trim() || 'My Study Notes';
-    if (notesInput) this.whiteboardNotesText = notesInput.value;
-
-    const user = dataStore.getUser();
-    const safeTitle = this.whiteboardNotesTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
-
-    // Generate a real minimalist PDF 1.4 binary containing the note title, student details, and written notes
-    const lines = [
-      `prepskm.in — Smart Whiteboard & Study Notes PDF`,
-      `Title: ${this.whiteboardNotesTitle}`,
-      `Student: ${user.name} (${user.classYear} - ${user.targetExam})`,
-      `Date: ${new Date().toLocaleDateString()}`,
-      `------------------------------------------------------------`,
-      ...(this.whiteboardNotesText || 'Whiteboard diagram & formula summary attached.')
-        .split('\n')
-        .map((l) => l.slice(0, 85)),
-    ];
-
-    const escapedLines = lines.map((line) =>
-      line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
-    );
-    const textOps = escapedLines
-      .map((line, idx) => `1 0 0 1 45 ${760 - idx * 18} Tm (${line}) Tj`)
-      .join('\n');
-
-    const streamContent = `BT\n/F1 11 Tf\n${textOps}\nET`;
-    const pdfContent = [
-      '%PDF-1.4',
-      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
-      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
-      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
-      `4 0 obj << /Length ${streamContent.length} >> stream\n${streamContent}\nendstream endobj`,
-      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
-      'xref',
-      '0 6',
-      '0000000000 65535 f ',
-      'trailer << /Size 6 /Root 1 0 R >>',
-      'startxref',
-      '0',
-      '%%EOF',
-    ].join('\n');
-
-    const blob = new Blob([pdfContent], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${safeTitle}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-
-    this.showToast(`Downloaded "${this.whiteboardNotesTitle}.pdf" to your device!`);
   }
 
   private renderAdminPencilModal(): string {
@@ -1449,7 +1201,6 @@ class PrepskmPlatformApp {
   private renderProfileAndAuthModal(): string {
     if (!this.isProfileModalOpen) return '';
     const user = dataStore.getUser();
-    const cohortTheme = getCohortTheme(user.targetExam, user.classYear);
 
     return `
       <div
@@ -1459,14 +1210,14 @@ class PrepskmPlatformApp {
         data-testid="student-profile-modal"
         class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
       >
-        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-5 max-h-[90vh] overflow-y-auto">
           <div class="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <span class="text-xs font-bold uppercase tracking-wider text-[#4F46E5]">
-                ${user.isGuest ? 'Create Your Student Account' : 'Verified Student Profile'}
+                ${user.isGuest ? 'Welcome to prepskm.in' : 'Your Student Profile'}
               </span>
               <h2 class="text-lg font-extrabold text-slate-900">
-                ${user.isGuest ? 'Sign Up / Log In to Save Your Progress' : `Welcome, ${this.escapeHtml(user.name)}`}
+                ${user.isGuest ? 'Continue as Guest or Sign Up' : `${this.escapeHtml(user.name)}`}
               </h2>
             </div>
             <button
@@ -1492,234 +1243,252 @@ class PrepskmPlatformApp {
               : ''
           }
 
-          <!-- Account Status & Google Sign-In Card -->
-          <div class="p-4 rounded-2xl bg-gradient-to-r ${cohortTheme.gradientClass} text-white space-y-3 shadow-sm">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <div class="flex items-center gap-3">
+          ${
+            user.isGuest
+              ? `
+            <!-- GUEST MODE: Simple Continue as Guest OR Sign Up with Gmail -->
+            <div class="space-y-4">
+              <button
+                type="button"
+                data-shell-action="google-signin"
+                data-testid="google-signin-btn"
+                class="w-full min-h-[44px] px-4 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white shadow-sm flex items-center justify-center gap-2.5 text-xs sm:text-sm font-extrabold transition-all cursor-pointer"
+              >
+                <span>Continue with Google (Auto-Fill Gmail & Name)</span>
+              </button>
+
+              <div class="relative flex py-1 items-center">
+                <div class="flex-grow border-t border-slate-200"></div>
+                <span class="flex-shrink mx-3 text-[11px] font-bold text-slate-400 uppercase">Or Sign Up with Gmail</span>
+                <div class="flex-grow border-t border-slate-200"></div>
+              </div>
+
+              <form id="profile-update-form" class="space-y-3.5">
+                <div>
+                  <label for="prof-email-input" class="block text-xs font-bold text-slate-700 mb-1">
+                    Your Gmail Address
+                  </label>
+                  <input
+                    id="prof-email-input"
+                    data-testid="prof-email-input"
+                    type="email"
+                    required
+                    placeholder="yourname@gmail.com"
+                    value=""
+                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label for="prof-name-input" class="block text-xs font-bold text-slate-700 mb-1">
+                    Your Name (Optional — defaults to Gmail name)
+                  </label>
+                  <input
+                    id="prof-name-input"
+                    data-testid="prof-name-input"
+                    type="text"
+                    placeholder="e.g., Rahul Verma"
+                    value=""
+                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+                  />
+                </div>
+
+                <div class="grid grid-cols-2 gap-2.5">
+                  <div>
+                    <label for="prof-class-select" class="block text-xs font-bold text-slate-700 mb-1">
+                      Class
+                    </label>
+                    <select
+                      id="prof-class-select"
+                      class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-800"
+                    >
+                      ${(
+                        [
+                          'Class 12',
+                          'Class 11',
+                          'Dropper',
+                          'Class 11 Foundation',
+                          'Class 10 Foundation',
+                          'Class 10',
+                          'Class 9',
+                        ] as const
+                      )
+                        .map(
+                          (c) =>
+                            `<option value="${c}" ${user.classYear === c ? 'selected' : ''}>${c}</option>`
+                        )
+                        .join('')}
+                    </select>
+                  </div>
+                  <div>
+                    <label for="prof-exam-select" class="block text-xs font-bold text-slate-700 mb-1">
+                      Target Exam
+                    </label>
+                    <select
+                      id="prof-exam-select"
+                      class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-800"
+                    >
+                      <option value="JEE" ${user.targetExam === 'JEE' ? 'selected' : ''}>JEE</option>
+                      <option value="NEET" ${user.targetExam === 'NEET' ? 'selected' : ''}>NEET</option>
+                    </select>
+                  </div>
+                </div>
+
+                <button
+                  type="submit"
+                  data-testid="save-signup-profile-btn"
+                  class="w-full min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer"
+                >
+                  Sign Up & Save Profile →
+                </button>
+              </form>
+
+              <button
+                type="button"
+                data-shell-action="continue-as-guest"
+                data-testid="continue-as-guest-btn"
+                class="w-full min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold cursor-pointer"
+              >
+                Continue as Guest
+              </button>
+            </div>
+          `
+              : `
+            <!-- SIGNED-IN PROFILE: Only Name, Picture & Class -->
+            <div class="p-3.5 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3 min-w-0">
                 <img
                   src="${user.photoURL}"
                   alt="${this.escapeHtml(user.name)}"
                   referrerpolicy="no-referrer"
-                  class="w-14 h-14 rounded-full object-cover border-2 border-white shadow-md"
+                  class="w-12 h-12 rounded-full object-cover border-2 border-white shadow-sm shrink-0"
                 />
-                <div>
-                  <div class="flex items-center gap-1.5">
-                    <span class="text-sm font-extrabold">${this.escapeHtml(user.name)}</span>
-                    <span class="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-extrabold">
-                      ${!user.isGuest ? (dataStore.isMasterAdmin() ? '👑 Owner Admin' : '✓ Signed In') : 'Guest'}
-                    </span>
+                <div class="min-w-0">
+                  <div class="text-sm font-extrabold text-slate-900 truncate">
+                    ${this.escapeHtml(user.name)}
                   </div>
-                  <div class="text-xs font-mono-tabular text-white/85">
-                    ${user.isGuest ? 'Sign up below with your Gmail' : this.escapeHtml(user.email)}
-                  </div>
-                  <div class="text-[11px] font-bold text-white/90 mt-0.5">
-                    🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} XP
+                  <div class="text-xs font-mono-tabular text-slate-600 truncate">
+                    ${this.escapeHtml(user.email)}
                   </div>
                 </div>
               </div>
-
-              ${
-                !user.isGuest
-                  ? `
-                <button
-                  type="button"
-                  data-shell-action="signout-user"
-                  class="min-h-[34px] px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold cursor-pointer"
-                >
-                  Sign Out
-                </button>
-              `
-                  : ''
-              }
+              <button
+                type="button"
+                data-shell-action="signout-user"
+                class="shrink-0 min-h-[34px] px-3 py-1.5 rounded-xl bg-white hover:bg-rose-50 text-rose-600 border border-rose-200 text-xs font-bold cursor-pointer"
+              >
+                Sign Out
+              </button>
             </div>
 
-            <button
-              type="button"
-              data-shell-action="google-signin"
-              data-testid="google-signin-btn"
-              class="w-full min-h-[40px] px-4 py-2 rounded-xl bg-white text-slate-900 hover:bg-slate-50 shadow-2xs flex items-center justify-center gap-2.5 text-xs font-extrabold transition-all cursor-pointer"
-            >
-              <span>${user.isGuest ? 'Continue with Google Account' : 'Switch / Reconnect Google Account'}</span>
-            </button>
-          </div>
+            <form id="profile-update-form" class="space-y-4">
+              <input
+                id="prof-email-input"
+                type="hidden"
+                value="${this.escapeHtml(user.email)}"
+              />
 
-          <!-- Sign-Up & Profile Update Form -->
-          <form id="profile-update-form" class="space-y-4">
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label for="prof-name-input" class="block text-xs font-bold text-slate-700 mb-1">
-                  Your Full Name (As on Gmail)
+                  1. Your Name
                 </label>
                 <input
                   id="prof-name-input"
                   data-testid="prof-name-input"
                   type="text"
                   required
-                  placeholder="e.g., Rahul Verma"
-                  value="${user.isGuest ? '' : this.escapeHtml(user.name)}"
+                  value="${this.escapeHtml(user.name)}"
                   class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
                 />
               </div>
 
-              <div>
-                <label for="prof-email-input" class="block text-xs font-bold text-slate-700 mb-1">
-                  Gmail / Email Address
+              <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                <label for="prof-custom-photo-input" class="block text-xs font-bold text-slate-700">
+                  2. Profile Picture
                 </label>
                 <input
-                  id="prof-email-input"
-                  data-testid="prof-email-input"
-                  type="email"
-                  required
-                  placeholder="yourname@gmail.com"
-                  value="${user.isGuest ? '' : this.escapeHtml(user.email)}"
-                  class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+                  id="prof-custom-photo-input"
+                  data-testid="upload-profile-photo-input"
+                  type="file"
+                  accept="image/*"
+                  class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-[#4F46E5] file:text-white cursor-pointer"
                 />
-              </div>
-            </div>
-
-            <!-- Class Cohort & Exam -->
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label for="prof-class-select" class="block text-xs font-bold text-slate-700 mb-1">
-                  Class / Batch Cohort
-                </label>
-                <select
-                  id="prof-class-select"
-                  class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
-                >
-                  ${(
-                    [
-                      'Class 12',
-                      'Class 11',
-                      'Dropper',
-                      'Class 11 Foundation',
-                      'Class 10 Foundation',
-                      'Class 10',
-                      'Class 9',
-                    ] as const
-                  )
-                    .map(
-                      (c) =>
-                        `<option value="${c}" ${user.classYear === c ? 'selected' : ''}>${c}</option>`
-                    )
-                    .join('')}
-                </select>
+                <div class="flex items-center gap-2 pt-1">
+                  <span class="text-[11px] text-slate-500 font-semibold">Or choose avatar:</span>
+                  ${AVATAR_CHOICES.map(
+                    (url) => `
+                    <button
+                      type="button"
+                      data-shell-action="select-avatar"
+                      data-avatar="${url}"
+                      class="w-8 h-8 rounded-full overflow-hidden border-2 transition-transform cursor-pointer ${
+                        user.photoURL === url
+                          ? 'border-[#4F46E5] scale-110'
+                          : 'border-[#E2E8F0]'
+                      }"
+                    >
+                      <img src="${url}" alt="Avatar option" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
+                    </button>
+                  `
+                  ).join('')}
+                </div>
               </div>
 
-              <div>
-                <label for="prof-exam-select" class="block text-xs font-bold text-slate-700 mb-1">
-                  Target Exam (JEE / NEET)
-                </label>
-                <select
-                  id="prof-exam-select"
-                  class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
-                >
-                  <option value="JEE" ${user.targetExam === 'JEE' ? 'selected' : ''}>JEE 2027</option>
-                  <option value="NEET" ${user.targetExam === 'NEET' ? 'selected' : ''}>NEET 2027</option>
-                </select>
-              </div>
-            </div>
-
-            <!-- Custom Personal Photo Upload + Preset Avatars -->
-            <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5">
-              <div class="flex items-center justify-between">
-                <label for="prof-custom-photo-input" class="text-xs font-extrabold text-slate-800">
-                  📸 Profile Photo (Optional)
-                </label>
-              </div>
-              <input
-                id="prof-custom-photo-input"
-                data-testid="upload-profile-photo-input"
-                type="file"
-                accept="image/*"
-                class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-[#4F46E5] file:text-white cursor-pointer"
-              />
-              <div class="flex items-center gap-2.5 pt-1">
-                <span class="text-[11px] text-slate-500 font-semibold">Or pick avatar:</span>
-                ${AVATAR_CHOICES.map(
-                  (url) => `
-                  <button
-                    type="button"
-                    data-shell-action="select-avatar"
-                    data-avatar="${url}"
-                    class="w-9 h-9 rounded-full overflow-hidden border-2 transition-transform cursor-pointer ${
-                      user.photoURL === url
-                        ? 'border-[#4F46E5] scale-110'
-                        : 'border-[#E2E8F0]'
-                    }"
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label for="prof-class-select" class="block text-xs font-bold text-slate-700 mb-1">
+                    3. Your Class
+                  </label>
+                  <select
+                    id="prof-class-select"
+                    class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-800"
                   >
-                    <img src="${url}" alt="Avatar option" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
-                  </button>
-                `
-                ).join('')}
-              </div>
-            </div>
+                    ${(
+                      [
+                        'Class 12',
+                        'Class 11',
+                        'Dropper',
+                        'Class 11 Foundation',
+                        'Class 10 Foundation',
+                        'Class 10',
+                        'Class 9',
+                      ] as const
+                    )
+                      .map(
+                        (c) =>
+                          `<option value="${c}" ${user.classYear === c ? 'selected' : ''}>${c}</option>`
+                      )
+                      .join('')}
+                  </select>
+                </div>
 
-            <div class="pt-2 flex flex-wrap items-center justify-end gap-2">
+                <div>
+                  <label for="prof-exam-select" class="block text-xs font-bold text-slate-700 mb-1">
+                    Exam Stream
+                  </label>
+                  <select
+                    id="prof-exam-select"
+                    class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-800"
+                  >
+                    <option value="JEE" ${user.targetExam === 'JEE' ? 'selected' : ''}>JEE</option>
+                    <option value="NEET" ${user.targetExam === 'NEET' ? 'selected' : ''}>NEET</option>
+                  </select>
+                </div>
+              </div>
+
               <button
                 type="submit"
                 data-testid="save-signup-profile-btn"
                 class="w-full min-h-[44px] px-6 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer"
               >
-                ${user.isGuest ? 'Complete Sign Up & Save Profile →' : 'Update Profile →'}
+                Save Profile Changes →
               </button>
-            </div>
-          </form>
+            </form>
+          `
+          }
         </div>
       </div>
     `;
-  }
-
-  private async submitPrepAiPrompt(promptText: string): Promise<void> {
-    const clean = promptText.trim();
-    if (!clean || this.isPrepAiLoading) return;
-
-    const user = dataStore.getUser();
-    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    this.prepAiMessages.push({
-      id: `user_${Date.now()}`,
-      role: 'user',
-      text: clean,
-      timestamp: nowTime,
-    });
-    this.isPrepAiLoading = true;
-    this.renderShell();
-
-    try {
-      const res = await fetch('/api/gemini/prep-ai', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          prompt: clean,
-          targetExam: user.targetExam,
-          classYear: user.classYear,
-        }),
-      });
-      const data = (await res.json()) as { answer?: string };
-      this.prepAiMessages.push({
-        id: `ai_${Date.now()}`,
-        role: 'assistant',
-        text:
-          data.answer ||
-          'Break this chapter into NCERT/core theory first, then solve 25 past-year questions with a strict timer.',
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      });
-    } catch {
-      this.prepAiMessages.push({
-        id: `ai_${Date.now()}`,
-        role: 'assistant',
-        text: `Here is your structured ${user.targetExam} solution strategy:\n1. Identify the conservation law or core formula first.\n2. Write dimensional units and boundary conditions.\n3. Solve 15 PYQs from this topic in the CBT Engine.`,
-        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-      });
-    } finally {
-      this.isPrepAiLoading = false;
-      this.renderShell();
-      const scrollBox = this.rootEl.querySelector<HTMLElement>('#prep-ai-chat-scroll');
-      if (scrollBox) {
-        scrollBox.scrollTop = scrollBox.scrollHeight;
-      }
-    }
   }
 
   private bindShellEvents(): void {
@@ -1731,26 +1500,6 @@ class PrepskmPlatformApp {
         window.history.pushState({}, '', link.getAttribute('href') || '/index.html');
         this.navigateToPage(targetPage);
       });
-    });
-
-    // Prep AI Chat Form
-    const prepAiForm = this.rootEl.querySelector<HTMLFormElement>('#prep-ai-form');
-    prepAiForm?.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const input = prepAiForm.querySelector<HTMLInputElement>('#prep-ai-input');
-      const val = input?.value || '';
-      if (input) input.value = '';
-      void this.submitPrepAiPrompt(val);
-    });
-
-    // Preserve Whiteboard Notes Input Changes
-    const wbTitleInput = this.rootEl.querySelector<HTMLInputElement>('#wb-notes-title');
-    wbTitleInput?.addEventListener('input', () => {
-      this.whiteboardNotesTitle = wbTitleInput.value;
-    });
-    const wbNotesTextarea = this.rootEl.querySelector<HTMLTextAreaElement>('#wb-notes-textarea');
-    wbNotesTextarea?.addEventListener('input', () => {
-      this.whiteboardNotesText = wbNotesTextarea.value;
     });
 
     // Custom Personal Profile Photo File Upload
@@ -1777,10 +1526,12 @@ class PrepskmPlatformApp {
       this.rootEl.querySelector<HTMLFormElement>('#profile-update-form');
     profileForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
-      const name =
-        profileForm.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() || '';
       const email =
-        profileForm.querySelector<HTMLInputElement>('#prof-email-input')?.value.trim() || '';
+        profileForm.querySelector<HTMLInputElement>('#prof-email-input')?.value.trim() ||
+        dataStore.getUser().email;
+      const rawName =
+        profileForm.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() || '';
+      const name = rawName || email.split('@')[0] || 'Student';
       const classYear =
         (profileForm.querySelector<HTMLSelectElement>('#prof-class-select')
           ?.value as StudentClassYear) ?? 'Class 12';
@@ -1789,7 +1540,7 @@ class PrepskmPlatformApp {
           ?.value as TargetExam) ?? 'JEE';
 
       if (!email) {
-        this.showToast('Please enter your Gmail / Email address.');
+        this.showToast('Please enter your Gmail address.');
         return;
       }
 
@@ -1809,7 +1560,7 @@ class PrepskmPlatformApp {
         );
       } else {
         this.showToast(
-          `Welcome ${signedInUser.name}! Your profile (${classYear} · ${targetExam}) is now active.`
+          `Welcome ${signedInUser.name}! Your profile (${classYear} · ${targetExam}) is saved.`
         );
       }
       this.renderShell();
@@ -1892,59 +1643,35 @@ class PrepskmPlatformApp {
       const action = el.dataset.shellAction;
       el.addEventListener('click', async () => {
         switch (action) {
-          case 'open-prep-ai-modal': {
+          case 'open-xp-rank-modal': {
             this.isMobile3DotMenuOpen = false;
-            this.isPrepAiModalOpen = true;
+            this.isNotificationsOpen = false;
+            this.isXpRankModalOpen = true;
             this.renderShell();
             break;
           }
-          case 'close-prep-ai-modal': {
-            const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
-            if (canvas) {
-              this.whiteboardDataUrl = canvas.toDataURL('image/png');
-            }
-            this.isPrepAiModalOpen = false;
+          case 'close-xp-rank-modal': {
+            this.isXpRankModalOpen = false;
             this.renderShell();
             break;
           }
-          case 'switch-prep-ai-tab': {
-            const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
-            if (canvas) {
-              this.whiteboardDataUrl = canvas.toDataURL('image/png');
-            }
-            const tab = el.dataset.tab as 'ai' | 'whiteboard';
-            if (tab) {
-              this.prepAiActiveTab = tab;
-              this.renderShell();
-            }
-            break;
-          }
-          case 'prep-ai-quick-prompt': {
-            const prompt = el.dataset.prompt || '';
-            if (prompt) {
-              void this.submitPrepAiPrompt(prompt);
-            }
-            break;
-          }
-          case 'set-wb-color': {
-            const color = el.dataset.color || '#4F46E5';
-            this.whiteboardPenColor = color;
-            this.whiteboardEraser = false;
+          case 'streak-extend-day': {
+            const updated = await dataStore.updateStreakLifecycleAction('extend');
+            this.showToast(`🔥 Streak extended to ${updated.currentStreak} days!`);
             this.renderShell();
             break;
           }
-          case 'toggle-wb-eraser': {
-            this.whiteboardEraser = !this.whiteboardEraser;
+          case 'streak-end-reset': {
+            await dataStore.updateStreakLifecycleAction('end_reset');
+            this.showToast('Streak ended and reset to 0 days.');
             this.renderShell();
             break;
           }
-          case 'clear-wb-canvas': {
-            this.whiteboardDataUrl = '';
+          case 'continue-as-guest': {
+            this.isProfileModalOpen = false;
+            this.authModalReasonMessage = '';
+            this.showToast('Continuing in Guest mode.');
             this.renderShell();
-            break;
-          }
-          case 'export-whiteboard-pdf': {
-            this.exportWhiteboardAndNotesAsPdf();
             break;
           }
           case 'open-pencil-modal': {
@@ -1983,6 +1710,7 @@ class PrepskmPlatformApp {
           }
           case 'open-profile-modal': {
             this.isMobile3DotMenuOpen = false;
+            this.isXpRankModalOpen = false;
             this.authModalReasonMessage = '';
             this.isProfileModalOpen = true;
             this.renderShell();
@@ -2018,7 +1746,7 @@ class PrepskmPlatformApp {
               window.history.pushState({}, '', '/index.html');
               this.activePage = 'home';
             }
-            this.showToast('Signed out.');
+            this.showToast('Signed out. Switched to Guest mode.');
             this.renderShell();
             break;
           }
@@ -2038,12 +1766,13 @@ class PrepskmPlatformApp {
               this.showToast('Signed in with Google!');
               this.renderShell();
             } catch {
-              const nameInput =
-                this.rootEl.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() ||
-                'Student';
               const emailInput =
                 this.rootEl.querySelector<HTMLInputElement>('#prof-email-input')?.value.trim() ||
-                `${nameInput.toLowerCase().replace(/[^a-z0-9]/g, '') || 'student'}@gmail.com`;
+                'student@gmail.com';
+              const nameInput =
+                this.rootEl.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() ||
+                emailInput.split('@')[0] ||
+                'Student';
               await dataStore.signUpOrLoginProfile({
                 name: nameInput,
                 email: emailInput,

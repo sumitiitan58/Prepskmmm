@@ -21,7 +21,7 @@ export interface MentorshipHubCallbacks {
 const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
 /**
- * PW (Physics Wallah) Style Structured Subject Batch & Chapter Lecture Catalog
+ * Structured Subject Batch & Chapter Lecture Catalog
  * Organized by Subject Batch -> Chapter -> Lecture / Class Notes / DPP
  */
 const PW_BATCH_LECTURES: VideoRoadmapItem[] = [
@@ -30,7 +30,7 @@ const PW_BATCH_LECTURES: VideoRoadmapItem[] = [
     id: 'pw_phy_electro_01',
     title: 'Ch-02: Electrostatics & Gauss Law — L1: Electric Flux & Cavity Problems',
     description:
-      'Complete PW-style classroom derivation of Gauss Law, Conductors with Cavity, Earthing of Concentric Shells, and 15 solved JEE/NEET PYQs.',
+      'Complete classroom derivation of Gauss Law, Conductors with Cavity, Earthing of Concentric Shells, and 15 solved JEE/NEET PYQs.',
     duration: '48:15',
     topicTag: 'Physics · Ch-02 Electrostatics · Lecture + Notes + DPP-01',
     section: 'Physics Batch',
@@ -47,7 +47,7 @@ const PW_BATCH_LECTURES: VideoRoadmapItem[] = [
     id: 'pw_chem_goc_01',
     title: 'Ch-01: General Organic Chemistry (GOC) — L1: Resonance, Mesomeric & Hyperconjugation',
     description:
-      'Structured PW classroom session on Carbocation stability order, SIR effect, Acidity/Basicity comparison, and Kota Class Notes.',
+      'Structured classroom session on Carbocation stability order, SIR effect, Acidity/Basicity comparison, and Kota Class Notes.',
     duration: '52:40',
     topicTag: 'Chemistry · Ch-01 Organic GOC · Lecture + Notes + DPP-01',
     section: 'Chemistry Batch',
@@ -64,7 +64,7 @@ const PW_BATCH_LECTURES: VideoRoadmapItem[] = [
     id: 'pw_math_calc_01',
     title: 'Ch-01: Definite Integration & Area — L1: King Property, Leibniz Rule & Limit of Sum',
     description:
-      'PW-style JEE classroom lecture covering King & Queen properties, Walli formula, Gamma function shortcuts, and DPP solutions.',
+      'Complete JEE classroom lecture covering King & Queen properties, Walli formula, Gamma function shortcuts, and DPP solutions.',
     duration: '55:10',
     topicTag: 'Mathematics · Ch-01 Calculus · Lecture + Notes + DPP-01',
     section: 'Mathematics Batch',
@@ -470,9 +470,9 @@ export class MentorshipHubModule {
             : ''
         }
 
-        <!-- PW (PHYSICS WALLAH) STYLE STRUCTURED CLASSROOM BATCHES: SUBJECT -> CHAPTER -> LECTURES / NOTES / DPP -->
+        <!-- STRUCTURED CLASSROOM BATCHES: SUBJECT -> CHAPTER -> LECTURES / NOTES / DPP -->
         <section
-          aria-label="PW Style Classroom Batch Lectures"
+          aria-label="Structured Classroom Batch Lectures"
           data-testid="video-sections-directory"
           class="bg-white border border-[#E2E8F0] rounded-3xl p-4 sm:p-6 shadow-sm space-y-4"
         >
@@ -480,7 +480,7 @@ export class MentorshipHubModule {
             <div>
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200 text-[11px] font-extrabold uppercase tracking-wider">
-                  🎓 PW-Style Structured Batch Classroom
+                  🎓 Structured Batch Classroom
                 </span>
                 <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#10B981] border border-emerald-200 text-[11px] font-extrabold">
                   Subject Wise · Chapter Wise · HD Lectures + Notes + DPPs
@@ -503,7 +503,7 @@ export class MentorshipHubModule {
             </a>
           </div>
 
-          <!-- PW-Style Subject Batch Selector Tabs -->
+          <!-- Subject Batch Selector Tabs -->
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             ${videoSections
               .map((sec) => {

@@ -1,4 +1,5 @@
 import type {
+  AdminQuestionItem,
   BacklogKillerResult,
   CBTQuestion,
   ChapterEntity,
@@ -316,7 +317,7 @@ export function generatePersonalizedStudyPlan(params: {
 
   const weekThemes = [
     'Week 1: Core Concept Repair & High-Weightage Foundations',
-    'Week 2: Multi-Concept Application & Live Smartboard Derivations',
+    'Week 2: Multi-Concept Application & Live Classroom Derivations',
     'Week 3: Speed Drills, NAT Precision & PYQ Dissection',
     'Week 4: Full-Length NTA CBT Simulation & Error Log Consolidation',
   ];
@@ -347,7 +348,7 @@ export function generatePersonalizedStudyPlan(params: {
         recommendedModule === 'player'
           ? 'Watch Private Lecture & Formula Recap'
           : recommendedModule === 'live'
-            ? 'Attend Smartboard Live Derivation'
+            ? 'Attend Live Classroom Derivation'
             : 'Attempt Timed NTA CBT Sectional Drill';
 
       return {
@@ -415,7 +416,13 @@ export function rankLeaderboardEntries(
   currentUserEntry: (LeaderboardEntry & { rank: number }) | null;
   totalParticipants: number;
 } {
-  const sorted = [...entries]
+  // Visibility rule: Signed-up users never see Guest users.
+  // A Guest user only sees their own local guest entry alongside real signed-up users.
+  const visibleEntries = entries.filter(
+    (entry) => !entry.isGuest || entry.uid === currentUid
+  );
+
+  const sorted = [...visibleEntries]
     .sort((a, b) => {
       if (b.compositePoints !== a.compositePoints) {
         return b.compositePoints - a.compositePoints;
@@ -1343,6 +1350,274 @@ export function getCurrentWeekKey(referenceDate: Date | string = new Date()): st
   const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
   return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
+
+/**
+ * Evaluates whether a student's study streak is extended today or has ended (reset to 0)
+ * due to a missed day or zero completed tasks.
+ */
+export function evaluateStreakLifecycle(
+  currentStreak: number,
+  lastActiveDate: string,
+  todayIso: string,
+  completedTodayCount: number
+): {
+  currentStreak: number;
+  lastActiveDate: string;
+  status: 'EXTENDED' | 'ACTIVE_TODAY' | 'ENDED_RESET' | 'INACTIVE';
+  statusMessage: string;
+} {
+  const safeStreak = Math.max(0, Math.floor(currentStreak || 0));
+  const cleanToday = (todayIso || new Date().toISOString().slice(0, 10)).slice(0, 10);
+  const cleanLast = (lastActiveDate || '').slice(0, 10);
+
+  const todayMs = Date.parse(`${cleanToday}T00:00:00Z`);
+  const lastMs = cleanLast ? Date.parse(`${cleanLast}T00:00:00Z`) : Number.NaN;
+  const daysDiff =
+    !Number.isNaN(todayMs) && !Number.isNaN(lastMs)
+      ? Math.round((todayMs - lastMs) / 86400000)
+      : 999;
+
+  if (completedTodayCount > 0) {
+    if (daysDiff === 0) {
+      const nextStreak = Math.max(1, safeStreak);
+      return {
+        currentStreak: nextStreak,
+        lastActiveDate: cleanToday,
+        status: 'ACTIVE_TODAY',
+        statusMessage: `🔥 ${nextStreak}-Day Streak Active Today`,
+      };
+    }
+    if (daysDiff === 1) {
+      const nextStreak = safeStreak + 1;
+      return {
+        currentStreak: nextStreak,
+        lastActiveDate: cleanToday,
+        status: 'EXTENDED',
+        statusMessage: `🔥 Streak Extended to ${nextStreak} Days!`,
+      };
+    }
+    return {
+      currentStreak: 1,
+      lastActiveDate: cleanToday,
+      status: 'EXTENDED',
+      statusMessage: '🔥 New 1-Day Streak Started Today!',
+    };
+  }
+
+  // No tasks completed today:
+  if (daysDiff > 1 && safeStreak > 0) {
+    return {
+      currentStreak: 0,
+      lastActiveDate: cleanLast,
+      status: 'ENDED_RESET',
+      statusMessage: 'Streak Ended (Missed a Day) — Complete 1 Task to Restart',
+    };
+  }
+
+  if (daysDiff === 0 && completedTodayCount === 0) {
+    return {
+      currentStreak: 0,
+      lastActiveDate: '',
+      status: 'ENDED_RESET',
+      statusMessage: '0-Day Streak — Complete 1 Task Today to Start Streak',
+    };
+  }
+
+  return {
+    currentStreak: safeStreak,
+    lastActiveDate: cleanLast,
+    status: safeStreak > 0 ? 'ACTIVE_TODAY' : 'INACTIVE',
+    statusMessage:
+      safeStreak > 0
+        ? `🔥 ${safeStreak}-Day Streak — Complete 1 Task Today to Extend`
+        : '0-Day Streak — Complete 1 Task to Start',
+  };
+}
+
+/**
+ * Calculates the student's Monthly Level.
+ * Rule: Every month, finishing in Rank #1 to #20 increases the student's Level by +1.
+ */
+export function calculateMonthlyStudentLevel(
+  baseLevel = 1,
+  currentRank = 1,
+  completedTop20Months = 0
+): {
+  level: number;
+  eligibleForMonthlyPromotion: boolean;
+  nextLevelAfterMonth: number;
+  ruleSummary: string;
+} {
+  const safeBase = Math.max(1, Math.floor(baseLevel || 1));
+  const safeMonths = Math.max(0, Math.floor(completedTop20Months || 0));
+  const eligibleForMonthlyPromotion = currentRank >= 1 && currentRank <= 20;
+  const level = safeBase + safeMonths;
+  const nextLevelAfterMonth = eligibleForMonthlyPromotion ? level + 1 : level;
+
+  return {
+    level,
+    eligibleForMonthlyPromotion,
+    nextLevelAfterMonth,
+    ruleSummary: eligibleForMonthlyPromotion
+      ? `Rank #${currentRank} qualifies for Top 20! You will advance to Level ${nextLevelAfterMonth} on monthly reset.`
+      : `Reach Rank #1–#20 (currently #${currentRank}) to unlock +1 Monthly Level promotion.`,
+  };
+}
+
+/**
+ * Generates a 100-question bank per chapter using Permutation & Combination (P&C)
+ * of physical/chemical/mathematical/biological parameters, and selects the exact
+ * requested number of questions per chapter (total = selectedChapters.length * questionsPerChapter).
+ */
+export function generateChapterPnCQuestions(
+  selectedChapters: Array<{
+    id: string;
+    subject: SubjectName;
+    chapterName?: string;
+    name?: string;
+    weightageLabel: string;
+  }>,
+  questionsPerChapter: number,
+  adminQuestions: AdminQuestionItem[] = []
+): {
+  questions: CBTQuestion[];
+  totalQuestions: number;
+  questionsPerChapter: number;
+  chapterPoolSize: number;
+} {
+  const safePerChapter = Math.max(1, Math.min(100, Math.floor(questionsPerChapter || 1)));
+  const activeChapters =
+    selectedChapters.length > 0
+      ? selectedChapters.map((c) => ({
+          id: c.id,
+          subject: c.subject,
+          chapterName: c.chapterName || c.name || 'Core Chapter',
+          weightageLabel: c.weightageLabel || '10% Weightage',
+        }))
+      : [
+          {
+            id: 'syl_phy_rotational',
+            subject: 'Physics' as SubjectName,
+            chapterName: 'System of Particles & Rotational Motion',
+            weightageLabel: '9% Weightage',
+          },
+        ];
+
+  const chosen: CBTQuestion[] = [];
+
+  for (const chapter of activeChapters) {
+    // Build the 100-question P&C pool for this chapter:
+    // 10 conceptual archetypes × 10 numerical/contextual parameter combinations = 100 unique questions
+    const chapterPool: CBTQuestion[] = [];
+
+    const matchingAdmin = adminQuestions.filter(
+      (aq) =>
+        aq.chapterId === chapter.id ||
+        (aq.chapterName &&
+          aq.chapterName.toLowerCase().includes(chapter.chapterName.split(' ')[0].toLowerCase()))
+    );
+
+    for (const aq of matchingAdmin) {
+      const opts = aq.options ?? ['Option A', 'Option B', 'Option C', 'Option D'];
+      const correctAns =
+        aq.type === 'MCQ'
+          ? opts[Number(aq.correctVal) || 0] ?? aq.correctVal ?? opts[0]
+          : aq.correctVal || '0';
+      chapterPool.push({
+        id: `${chapter.id}_admin_${aq.id}`,
+        number: chapterPool.length + 1,
+        subject: chapter.subject,
+        type: aq.type === 'NUMERICAL' ? 'NAT' : 'MCQ',
+        topic: chapter.chapterName,
+        chapterId: chapter.id,
+        prompt: aq.prompt,
+        equationBlock: aq.equationBlock,
+        questionImg: aq.questionImg,
+        solutionImg: aq.solutionImg,
+        options: opts,
+        correctAnswer: correctAns,
+        solution: aq.solutionText || `Verified ${chapter.chapterName} solution.`,
+      });
+    }
+
+    const archetypes = [
+      'Fundamental Law & Conservation Application',
+      'Dimensional & Limiting Case Analysis',
+      'Multi-Step Numerical Problem Solving',
+      'Graphical Slope & Area Interpretation',
+      'Equilibrium & Stability Condition',
+      'Rate of Change & Differential Formulation',
+      'Energy / Potential Transformation Ratio',
+      'Assertion-Reason Conceptual Trap',
+      'High-Weightage PYQ Pattern Variant',
+      'Experimental Measurement & Error Bound',
+    ];
+
+    const paramMultipliers = [2, 3, 4, 5, 6, 8, 9, 10, 12, 15];
+
+    for (let archIdx = 0; archIdx < 10; archIdx++) {
+      for (let paramIdx = 0; paramIdx < 10; paramIdx++) {
+        if (chapterPool.length >= 100) break;
+        const pncIndex = archIdx * 10 + paramIdx + 1;
+        const kVal = paramMultipliers[paramIdx];
+        const mVal = archIdx + 2;
+        const computedResult = kVal * mVal;
+        const isNat = pncIndex % 5 === 0;
+
+        if (isNat) {
+          chapterPool.push({
+            id: `${chapter.id}_pnc_${pncIndex}`,
+            number: pncIndex,
+            subject: chapter.subject,
+            type: 'NAT',
+            topic: chapter.chapterName,
+            chapterId: chapter.id,
+            prompt: `[${chapter.chapterName} · P&C Q#${pncIndex}/100] In an experiment on ${archetypes[archIdx]} with primary parameter α = ${kVal} units and scaling factor β = ${mVal}, calculate the exact resultant magnitude R = α × β:`,
+            equationBlock: `R = α · β   (where α = ${kVal}, β = ${mVal} · ${chapter.weightageLabel})`,
+            correctAnswer: String(computedResult),
+            solution: `Using the ${chapter.chapterName} relation R = α × β with α = ${kVal} and β = ${mVal}, we obtain R = ${kVal} × ${mVal} = ${computedResult}.`,
+          });
+        } else {
+          const correctOptText = `${computedResult} units (Exact State)`;
+          chapterPool.push({
+            id: `${chapter.id}_pnc_${pncIndex}`,
+            number: pncIndex,
+            subject: chapter.subject,
+            type: 'MCQ',
+            topic: chapter.chapterName,
+            chapterId: chapter.id,
+            prompt: `[${chapter.chapterName} · P&C Q#${pncIndex}/100] For a system governed by ${chapter.chapterName} (${archetypes[archIdx]}) where input state parameter is n = ${kVal} and coupling coefficient is c = ${mVal}, what is the characteristic output value (n × c)?`,
+            equationBlock: `Φ(n, c) = n · c = ${kVal} × ${mVal}   [${chapter.weightageLabel}]`,
+            options: [
+              correctOptText,
+              `${computedResult + mVal} units`,
+              `${Math.max(1, computedResult - kVal)} units`,
+              `${computedResult * 2} units`,
+            ],
+            correctAnswer: correctOptText,
+            solution: `Applying ${archetypes[archIdx]} in ${chapter.chapterName}: for n = ${kVal} and c = ${mVal}, the characteristic output is n × c = ${computedResult} units.`,
+          });
+        }
+      }
+    }
+
+    for (let i = 0; i < safePerChapter; i++) {
+      const picked = chapterPool[i % chapterPool.length];
+      chosen.push({
+        ...picked,
+        number: chosen.length + 1,
+      });
+    }
+  }
+
+  return {
+    questions: chosen,
+    totalQuestions: chosen.length,
+    questionsPerChapter: safePerChapter,
+    chapterPoolSize: 100,
+  };
+}
+
 
 
 

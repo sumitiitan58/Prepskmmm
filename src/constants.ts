@@ -998,6 +998,7 @@ export const DEFAULT_VAULT_SECTIONS = [
   'Formula Sheets',
   'Hand-written Notes',
   'DPPs',
+  'Google Classroom',
 ];
 
 export const DEFAULT_VIDEO_SECTIONS = [
@@ -1029,10 +1030,10 @@ export const INITIAL_MENTORS: MentorProfileItem[] = [
 ];
 
 export const DEFAULT_PW_LECTURE_FALLBACK: VideoRoadmapItem = {
-  id: 'vid_pw_orientation',
-  title: 'PW-Style Batch Orientation & High-Yield Syllabus Strategy',
+  id: 'vid_batch_orientation',
+  title: 'Batch Orientation & High-Yield Syllabus Strategy',
   description:
-    'Select any Subject & Chapter from your PW-style Batch Classroom to watch structured video lectures, download class notes, and practice DPPs.',
+    'Select any Subject & Chapter from your Batch Classroom to watch structured video lectures, download class notes, and practice DPPs.',
   videoUrl: '',
   thumbnailUrl: LECTURE_COVER_PATH,
   duration: '40:00',
