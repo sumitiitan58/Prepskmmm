@@ -1133,6 +1133,113 @@ export function computePerformanceTrendsForD3(
   };
 }
 
+/**
+ * Updates cumulative focus minutes and subject-wise focus breakdown when a Pomodoro
+ * focus session is completed in the Study Module.
+ */
+export function computeUpdatedFocusStats(
+  currentTotalMinutes: number | undefined,
+  currentSubjectMinutes: Partial<Record<SubjectName, number>> | undefined,
+  subject: SubjectName,
+  addedMinutes: number
+): {
+  totalFocusMinutes: number;
+  totalFocusHours: number;
+  subjectFocusMinutes: Record<SubjectName, number>;
+  subjectFocusHours: Record<SubjectName, number>;
+} {
+  const safeAdded = Math.max(1, Math.min(300, Math.round(addedMinutes || 25)));
+  const baseSubjects: Record<SubjectName, number> = {
+    Physics: Math.max(0, Math.round(currentSubjectMinutes?.Physics ?? 0)),
+    Chemistry: Math.max(0, Math.round(currentSubjectMinutes?.Chemistry ?? 0)),
+    Math: Math.max(0, Math.round(currentSubjectMinutes?.Math ?? 0)),
+    Biology: Math.max(0, Math.round(currentSubjectMinutes?.Biology ?? 0)),
+  };
+
+  baseSubjects[subject] = (baseSubjects[subject] || 0) + safeAdded;
+  const computedSum =
+    baseSubjects.Physics +
+    baseSubjects.Chemistry +
+    baseSubjects.Math +
+    baseSubjects.Biology;
+  const totalFocusMinutes = Math.max(
+    computedSum,
+    Math.max(0, Math.round(currentTotalMinutes ?? 0)) + safeAdded
+  );
+
+  const totalFocusHours = Number((totalFocusMinutes / 60).toFixed(1));
+  const subjectFocusHours: Record<SubjectName, number> = {
+    Physics: Number((baseSubjects.Physics / 60).toFixed(1)),
+    Chemistry: Number((baseSubjects.Chemistry / 60).toFixed(1)),
+    Math: Number((baseSubjects.Math / 60).toFixed(1)),
+    Biology: Number((baseSubjects.Biology / 60).toFixed(1)),
+  };
+
+  return {
+    totalFocusMinutes,
+    totalFocusHours,
+    subjectFocusMinutes: baseSubjects,
+    subjectFocusHours,
+  };
+}
+
+/**
+ * Determines whether a student can initiate a 1:1 Voice or Video call with a mentor.
+ * Calling is strictly disabled when the mentor is offline UNLESS the mentor has accepted
+ * an appointment and set a scheduled call time.
+ */
+export function canStudentInitiateMentorCall(params: {
+  isMentorOnline: boolean;
+  appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  scheduledCallTime?: string;
+}): {
+  canCall: boolean;
+  badgeLabel: string;
+  helperText: string;
+} {
+  if (params.isMentorOnline) {
+    return {
+      canCall: true,
+      badgeLabel: 'ONLINE · INSTANT CALL UNLOCKED',
+      helperText: 'Mentor is online now. You can start a live 1:1 voice or video call immediately.',
+    };
+  }
+
+  if (params.appointmentStatus === 'ACCEPTED' && params.scheduledCallTime) {
+    return {
+      canCall: true,
+      badgeLabel: `APPOINTMENT ACCEPTED · ${params.scheduledCallTime}`,
+      helperText: `Your appointment is approved for ${params.scheduledCallTime}. Voice & Video calls are unlocked for your slot!`,
+    };
+  }
+
+  if (params.appointmentStatus === 'PENDING') {
+    return {
+      canCall: false,
+      badgeLabel: 'APPOINTMENT PENDING ADMIN APPROVAL',
+      helperText:
+        'Mentor is currently offline. Your appointment request is PENDING — once Admin accepts and sets a time, calling will unlock.',
+    };
+  }
+
+  if (params.appointmentStatus === 'REJECTED') {
+    return {
+      canCall: false,
+      badgeLabel: 'APPOINTMENT RESCHEDULE NEEDED',
+      helperText:
+        'Mentor is offline and previous slot was declined. Use the + menu in Chat to request a new appointment slot.',
+    };
+  }
+
+  return {
+    canCall: false,
+    badgeLabel: 'OFFLINE · BOOK APPOINTMENT IN CHAT (+)',
+    helperText:
+      'Mentor has turned calls OFF right now. Click the + button in Chat below to Take an Appointment.',
+  };
+}
+
+
 
 
 

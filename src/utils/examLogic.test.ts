@@ -313,4 +313,47 @@ test('computePerformanceTrendsForD3 computes chronological improvement delta and
   assert.ok(phy.avgAccuracy >= 75);
 });
 
+test('computeUpdatedFocusStats logs Pomodoro subject minutes and computes total focus hours', async () => {
+  const { computeUpdatedFocusStats } = await import('./examLogic');
+  const first = computeUpdatedFocusStats(
+    120,
+    { Physics: 60, Chemistry: 30, Math: 30, Biology: 0 },
+    'Physics',
+    25
+  );
+  assert.equal(first.totalFocusMinutes, 145);
+  assert.equal(first.subjectFocusMinutes.Physics, 85);
+  assert.equal(first.totalFocusHours, 2.4);
+  assert.equal(first.subjectFocusHours.Physics, 1.4);
+});
+
+test('canStudentInitiateMentorCall disables calling when mentor is offline unless appointment is ACCEPTED', async () => {
+  const { canStudentInitiateMentorCall } = await import('./examLogic');
+
+  const offlineNoAppt = canStudentInitiateMentorCall({
+    isMentorOnline: false,
+  });
+  assert.equal(offlineNoAppt.canCall, false);
+
+  const offlinePending = canStudentInitiateMentorCall({
+    isMentorOnline: false,
+    appointmentStatus: 'PENDING',
+  });
+  assert.equal(offlinePending.canCall, false);
+
+  const offlineAccepted = canStudentInitiateMentorCall({
+    isMentorOnline: false,
+    appointmentStatus: 'ACCEPTED',
+    scheduledCallTime: '07:30 PM IST',
+  });
+  assert.equal(offlineAccepted.canCall, true);
+  assert.ok(offlineAccepted.badgeLabel.includes('07:30 PM IST'));
+
+  const onlineMentor = canStudentInitiateMentorCall({
+    isMentorOnline: true,
+  });
+  assert.equal(onlineMentor.canCall, true);
+});
+
+
 

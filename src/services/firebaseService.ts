@@ -58,10 +58,13 @@ import type {
   ChapterEntity,
   ClassEntity,
   ElementStyleOverride,
+  FocusSessionRecord,
+  GroupCallSchedule,
   LeaderboardEntry,
   LectureProgress,
   LiveSession,
   MentorProfileItem,
+  MentorshipMessage,
   MentorshipSessionItem,
   ProficiencyLevel,
   SiteThemeSettings,
@@ -71,6 +74,7 @@ import type {
   StudyPlan,
   StudyTask,
   SubjectEntity,
+  SubjectName,
   TargetExam,
   TaskPriority,
   TestSubmission,
@@ -79,13 +83,14 @@ import type {
 } from '../types';
 import {
   calculateLeaderboardCompositePoints,
+  computeUpdatedFocusStats,
   evaluateStreakRiskStatus,
   generatePersonalizedStudyPlan,
   getSubjectsForExam,
   rankLeaderboardEntries,
 } from '../utils/examLogic';
 
-export const MASTER_ADMIN_EMAIL = 'Sumit586kumar@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
 export const SECONDARY_ADMIN_EMAIL = 'sumitiitair01@gmail.com';
 
 const app = getApps().length > 0 ? getApp() : initializeApp(firebaseAppletConfig);
@@ -95,10 +100,7 @@ export const db = getFirestore(app, firebaseAppletConfig.firestoreDatabaseId);
 export function isMasterAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = String(email).trim().toLowerCase();
-  return (
-    normalized === MASTER_ADMIN_EMAIL.toLowerCase() ||
-    normalized === SECONDARY_ADMIN_EMAIL.toLowerCase()
-  );
+  return normalized === MASTER_ADMIN_EMAIL.toLowerCase();
 }
 
 export async function compressImageDataUrl(
@@ -259,6 +261,8 @@ const STORAGE_KEYS = {
   SITE_THEME: 'prepskm_site_theme_v3',
   DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v3',
   ADMIN_QUESTIONS: 'prepskm_admin_questions_v3',
+  FOCUS_SESSIONS: 'prepskm_focus_sessions_v1',
+  GROUP_CALL_SCHEDULE: 'prepskm_group_call_schedule_v1',
 };
 
 function sanitizeId(id: string): string {
@@ -289,12 +293,27 @@ export class PrepskmDataStore {
   private siteTheme: SiteThemeSettings;
   private dailyGoalTarget: number;
   private adminQuestions: AdminQuestionItem[];
+  private focusSessions: FocusSessionRecord[];
+  private groupCallSchedule: GroupCallSchedule;
   private authListeners: ((user: AspirantUser, isCloudAuthenticated: boolean) => void)[] = [];
   private streakListeners: ((notifications: StreakNotificationItem[]) => void)[] = [];
   public isCloudAuthenticated = false;
 
   constructor() {
     this.currentUser = this.loadLocal(STORAGE_KEYS.USER, { ...DEFAULT_USER });
+    if (this.currentUser.totalFocusMinutes === undefined) {
+      this.currentUser.totalFocusMinutes = DEFAULT_USER.totalFocusMinutes ?? 210;
+    }
+    if (!this.currentUser.subjectFocusMinutes) {
+      this.currentUser.subjectFocusMinutes = {
+        ...(DEFAULT_USER.subjectFocusMinutes ?? {
+          Physics: 95,
+          Chemistry: 55,
+          Math: 60,
+          Biology: 0,
+        }),
+      };
+    }
     this.tasks = this.loadLocal(STORAGE_KEYS.TASKS, [...INITIAL_TASKS]);
     this.lectureProgress = this.loadLocal(STORAGE_KEYS.LECTURE_PROGRESS, {
       uid: this.currentUser.uid,
@@ -370,6 +389,53 @@ export class PrepskmDataStore {
     this.adminQuestions = this.loadLocal(STORAGE_KEYS.ADMIN_QUESTIONS, [
       ...INITIAL_ADMIN_QUESTIONS,
     ]);
+    this.focusSessions = this.loadLocal<FocusSessionRecord[]>(STORAGE_KEYS.FOCUS_SESSIONS, [
+      {
+        id: 'focus_seed_01',
+        uid: this.currentUser.uid,
+        studentName: this.currentUser.name,
+        subject: 'Physics',
+        durationMinutes: 50,
+        modeLabel: '50m Deep Focus Sprint',
+        completedAt: '2026-11-04T08:30:00Z',
+      },
+      {
+        id: 'focus_seed_02',
+        uid: this.currentUser.uid,
+        studentName: this.currentUser.name,
+        subject: 'Chemistry',
+        durationMinutes: 25,
+        modeLabel: '25m Classic Pomodoro',
+        completedAt: '2026-11-04T10:15:00Z',
+      },
+      {
+        id: 'focus_seed_03',
+        uid: this.currentUser.uid,
+        studentName: this.currentUser.name,
+        subject: 'Math',
+        durationMinutes: 25,
+        modeLabel: '25m Classic Pomodoro',
+        completedAt: '2026-11-03T18:45:00Z',
+      },
+    ]);
+    this.groupCallSchedule = this.loadLocal<GroupCallSchedule>(
+      STORAGE_KEYS.GROUP_CALL_SCHEDULE,
+      {
+        id: 'global_slot',
+        title: 'Live Multi-Student Strategy & PYQ Doubt Room with Sumit Bhaiya',
+        mentorId: 'mentor_sumit_master',
+        mentorName: 'Sumit Kumar (IIT Roorkee · AIR 01 Mentor)',
+        scheduledTimeText: 'Today · 08:30 PM – 09:30 PM IST',
+        targetCohort: 'All Cohorts (JEE, NEET & Foundation)',
+        jitsiRoom: 'prepskm_group_live_slot_sumit_2027',
+        isActive: true,
+        joinedStudents: [
+          { uid: 'aspirant_ishaan_01', name: 'Ishaan Deshmukh', joinedAt: '08:25 PM' },
+          { uid: 'aspirant_ananya_02', name: 'Ananya Krishnan', joinedAt: '08:27 PM' },
+        ],
+        updatedAt: new Date().toISOString(),
+      }
+    );
 
     this.recalculateLocalUserLeaderboardEntry();
     this.applySiteThemeToDocument();
@@ -573,6 +639,58 @@ export class PrepskmDataStore {
               (b.timestamp || '').localeCompare(a.timestamp || '')
             );
             this.saveLocal(STORAGE_KEYS.TEST_SUBMISSIONS, this.submissions);
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        collection(db, 'mentorship'),
+        (snap) => {
+          if (!snap.empty) {
+            const remote = snap.docs.map((d) => d.data() as MentorshipSessionItem);
+            const merged = new Map<string, MentorshipSessionItem>();
+            for (const m of remote) merged.set(m.id, m);
+            for (const m of this.mentorshipSessions) {
+              if (!merged.has(m.id)) merged.set(m.id, m);
+            }
+            this.mentorshipSessions = Array.from(merged.values()).sort((a, b) =>
+              (b.updatedAt || '').localeCompare(a.updatedAt || '')
+            );
+            this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        collection(db, 'focus_sessions'),
+        (snap) => {
+          if (!snap.empty) {
+            const remote = snap.docs.map((d) => d.data() as FocusSessionRecord);
+            const merged = new Map<string, FocusSessionRecord>();
+            for (const f of remote) merged.set(f.id, f);
+            for (const f of this.focusSessions) {
+              if (!merged.has(f.id)) merged.set(f.id, f);
+            }
+            this.focusSessions = Array.from(merged.values()).sort((a, b) =>
+              (b.completedAt || '').localeCompare(a.completedAt || '')
+            );
+            this.saveLocal(STORAGE_KEYS.FOCUS_SESSIONS, this.focusSessions);
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        doc(db, 'group_call_schedules', 'global_slot'),
+        (snap) => {
+          if (snap.exists()) {
+            this.groupCallSchedule = {
+              ...this.groupCallSchedule,
+              ...(snap.data() as Partial<GroupCallSchedule>),
+            };
+            this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
           }
         },
         () => {}
@@ -962,7 +1080,15 @@ export class PrepskmDataStore {
     partial: Partial<
       Pick<
         AspirantUser,
-        'name' | 'classYear' | 'targetExam' | 'photoURL' | 'currentStreak' | 'lastActiveDate' | 'isGuest'
+        | 'name'
+        | 'classYear'
+        | 'targetExam'
+        | 'photoURL'
+        | 'currentStreak'
+        | 'lastActiveDate'
+        | 'isGuest'
+        | 'totalFocusMinutes'
+        | 'subjectFocusMinutes'
       >
     >
   ): Promise<AspirantUser> {
@@ -975,23 +1101,98 @@ export class PrepskmDataStore {
     await this.pushCurrentUserLeaderboardToCloud();
     this.notifyAuthListeners();
 
-    if (this.isCloudAuthenticated && auth.currentUser?.emailVerified) {
-      const uid = sanitizeId(auth.currentUser.uid);
-      const path = `users/${uid}`;
-      try {
-        await updateDoc(doc(db, 'users', uid), {
-          name: this.currentUser.name,
-          classYear: this.currentUser.classYear,
-          targetExam: this.currentUser.targetExam,
-          photoURL: this.currentUser.photoURL,
-          currentStreak: this.currentUser.currentStreak,
-          lastActiveDate: this.currentUser.lastActiveDate,
-        });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.UPDATE, path);
-      }
+    const uid = sanitizeId(auth.currentUser?.uid || this.currentUser.uid);
+    try {
+      await setDoc(doc(db, 'users', uid), {
+        ...this.currentUser,
+        uid,
+      });
+    } catch {
+      // Saved locally
     }
     return this.getUser();
+  }
+
+  // --- Pomodoro Focus Timer & Profile Focus Statistics ---
+  public getFocusSessions(): FocusSessionRecord[] {
+    return [...this.focusSessions];
+  }
+
+  public getFocusStatsSummary(): {
+    totalFocusMinutes: number;
+    totalFocusHours: number;
+    totalMinutes: number;
+    totalHours: number;
+    subjectFocusMinutes: Record<SubjectName, number>;
+    subjectMinutes: Record<SubjectName, number>;
+    subjectFocusHours: Record<SubjectName, number>;
+    sessionsCount: number;
+  } {
+    const baseSubjects: Record<SubjectName, number> = {
+      Physics: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Physics ?? 95)),
+      Chemistry: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Chemistry ?? 55)),
+      Math: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Math ?? 60)),
+      Biology: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Biology ?? 0)),
+    };
+    const totalFocusMinutes = Math.max(
+      baseSubjects.Physics + baseSubjects.Chemistry + baseSubjects.Math + baseSubjects.Biology,
+      Math.max(0, Math.round(this.currentUser.totalFocusMinutes ?? 210))
+    );
+    const totalFocusHours = Number((totalFocusMinutes / 60).toFixed(1));
+    return {
+      totalFocusMinutes,
+      totalFocusHours,
+      totalMinutes: totalFocusMinutes,
+      totalHours: totalFocusHours,
+      subjectFocusMinutes: baseSubjects,
+      subjectMinutes: baseSubjects,
+      subjectFocusHours: {
+        Physics: Number((baseSubjects.Physics / 60).toFixed(1)),
+        Chemistry: Number((baseSubjects.Chemistry / 60).toFixed(1)),
+        Math: Number((baseSubjects.Math / 60).toFixed(1)),
+        Biology: Number((baseSubjects.Biology / 60).toFixed(1)),
+      },
+      sessionsCount: this.focusSessions.length,
+    };
+  }
+
+  public async logFocusSession(params: {
+    subject: SubjectName;
+    durationMinutes: number;
+    modeLabel?: string;
+  }): Promise<FocusSessionRecord> {
+    const updatedStats = computeUpdatedFocusStats(
+      this.currentUser.totalFocusMinutes,
+      this.currentUser.subjectFocusMinutes,
+      params.subject,
+      params.durationMinutes
+    );
+
+    const record: FocusSessionRecord = {
+      id: sanitizeId(`focus_${Date.now()}_${Math.floor(Math.random() * 1000)}`),
+      uid: this.currentUser.uid,
+      studentName: this.currentUser.name,
+      subject: params.subject,
+      durationMinutes: Math.max(1, Math.round(params.durationMinutes)),
+      modeLabel: params.modeLabel || `${params.durationMinutes}m Pomodoro Focus`,
+      completedAt: new Date().toISOString(),
+    };
+
+    this.focusSessions = [record, ...this.focusSessions];
+    this.saveLocal(STORAGE_KEYS.FOCUS_SESSIONS, this.focusSessions);
+
+    await this.updateUser({
+      totalFocusMinutes: updatedStats.totalFocusMinutes,
+      subjectFocusMinutes: updatedStats.subjectFocusMinutes,
+    });
+
+    try {
+      await setDoc(doc(db, 'focus_sessions', record.id), record);
+    } catch {
+      // Offline fallback saved locally
+    }
+
+    return record;
   }
 
   public getTasks(): StudyTask[] {
@@ -1749,9 +1950,77 @@ export class PrepskmDataStore {
     }
   }
 
-  // --- 1:1 Mentorship Hub & Admin Mentorship Desk ---
+  // --- 1:1 Mentorship Hub, Chat Attachments (+), Appointments & Group Call Schedule ---
   public getMentorshipSessions(): MentorshipSessionItem[] {
     return [...this.mentorshipSessions];
+  }
+
+  public getGroupCallSchedule(): GroupCallSchedule {
+    const timeStr =
+      this.groupCallSchedule.scheduledTime ||
+      this.groupCallSchedule.scheduledTimeText ||
+      'Today · 08:30 PM IST';
+    const joined = [...(this.groupCallSchedule.joinedStudents || [])];
+    return {
+      ...this.groupCallSchedule,
+      scheduledTimeText: timeStr,
+      scheduledTime: timeStr,
+      joinedStudents: joined,
+      participantNames:
+        this.groupCallSchedule.participantNames &&
+        this.groupCallSchedule.participantNames.length > 0
+          ? [...this.groupCallSchedule.participantNames]
+          : joined.map((s) => s.name),
+    };
+  }
+
+  public async saveGroupCallSchedule(
+    partial: Partial<Omit<GroupCallSchedule, 'id' | 'updatedAt'>>
+  ): Promise<GroupCallSchedule> {
+    const timeStr =
+      partial.scheduledTime ||
+      partial.scheduledTimeText ||
+      this.groupCallSchedule.scheduledTimeText ||
+      this.groupCallSchedule.scheduledTime ||
+      'Today · 08:30 PM IST';
+    this.groupCallSchedule = {
+      ...this.groupCallSchedule,
+      ...partial,
+      scheduledTimeText: timeStr,
+      scheduledTime: timeStr,
+      id: 'global_slot',
+      updatedAt: new Date().toISOString(),
+    };
+    this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
+    try {
+      await setDoc(doc(db, 'group_call_schedules', 'global_slot'), this.groupCallSchedule);
+    } catch {
+      // Saved locally
+    }
+    return this.getGroupCallSchedule();
+  }
+
+  public async joinGroupCallSchedule(): Promise<GroupCallSchedule> {
+    const user = this.currentUser;
+    const nowTime = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    const existing = this.groupCallSchedule.joinedStudents || [];
+    if (!existing.some((s) => s.uid === user.uid)) {
+      this.groupCallSchedule.joinedStudents = [
+        ...existing,
+        { uid: user.uid, name: user.name, joinedAt: nowTime },
+      ];
+      this.groupCallSchedule.updatedAt = new Date().toISOString();
+      this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
+      try {
+        await setDoc(doc(db, 'group_call_schedules', 'global_slot'), this.groupCallSchedule);
+      } catch {
+        // Saved locally
+      }
+    }
+    return this.getGroupCallSchedule();
   }
 
   public async createMentorshipRequest(params: {
@@ -1797,12 +2066,10 @@ export class PrepskmDataStore {
     this.mentorshipSessions = [newSession, ...this.mentorshipSessions];
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
 
-    if (this.isCloudAuthenticated) {
-      try {
-        await setDoc(doc(db, 'mentorship', newSession.id), newSession);
-      } catch {
-        // Saved locally
-      }
+    try {
+      await setDoc(doc(db, 'mentorship', newSession.id), newSession);
+    } catch {
+      // Saved locally
     }
     return newSession;
   }
@@ -1811,7 +2078,18 @@ export class PrepskmDataStore {
     sessionId: string,
     text: string,
     senderRole: 'student' | 'admin',
-    customSenderName?: string
+    customSenderName?: string,
+    extra?: Partial<
+      Pick<
+        MentorshipMessage,
+        | 'attachmentType'
+        | 'attachmentUrl'
+        | 'attachmentName'
+        | 'appointmentStatus'
+        | 'appointmentTime'
+        | 'appointmentTopic'
+      >
+    >
   ): Promise<MentorshipSessionItem | undefined> {
     const session = this.mentorshipSessions.find((s) => s.id === sessionId);
     if (!session) return undefined;
@@ -1821,7 +2099,7 @@ export class PrepskmDataStore {
       minute: '2-digit',
     });
     session.messages.push({
-      id: `msg_${Date.now()}`,
+      id: `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
       senderName:
         customSenderName ||
         (senderRole === 'admin'
@@ -1830,6 +2108,7 @@ export class PrepskmDataStore {
       senderRole,
       text: text.trim(),
       timestamp: nowTime,
+      ...extra,
     });
     if (senderRole === 'admin' && session.status === 'PENDING') {
       session.status = 'ACTIVE';
@@ -1837,14 +2116,188 @@ export class PrepskmDataStore {
     session.updatedAt = new Date().toISOString();
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
 
-    if (this.isCloudAuthenticated) {
-      try {
-        await setDoc(doc(db, 'mentorship', session.id), session);
-      } catch {
-        // Saved locally
-      }
+    try {
+      await setDoc(doc(db, 'mentorship', session.id), session);
+    } catch {
+      // Saved locally
     }
     return { ...session };
+  }
+
+  public async sendMentorshipAttachment(params: {
+    sessionId?: string;
+    mentorId?: string;
+    mentorName?: string;
+    senderRole?: 'student' | 'admin';
+    text?: string;
+    caption?: string;
+    attachmentType: 'IMAGE' | 'VIDEO' | 'FILE';
+    attachmentUrl: string;
+    attachmentName: string;
+  }): Promise<MentorshipSessionItem | undefined> {
+    let targetSessionId = params.sessionId;
+    if (!targetSessionId && params.mentorId) {
+      let existing = this.mentorshipSessions.find((s) => s.mentorId === params.mentorId);
+      if (!existing) {
+        existing = await this.createMentorshipRequest({
+          requestType: 'CHAT',
+          initialMessage: `Started 1:1 Mentorship thread with ${params.mentorName || 'Mentor'}`,
+          mentorId: params.mentorId,
+          mentorName: params.mentorName,
+        });
+      }
+      targetSessionId = existing.id;
+    }
+    if (!targetSessionId) {
+      targetSessionId = this.mentorshipSessions[0]?.id;
+    }
+    if (!targetSessionId) return undefined;
+
+    const finalUrl =
+      params.attachmentType === 'IMAGE'
+        ? await compressImageDataUrl(params.attachmentUrl)
+        : params.attachmentUrl;
+    const defaultCaption =
+      params.attachmentType === 'IMAGE'
+        ? `📷 Shared an image: ${params.attachmentName}`
+        : params.attachmentType === 'VIDEO'
+          ? `🎬 Shared a video clip: ${params.attachmentName}`
+          : `📎 Shared a document/file: ${params.attachmentName}`;
+
+    return this.sendMentorshipMessage(
+      targetSessionId,
+      (params.text || params.caption)?.trim() || defaultCaption,
+      params.senderRole || 'student',
+      undefined,
+      {
+        attachmentType: params.attachmentType,
+        attachmentUrl: finalUrl,
+        attachmentName: params.attachmentName,
+      }
+    );
+  }
+
+  public async requestMentorshipAppointment(params: {
+    sessionId?: string;
+    mentorId?: string;
+    mentorName?: string;
+    preferredTime?: string;
+    requestedTime?: string;
+    topic?: string;
+  }): Promise<MentorshipSessionItem | undefined> {
+    let session = params.sessionId
+      ? this.mentorshipSessions.find((s) => s.id === params.sessionId)
+      : params.mentorId
+        ? this.mentorshipSessions.find((s) => s.mentorId === params.mentorId)
+        : this.mentorshipSessions[0];
+
+    if (!session && params.mentorId) {
+      session = await this.createMentorshipRequest({
+        requestType: 'CHAT',
+        initialMessage: `Started 1:1 Mentorship thread with ${params.mentorName || 'Mentor'}`,
+        mentorId: params.mentorId,
+        mentorName: params.mentorName,
+      });
+    }
+    if (!session) return undefined;
+
+    const cleanTime =
+      (params.preferredTime || params.requestedTime || '').trim() ||
+      'Today · 07:30 PM IST';
+    const cleanTopic =
+      (params.topic || '').trim() ||
+      '1:1 Strategy, Backlog Audit & PYQ Doubt Call';
+
+    session.appointmentStatus = 'PENDING';
+    session.scheduledCallTime = cleanTime;
+    session.requestedCallTime = cleanTime;
+    session.appointmentTopic = cleanTopic;
+
+    return this.sendMentorshipMessage(
+      session.id,
+      `📅 Appointment Request: "${cleanTopic}" (Preferred Slot: ${cleanTime}) — Status: PENDING Admin Approval`,
+      'student',
+      this.currentUser.name,
+      {
+        attachmentType: 'APPOINTMENT',
+        appointmentStatus: 'PENDING',
+        appointmentTime: cleanTime,
+        appointmentTopic: cleanTopic,
+      }
+    );
+  }
+
+  public async respondToMentorshipAppointment(
+    paramsOrSessionId:
+      | {
+          sessionId: string;
+          messageId?: string;
+          decision: 'ACCEPTED' | 'REJECTED';
+          scheduledTime?: string;
+          scheduledCallTime?: string;
+          adminNote?: string;
+        }
+      | string,
+    decisionArg?: 'ACCEPTED' | 'REJECTED',
+    scheduledTimeArg?: string
+  ): Promise<MentorshipSessionItem | undefined> {
+    const params =
+      typeof paramsOrSessionId === 'string'
+        ? {
+            sessionId: paramsOrSessionId,
+            decision: decisionArg || 'ACCEPTED',
+            scheduledTime: scheduledTimeArg,
+          }
+        : paramsOrSessionId;
+
+    const session = this.mentorshipSessions.find((s) => s.id === params.sessionId);
+    if (!session) return undefined;
+
+    const finalTime =
+      (params.scheduledTime || params.scheduledCallTime || '').trim() ||
+      session.scheduledCallTime ||
+      session.requestedCallTime ||
+      'Today · 07:30 PM IST';
+
+    session.appointmentStatus = params.decision;
+    session.scheduledCallTime = finalTime;
+    if (params.decision === 'ACCEPTED') {
+      session.status = 'ACTIVE';
+    }
+
+    for (const msg of session.messages) {
+      if (
+        msg.attachmentType === 'APPOINTMENT' &&
+        (!params.messageId || msg.id === params.messageId)
+      ) {
+        msg.appointmentStatus = params.decision;
+        msg.appointmentTime = finalTime;
+      }
+    }
+
+    const replyText =
+      params.decision === 'ACCEPTED'
+        ? `✅ Appointment ACCEPTED! Your 1:1 call is scheduled for ${finalTime}. Voice & Video call buttons are now unlocked for your slot.${
+            params.adminNote ? ` Note: ${params.adminNote}` : ''
+          }`
+        : `❌ Appointment Request Declined.${
+            params.adminNote
+              ? ` Reason: ${params.adminNote}`
+              : ' Please request another slot via the + menu in chat.'
+          }`;
+
+    return this.sendMentorshipMessage(
+      params.sessionId,
+      replyText,
+      'admin',
+      session.mentorName || 'Sumit Kumar (Admin)',
+      {
+        attachmentType: 'APPOINTMENT',
+        appointmentStatus: params.decision,
+        appointmentTime: finalTime,
+        appointmentTopic: session.appointmentTopic || '1:1 Mentorship Call',
+      }
+    );
   }
 
   public async updateMentorshipStatus(
@@ -1856,6 +2309,11 @@ export class PrepskmDataStore {
     session.status = status;
     session.updatedAt = new Date().toISOString();
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
+    try {
+      await setDoc(doc(db, 'mentorship', session.id), session);
+    } catch {
+      // Saved locally
+    }
   }
 
   // --- Dual-Crop Admin Question Workbench & Merged Question Pool ---

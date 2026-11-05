@@ -27,6 +27,7 @@ class PrepskmPlatformApp {
   private isProfileModalOpen = false;
   private isFacultyLoginExpanded = false;
   private isNotificationsOpen = false;
+  private isMobile3DotMenuOpen = false;
   private isTabletRailExpanded = false;
   private guestReminderTimer: number | null = null;
 
@@ -180,6 +181,7 @@ class PrepskmPlatformApp {
     this.testModule.unmount();
     this.mentorshipModule.unmount();
     this.activePage = page;
+    this.isMobile3DotMenuOpen = false;
     this.renderShell();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -187,6 +189,7 @@ class PrepskmPlatformApp {
   public renderShell(): void {
     dataStore.applySiteThemeToDocument();
     const user = dataStore.getUser();
+    const focusStats = dataStore.getFocusStatsSummary();
     const cohortTheme = getCohortTheme(user.targetExam, user.classYear);
     const isAdminOrMentor = dataStore.isAuthorizedAdminOrMentor();
     const isMasterAdmin = dataStore.isMasterAdmin();
@@ -265,6 +268,30 @@ class PrepskmPlatformApp {
       navItems[5], // Mentorship
     ];
 
+    const cohortOptions = [
+      { value: 'JEE|Class 12', label: 'JEE · Class 12' },
+      { value: 'JEE|Class 11', label: 'JEE · Class 11' },
+      { value: 'JEE|Dropper', label: 'JEE · Dropper' },
+      { value: 'NEET|Class 12', label: 'NEET · Class 12' },
+      { value: 'NEET|Class 11', label: 'NEET · Class 11' },
+      { value: 'NEET|Dropper', label: 'NEET · Dropper' },
+      { value: 'JEE|Class 11 Foundation', label: 'Class 11 Foundation' },
+      { value: 'JEE|Class 10 Foundation', label: 'Class 10 Foundation' },
+      { value: 'JEE|Class 10', label: 'Class 10 · Board+NTSE' },
+      { value: 'JEE|Class 9', label: 'Class 9 · Foundation' },
+    ];
+
+    const currentCohortKey =
+      user.classYear === 'Class 10 Foundation'
+        ? 'JEE|Class 10 Foundation'
+        : user.classYear === 'Class 11 Foundation'
+          ? 'JEE|Class 11 Foundation'
+          : user.classYear === 'Class 10'
+            ? 'JEE|Class 10'
+            : user.classYear === 'Class 9'
+              ? 'JEE|Class 9'
+              : `${user.targetExam}|${user.classYear}`;
+
     this.rootEl.innerHTML = `
       <div
         class="min-h-screen flex flex-col lg:flex-row text-slate-900 transition-colors"
@@ -272,7 +299,7 @@ class PrepskmPlatformApp {
         data-cohort-class="${this.escapeHtml(user.classYear)}"
       >
         ${
-          this.isPencilPickMode
+          this.isPencilPickMode && isMasterAdmin
             ? `
           <div class="fixed top-0 inset-x-0 z-50 bg-amber-500 text-slate-950 px-4 py-2 text-xs font-extrabold flex items-center justify-between shadow-lg">
             <span>✏️ LIVE ELEMENT PICKER ACTIVE: Click any heading, button, or card on the page to edit its text or colors!</span>
@@ -391,8 +418,12 @@ class PrepskmPlatformApp {
                 <span class="font-mono-tabular font-bold text-[#10B981]">🔥 ${user.currentStreak} Days</span>
               </div>
               <div class="flex items-center justify-between text-xs">
+                <span class="font-semibold text-slate-600">Focus Logged</span>
+                <span class="font-mono-tabular font-bold text-[#4F46E5]">⏱ ${focusStats.totalHours}h (${focusStats.totalMinutes}m)</span>
+              </div>
+              <div class="flex items-center justify-between text-xs">
                 <span class="font-semibold text-slate-600">Cohort Track</span>
-                <span class="font-bold text-[#4F46E5] truncate max-w-[125px]">
+                <span class="font-bold text-slate-800 truncate max-w-[125px]">
                   ${user.classYear}
                 </span>
               </div>
@@ -476,79 +507,66 @@ class PrepskmPlatformApp {
 
         <!-- MAIN CONTENT WRAPPER -->
         <div class="flex-1 flex flex-col md:pl-20 lg:pl-64 pb-20 md:pb-8">
-          <!-- Top App Header Bar (Lightweight & Unique Mobile Pill Strip) -->
-          <header class="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-3 sm:px-6 lg:px-8 py-2 flex flex-col gap-1.5">
+          <!-- Top App Header Bar (Ultra-Clean on Mobile: Only Brand + Notification Bell + 3-Dot Menu) -->
+          <header class="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-3 sm:px-6 lg:px-8 py-2">
             <div class="flex items-center justify-between gap-2 min-h-[44px]">
-              <!-- Left: Mobile Logo + Single Unified Cohort & Class Selector Box -->
+              <!-- Left: Mobile Logo + Desktop/Tablet Unified Cohort Selector -->
               <div class="flex items-center gap-2 sm:gap-3 min-w-0">
-                <a href="/index.html" class="lg:hidden flex items-center gap-1.5 shrink-0">
+                <a href="/index.html" class="lg:hidden flex items-center gap-2 shrink-0">
                   <img
                     src="${logoSrc}"
                     alt="${this.escapeHtml(brandName)}"
                     class="w-7 h-7 rounded-lg object-contain shadow-2xs"
                   />
-                  <span class="brand-title-target font-extrabold text-xs sm:text-sm text-slate-900">${this.escapeHtml(brandName)}</span>
+                  <span class="brand-title-target font-extrabold text-sm text-slate-900">${this.escapeHtml(brandName)}</span>
                 </a>
 
-                <!-- SINGLE UNIFIED CLASS & EXAM COHORT SELECTOR BOX (Including Class 10 & 11 Foundation) -->
-                <div class="flex items-center gap-1.5 bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/90 border border-indigo-200 hover:border-[#4F46E5] rounded-xl px-2 py-1 shadow-2xs transition-colors">
-                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5] hidden sm:inline">Cohort:</span>
+                <!-- Desktop & Tablet Unified Class & Exam Cohort Selector (Hidden on Mobile Top Bar to keep mobile header ultra-clean) -->
+                <div class="hidden md:flex items-center gap-1.5 bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/90 border border-indigo-200 hover:border-[#4F46E5] rounded-xl px-2.5 py-1 shadow-2xs transition-colors">
+                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">Cohort:</span>
                   <select
                     id="unified-cohort-select"
                     aria-label="Select Class and Exam Track"
-                    class="bg-transparent text-[11px] sm:text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer pr-1"
+                    class="bg-transparent text-xs font-extrabold text-slate-900 focus:outline-none cursor-pointer pr-1"
                   >
-                    ${[
-                      { value: 'JEE|Class 12', label: 'JEE · Class 12' },
-                      { value: 'JEE|Class 11', label: 'JEE · Class 11' },
-                      { value: 'JEE|Dropper', label: 'JEE · Dropper' },
-                      { value: 'NEET|Class 12', label: 'NEET · Class 12' },
-                      { value: 'NEET|Class 11', label: 'NEET · Class 11' },
-                      { value: 'NEET|Dropper', label: 'NEET · Dropper' },
-                      { value: 'JEE|Class 11 Foundation', label: 'Class 11 Foundation' },
-                      { value: 'JEE|Class 10 Foundation', label: 'Class 10 Foundation' },
-                      { value: 'JEE|Class 10', label: 'Class 10 · Board+NTSE' },
-                      { value: 'JEE|Class 9', label: 'Class 9 · Foundation' },
-                    ]
-                      .map((opt) => {
-                        const currentKey =
-                          user.classYear === 'Class 10 Foundation'
-                            ? 'JEE|Class 10 Foundation'
-                            : user.classYear === 'Class 11 Foundation'
-                              ? 'JEE|Class 11 Foundation'
-                              : user.classYear === 'Class 10'
-                                ? 'JEE|Class 10'
-                                : user.classYear === 'Class 9'
-                                  ? 'JEE|Class 9'
-                                  : `${user.targetExam}|${user.classYear}`;
-                        return `<option value="${opt.value}" ${currentKey === opt.value ? 'selected' : ''}>${opt.label}</option>`;
-                      })
+                    ${cohortOptions
+                      .map(
+                        (opt) =>
+                          `<option value="${opt.value}" ${currentCohortKey === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                      )
                       .join('')}
                   </select>
                 </div>
               </div>
 
-              <!-- Right: Admin Pencil Quick-Edit, Notifications Bell & Profile Avatar Button -->
-              <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
-                <!-- Admin Quick Pencil Website Editor Trigger -->
-                <button
-                  type="button"
-                  data-shell-action="open-pencil-modal"
-                  data-testid="header-pencil-edit-btn"
-                  title="Edit Website Text, Colors & Theme (Saved to Firebase)"
-                  class="min-h-[34px] px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-extrabold flex items-center gap-1 cursor-pointer"
-                >
-                  <span>✏️</span>
-                  <span class="hidden sm:inline">Edit UI</span>
-                </button>
+              <!-- Right: Notification Bell + (Mobile 3-Dot Menu OR Desktop Profile/Admin Controls) -->
+              <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+                ${
+                  isMasterAdmin
+                    ? `
+                  <!-- Admin Quick Pencil Website Editor Trigger (ONLY visible when logged in as sumit586kumar@gmail.com) -->
+                  <button
+                    type="button"
+                    data-shell-action="open-pencil-modal"
+                    data-testid="header-pencil-edit-btn"
+                    title="Edit Website Text, Colors & Theme (Master Admin Only)"
+                    class="hidden md:flex min-h-[34px] px-2.5 py-1 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-[11px] font-extrabold items-center gap-1 cursor-pointer"
+                  >
+                    <span>✏️</span>
+                    <span>Edit UI</span>
+                  </button>
+                `
+                    : ''
+                }
 
-                <!-- Notifications & Streak Alert Bell -->
+                <!-- Notifications & Streak Alert Bell (Visible on all viewports) -->
                 <div class="relative">
                   <button
                     type="button"
                     data-shell-action="toggle-notifications"
+                    data-testid="header-notification-bell-btn"
                     aria-label="Notifications and Mentor Broadcasts"
-                    class="min-h-[34px] min-w-[34px] rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] flex items-center justify-center text-slate-700 relative cursor-pointer"
+                    class="min-h-[36px] min-w-[36px] rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] flex items-center justify-center text-slate-700 relative cursor-pointer"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
                     <span class="w-2 h-2 rounded-full bg-[#EF4444] absolute top-1.5 right-1.5"></span>
@@ -590,12 +608,12 @@ class PrepskmPlatformApp {
                   }
                 </div>
 
-                <!-- Profile & Custom Photo Trigger -->
+                <!-- Desktop/Tablet Profile & Custom Photo Trigger (Hidden on Mobile Top Header; placed inside Mobile 3-Dot Menu) -->
                 <button
                   type="button"
                   data-shell-action="open-profile-modal"
                   data-testid="open-profile-modal-btn"
-                  class="min-h-[34px] pl-1.5 pr-2.5 py-1 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold flex items-center gap-1.5 shadow-2xs cursor-pointer"
+                  class="hidden md:flex min-h-[36px] pl-1.5 pr-3 py-1 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <img
                     src="${user.photoURL}"
@@ -605,50 +623,146 @@ class PrepskmPlatformApp {
                   />
                   <span>${this.escapeHtml(user.name.split(' ')[0])}</span>
                 </button>
-              </div>
-            </div>
 
-            <!-- Mobile-Only Sleek Horizontal Quick-Jump Pill Strip (Lightweight, Non-Bulky & Distinct from Tablet) -->
-            <div class="md:hidden flex items-center gap-1.5 overflow-x-auto no-scrollbar py-0.5">
-              <a
-                href="/planner.html"
-                data-shell-nav="planner"
-                class="px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 border transition-colors ${
-                  this.activePage === 'planner'
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                }"
-              >
-                ⚡ To-Do & Backlog
-              </a>
-              <a
-                href="/test-history.html"
-                data-shell-nav="test-history"
-                class="px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 border transition-colors ${
-                  this.activePage === 'test-history'
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                }"
-              >
-                📊 D3 Test History
-              </a>
-              <a
-                href="/mentorship.html"
-                data-shell-nav="mentorship"
-                class="px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 border transition-colors ${
-                  this.activePage === 'mentorship'
-                    ? 'bg-slate-900 text-white border-slate-900'
-                    : 'bg-slate-50 text-slate-700 border-slate-200'
-                }"
-              >
-                📞 1:1 Mentorship
-              </a>
-              <a
-                href="/player.html?videoId=vid_rotational_01"
-                class="px-2.5 py-1 rounded-full text-[10px] font-extrabold shrink-0 bg-indigo-50 text-[#4F46E5] border border-indigo-200"
-              >
-                ▶ Fullscreen Player
-              </a>
+                <!-- MOBILE 3-DOT MENU BUTTON (⋮) — Houses All Tools, Cohort Selector, Profile & Links on Mobile -->
+                <div class="md:hidden relative">
+                  <button
+                    type="button"
+                    data-shell-action="toggle-mobile-3dot-menu"
+                    data-testid="mobile-3dot-menu-btn"
+                    aria-label="Open Mobile Menu"
+                    class="min-h-[36px] min-w-[36px] rounded-xl bg-slate-900 text-white flex items-center justify-center font-extrabold text-base shadow-2xs cursor-pointer"
+                  >
+                    ⋮
+                  </button>
+
+                  ${
+                    this.isMobile3DotMenuOpen
+                      ? `
+                    <div
+                      data-testid="mobile-3dot-drawer"
+                      class="absolute right-0 mt-2 w-72 bg-white border border-[#E2E8F0] rounded-2xl shadow-2xl p-4 space-y-3 z-50"
+                    >
+                      <!-- User Summary & Profile Trigger -->
+                      <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
+                        <div class="flex items-center gap-2.5 min-w-0">
+                          <img
+                            src="${user.photoURL}"
+                            alt="${this.escapeHtml(user.name)}"
+                            referrerpolicy="no-referrer"
+                            class="w-9 h-9 rounded-full object-cover border border-[#E2E8F0] shrink-0"
+                          />
+                          <div class="min-w-0">
+                            <div class="text-xs font-extrabold text-slate-900 truncate">${this.escapeHtml(user.name)}</div>
+                            <div class="text-[10px] font-mono-tabular text-[#4F46E5] font-bold">
+                              🔥 ${user.currentStreak}d Streak · ⏱ ${focusStats.totalHours}h Focus
+                            </div>
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          data-shell-action="open-profile-modal"
+                          class="px-2.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-[11px] font-extrabold shrink-0 cursor-pointer"
+                        >
+                          Profile
+                        </button>
+                      </div>
+
+                      <!-- Mobile Class & Exam Cohort Selector inside 3-Dot Menu -->
+                      <div class="space-y-1">
+                        <label class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+                          Class / Foundation Cohort
+                        </label>
+                        <select
+                          id="mobile-cohort-select"
+                          aria-label="Mobile Select Class and Exam Track"
+                          class="w-full min-h-[36px] px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-extrabold text-slate-900"
+                        >
+                          ${cohortOptions
+                            .map(
+                              (opt) =>
+                                `<option value="${opt.value}" ${currentCohortKey === opt.value ? 'selected' : ''}>${opt.label}</option>`
+                            )
+                            .join('')}
+                        </select>
+                      </div>
+
+                      <!-- All Quick-Access Module Links inside 3-Dot Menu -->
+                      <div class="space-y-1 pt-1">
+                        <a
+                          href="/planner.html"
+                          data-shell-nav="planner"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
+                        >
+                          <span>⚡ To-Do & Backlog Killer</span>
+                          <span class="text-[10px] text-[#4F46E5]">Open →</span>
+                        </a>
+                        <a
+                          href="/study.html"
+                          data-shell-nav="study"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
+                        >
+                          <span>⏱ Pomodoro & Study Vault</span>
+                          <span class="text-[10px] text-[#10B981]">${focusStats.totalHours}h</span>
+                        </a>
+                        <a
+                          href="/test-history.html"
+                          data-shell-nav="test-history"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
+                        >
+                          <span>📊 D3 Test History & Solutions</span>
+                          <span class="text-[10px] text-[#4F46E5]">Open →</span>
+                        </a>
+                        <a
+                          href="/mentorship.html"
+                          data-shell-nav="mentorship"
+                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
+                        >
+                          <span>📞 1:1 Mentorship & Videos</span>
+                          <span class="text-[10px] text-[#4F46E5]">Open →</span>
+                        </a>
+                        <a
+                          href="/player.html?videoId=vid_rotational_01&mode=horizontal"
+                          class="w-full px-3 py-2 rounded-xl bg-indigo-50 text-xs font-extrabold text-[#4F46E5] flex items-center justify-between"
+                        >
+                          <span>▶ Fullscreen Landscape Player</span>
+                          <span>16:9</span>
+                        </a>
+                        ${
+                          isAdminOrMentor
+                            ? `
+                          <a
+                            href="/admin.html"
+                            data-shell-nav="admin"
+                            class="w-full px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold flex items-center justify-between"
+                          >
+                            <span>🛡️ Admin & Mentor Studio</span>
+                            <span>Open</span>
+                          </a>
+                        `
+                            : ''
+                        }
+                        ${
+                          isMasterAdmin
+                            ? `
+                          <button
+                            type="button"
+                            data-shell-action="open-pencil-modal"
+                            class="w-full px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold flex items-center justify-between cursor-pointer"
+                          >
+                            <span>✏️ Live Pencil UI Editor</span>
+                            <span>Admin</span>
+                          </button>
+                        `
+                            : ''
+                        }
+                      </div>
+                    </div>
+                  `
+                      : ''
+                  }
+                </div>
+              </div>
             </div>
           </header>
 
@@ -682,22 +796,28 @@ class PrepskmPlatformApp {
             .join('')}
         </nav>
 
-        <!-- FLOATING ADMIN PENCIL QUICK-EDIT BUTTON (Click to Edit Any Website Name, Text or Color) -->
-        <button
-          type="button"
-          data-shell-action="open-pencil-modal"
-          data-testid="admin-floating-pencil-btn"
-          title="Admin Pencil Editor: Edit any website text, color, or theme live"
-          class="fixed bottom-16 md:bottom-6 left-4 z-40 w-11 h-11 rounded-2xl bg-slate-900 hover:bg-[#4F46E5] text-white shadow-xl border-2 border-white flex items-center justify-center text-base cursor-pointer transition-transform hover:scale-105"
-        >
-          ✏️
-        </button>
+        ${
+          isMasterAdmin
+            ? `
+          <!-- FLOATING ADMIN PENCIL QUICK-EDIT BUTTON (STRICTLY ONLY FOR sumit586kumar@gmail.com) -->
+          <button
+            type="button"
+            data-shell-action="open-pencil-modal"
+            data-testid="admin-floating-pencil-btn"
+            title="Admin Pencil Editor: Edit any website text, color, or theme live"
+            class="fixed bottom-16 md:bottom-6 left-4 z-40 w-11 h-11 rounded-2xl bg-slate-900 hover:bg-[#4F46E5] text-white shadow-xl border-2 border-white flex items-center justify-center text-base cursor-pointer transition-transform hover:scale-105"
+          >
+            ✏️
+          </button>
+        `
+            : ''
+        }
 
-        <!-- Student Profile, Custom Photo Upload & Class Cohort Modal -->
+        <!-- Student Profile, Custom Photo Upload, Focus Hours & Class Cohort Modal -->
         ${this.renderProfileAndAuthModal()}
 
-        <!-- Floating Admin Pencil Live Customizer Modal -->
-        ${this.renderAdminPencilModal()}
+        <!-- Floating Admin Pencil Live Customizer Modal (Master Admin Only) -->
+        ${isMasterAdmin ? this.renderAdminPencilModal() : ''}
 
         <!-- Global Toast Notification -->
         <div
@@ -738,7 +858,7 @@ class PrepskmPlatformApp {
   }
 
   private renderAdminPencilModal(): string {
-    if (!this.isPencilModalOpen) return '';
+    if (!this.isPencilModalOpen || !dataStore.isMasterAdmin()) return '';
     const siteTheme = dataStore.getSiteTheme();
     const overrides = siteTheme.elementOverrides || {};
     const overrideCount = Object.keys(overrides).length;
@@ -756,7 +876,7 @@ class PrepskmPlatformApp {
           <div class="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-600">
-                ✏️ Admin Live Pencil Editor · Synced to Firebase
+                ✏️ Master Admin Live Pencil Editor (${MASTER_ADMIN_EMAIL})
               </span>
               <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
                 Edit Any Website Text, Name, or Color Live
@@ -885,6 +1005,7 @@ class PrepskmPlatformApp {
   private renderProfileAndAuthModal(): string {
     if (!this.isProfileModalOpen) return '';
     const user = dataStore.getUser();
+    const focusStats = dataStore.getFocusStatsSummary();
     const cohortTheme = getCohortTheme(user.targetExam, user.classYear);
     const mentors = dataStore.getMentors();
 
@@ -900,7 +1021,7 @@ class PrepskmPlatformApp {
           <div class="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <span class="text-xs font-bold uppercase tracking-wider text-[#4F46E5]">
-                Personal Aspirant Profile & Custom Photo
+                Personal Aspirant Profile, Focus Stats & Custom Photo
               </span>
               <h2 class="text-lg font-bold text-slate-900">
                 Customize Profile Photo, Class (9–12 / Foundation / Dropper) & Exam
@@ -968,6 +1089,45 @@ class PrepskmPlatformApp {
             >
               <span>${user.isGuest ? 'Sign Up / Log In with Google Account' : 'Verified Google Account Connected'}</span>
             </button>
+          </div>
+
+          <!-- Logged Pomodoro Focus Hours & Subject Statistics in Profile -->
+          <div
+            data-testid="profile-focus-hours-summary"
+            class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2.5"
+          >
+            <div class="flex items-center justify-between">
+              <div>
+                <div class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                  ⏱ Pomodoro Study Focus Statistics · Synced to Firebase
+                </div>
+                <div class="text-xs text-slate-600">
+                  Logged from the Study Module Focus Timer
+                </div>
+              </div>
+              <div class="text-right">
+                <span class="text-base font-mono-tabular font-extrabold text-slate-900">
+                  ${focusStats.totalHours} hrs
+                </span>
+                <span class="block text-[10px] font-mono-tabular text-slate-500">
+                  (${focusStats.totalMinutes} mins total)
+                </span>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
+              ${(['Physics', 'Chemistry', 'Math', 'Biology'] as const)
+                .map((subj) => {
+                  const mins = focusStats.subjectMinutes[subj] ?? 0;
+                  const hrs = Math.round((mins / 60) * 10) / 10;
+                  return `
+                  <div class="p-2 rounded-xl bg-white border border-indigo-100 text-center">
+                    <div class="text-[10px] font-bold text-slate-500">${subj}</div>
+                    <div class="text-xs font-mono-tabular font-extrabold text-[#4F46E5]">${hrs}h (${mins}m)</div>
+                  </div>
+                `;
+                })
+                .join('')}
+            </div>
           </div>
 
           <!-- Profile Update Form -->
@@ -1082,7 +1242,7 @@ class PrepskmPlatformApp {
               data-shell-action="toggle-faculty-login"
               class="text-[11px] font-semibold text-slate-400 hover:text-slate-600 flex items-center gap-1"
             >
-              <span>${this.isFacultyLoginExpanded ? '▾' : '▸'} Educator / Mentor / Admin Sign-In</span>
+              <span>${this.isFacultyLoginExpanded ? '▾' : '▸'} Educator / Mentor / Admin Sign-In (${MASTER_ADMIN_EMAIL})</span>
             </button>
 
             ${
@@ -1090,14 +1250,15 @@ class PrepskmPlatformApp {
                 ? `
               <div class="mt-3 p-3.5 rounded-xl bg-slate-50 border border-[#E2E8F0] space-y-2.5">
                 <div class="text-[11px] font-bold text-slate-700">
-                  Authorized Faculty & Admin Portal Access
+                  Authorized Faculty & Master Admin Portal Access
                 </div>
                 <div class="flex flex-wrap gap-2">
                   <button
                     type="button"
                     data-shell-action="set-role-mode"
                     data-mode="admin"
-                    class="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold"
+                    data-testid="login-master-admin-btn"
+                    class="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
                   >
                     Master Admin (${MASTER_ADMIN_EMAIL})
                   </button>
@@ -1110,7 +1271,7 @@ class PrepskmPlatformApp {
                       data-shell-action="set-role-mode"
                       data-mode="mentor"
                       data-mentor-email="${this.escapeHtml(m.email)}"
-                      class="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold"
+                      class="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold cursor-pointer"
                     >
                       Mentor: ${this.escapeHtml(m.name)}
                     </button>
@@ -1184,6 +1345,7 @@ class PrepskmPlatformApp {
     );
     pencilForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
+      if (!dataStore.isMasterAdmin()) return;
       const brandName =
         pencilForm
           .querySelector<HTMLInputElement>('#pencil-brand-name')
@@ -1224,26 +1386,42 @@ class PrepskmPlatformApp {
       this.renderShell();
     });
 
-    const unifiedSelect =
-      this.rootEl.querySelector<HTMLSelectElement>('#unified-cohort-select');
-    unifiedSelect?.addEventListener('change', async () => {
-      const val = unifiedSelect.value;
+    const handleCohortSelectChange = async (selectEl: HTMLSelectElement) => {
+      const val = selectEl.value;
       const [examPart, classPart] = val.split('|') as [TargetExam, StudentClassYear];
       if (examPart && classPart) {
         await dataStore.updateUser({
           targetExam: examPart,
           classYear: classPart,
         });
+        this.isMobile3DotMenuOpen = false;
         this.showToast(`Switched Cohort & Theme to ${classPart} (${examPart})`);
         this.renderShell();
       }
-    });
+    };
+
+    const unifiedSelect =
+      this.rootEl.querySelector<HTMLSelectElement>('#unified-cohort-select');
+    unifiedSelect?.addEventListener('change', () =>
+      handleCohortSelectChange(unifiedSelect)
+    );
+
+    const mobileCohortSelect =
+      this.rootEl.querySelector<HTMLSelectElement>('#mobile-cohort-select');
+    mobileCohortSelect?.addEventListener('change', () =>
+      handleCohortSelectChange(mobileCohortSelect)
+    );
 
     this.rootEl.querySelectorAll<HTMLElement>('[data-shell-action]').forEach((el) => {
       const action = el.dataset.shellAction;
       el.addEventListener('click', async () => {
         switch (action) {
           case 'open-pencil-modal': {
+            if (!dataStore.isMasterAdmin()) {
+              this.showToast(`Only Master Admin (${MASTER_ADMIN_EMAIL}) can edit website UI.`);
+              return;
+            }
+            this.isMobile3DotMenuOpen = false;
             this.isPencilModalOpen = true;
             this.renderShell();
             break;
@@ -1254,6 +1432,7 @@ class PrepskmPlatformApp {
             break;
           }
           case 'start-pencil-pick': {
+            if (!dataStore.isMasterAdmin()) return;
             this.isPencilModalOpen = false;
             this.isPencilPickMode = true;
             this.renderShell();
@@ -1272,6 +1451,7 @@ class PrepskmPlatformApp {
             break;
           }
           case 'open-profile-modal': {
+            this.isMobile3DotMenuOpen = false;
             this.isProfileModalOpen = true;
             this.renderShell();
             break;
@@ -1287,7 +1467,14 @@ class PrepskmPlatformApp {
             break;
           }
           case 'toggle-notifications': {
+            this.isMobile3DotMenuOpen = false;
             this.isNotificationsOpen = !this.isNotificationsOpen;
+            this.renderShell();
+            break;
+          }
+          case 'toggle-mobile-3dot-menu': {
+            this.isNotificationsOpen = false;
+            this.isMobile3DotMenuOpen = !this.isMobile3DotMenuOpen;
             this.renderShell();
             break;
           }
@@ -1371,8 +1558,8 @@ class PrepskmPlatformApp {
     }, 3400);
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str?: string | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

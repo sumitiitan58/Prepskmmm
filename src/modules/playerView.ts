@@ -21,8 +21,8 @@ export class PlayerModule {
   private callbacks: PlayerCallbacks;
   private activeVideo: VideoRoadmapItem;
   private activeTab: 'chapters' | 'doubts' | 'formulas' | 'scratchpad' = 'chapters';
-  private isPlaying = false;
-  private isLandscapeMode = false;
+  private isPlaying = true;
+  private isLandscapeMode = true;
   private currentTimeSeconds = 525;
   private totalDurationSeconds = LECTURE_TOTAL_DURATION_SECONDS;
   private playbackRateIndex = 1; // 1.0x default
@@ -49,10 +49,16 @@ export class PlayerModule {
     } else {
       this.activeVideo = dataStore.getVideos()[0];
     }
+    const modeParam = params.get('mode');
+    this.isLandscapeMode = modeParam !== 'vertical';
     const saved = dataStore.getLectureProgress();
     this.currentTimeSeconds = saved.lastPositionSeconds ?? 525;
     this.rerender();
     this.drawLectureCanvasFrame();
+    if (this.isPlaying) {
+      this.lastTickMs = performance.now();
+      this.startLoop();
+    }
   }
 
   public unmount(): void {
@@ -190,10 +196,34 @@ export class PlayerModule {
                 `
                 }
 
-                <!-- Live Playing Status Pill -->
-                <div class="absolute top-3 left-3 z-20 pointer-events-none flex items-center gap-2 px-2.5 py-1 rounded-lg bg-slate-950/80 border border-white/10 text-[10px] font-mono-tabular text-white">
-                  <span class="w-2 h-2 rounded-full ${this.isPlaying ? 'bg-[#10B981] animate-ping' : 'bg-amber-400'}"></span>
-                  <span>${this.isPlaying ? 'LIVE STREAM PLAYING' : 'PAUSED — TAP TO PLAY'}</span>
+                <!-- Live Playing Status Pill & Top-Left Back Link in Fullscreen Horizontal Mode -->
+                <div class="absolute top-3 left-3 z-20 flex items-center gap-2">
+                  <a
+                    href="/mentorship.html"
+                    class="px-3 py-1.5 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-white/15 text-[11px] font-extrabold text-white inline-flex items-center gap-1 shadow-md"
+                  >
+                    <span>← Back</span>
+                  </a>
+                  <div class="pointer-events-none flex items-center gap-2 px-2.5 py-1.5 rounded-xl bg-slate-950/80 border border-white/10 text-[10px] font-mono-tabular text-white">
+                    <span class="w-2 h-2 rounded-full ${this.isPlaying ? 'bg-[#10B981] animate-ping' : 'bg-amber-400'}"></span>
+                    <span>${this.isPlaying ? 'FULLSCREEN HORIZONTAL STREAM' : 'PAUSED — TAP TO PLAY'}</span>
+                  </div>
+                </div>
+
+                <!-- Top-Right Crop / Orientation Toggle Sign (Switch Between Horizontal Fullscreen & Vertical YouTube Mode with Suggested Videos Below) -->
+                <div class="absolute top-3 right-3 z-20 flex items-center gap-2">
+                  <button
+                    type="button"
+                    data-action="toggle-landscape-fullscreen"
+                    data-testid="player-crop-vertical-toggle-btn"
+                    title="Crop / Orientation Toggle: Switch between Horizontal Full-Screen and Vertical YouTube View with Suggested Videos below"
+                    class="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-500 text-white border border-indigo-300/40 text-xs font-extrabold shadow-lg inline-flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" stroke-width="2.2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" d="M6 2v14a2 2 0 002 2h14M18 22V8a2 2 0 00-2-2H2"/>
+                    </svg>
+                    <span>${this.isLandscapeMode ? '🔄 Vertical & Suggested Videos' : '⛶ Horizontal Fullscreen'}</span>
+                  </button>
                 </div>
 
                 <!-- Touch-Friendly Overlay Transport Controls -->
@@ -721,6 +751,9 @@ export class PlayerModule {
             break;
           case 'toggle-landscape-fullscreen': {
             this.isLandscapeMode = !this.isLandscapeMode;
+            const nextUrl = new URL(window.location.href);
+            nextUrl.searchParams.set('mode', this.isLandscapeMode ? 'horizontal' : 'vertical');
+            window.history.replaceState({}, '', nextUrl.toString());
             try {
               const orientation = screen.orientation as ScreenOrientation & {
                 lock?: (mode: string) => Promise<void>;
@@ -736,8 +769,8 @@ export class PlayerModule {
             }
             this.callbacks.onShowToast(
               this.isLandscapeMode
-                ? 'Switched to Full-Screen Horizontal Landscape Player'
-                : 'Returned to Standard Player Layout'
+                ? 'Switched to Full-Screen Horizontal Landscape Mode'
+                : 'Switched to Vertical YouTube Mode — Suggested Videos shown underneath!'
             );
             this.rerender();
             break;

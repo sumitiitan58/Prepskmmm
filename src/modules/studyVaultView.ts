@@ -1,6 +1,7 @@
 import { getCohortTheme } from '../constants';
 import { dataStore } from '../services/firebaseService';
-import type { StudyMaterialItem } from '../types';
+import type { StudyMaterialItem, SubjectName } from '../types';
+import { formatDuration } from '../utils/examLogic';
 
 export interface StudyVaultCallbacks {
   onShowToast: (message: string) => void;
@@ -13,6 +14,14 @@ export class StudyVaultModule {
   private selectedSubjectName = 'ALL';
   private activeOpenedSection: string | null = null; // null = Section Directory Hub, string = Dedicated Section Page
   private searchQuery = '';
+
+  // Pomodoro Focus Timer State
+  private focusSubject: SubjectName = 'Physics';
+  private focusModeMinutes = 25;
+  private focusModeLabel = '25m Classic Pomodoro';
+  private focusRemainingSeconds = 25 * 60;
+  private isFocusRunning = false;
+  private focusIntervalId: number | null = null;
 
   // In-App Secure PDF Viewer Modal State
   private previewMaterial: StudyMaterialItem | null = null;
@@ -166,6 +175,9 @@ export class StudyVaultModule {
             </div>
           </section>
 
+          <!-- Pomodoro-Style Subject Focus Timer & Profile Statistics Logger -->
+          ${this.renderPomodoroFocusWidget()}
+
           <!-- Dedicated Section Folder Cards Grid -->
           <section aria-label="Study Material Sections" class="space-y-3">
             <div class="flex items-center justify-between px-1">
@@ -232,6 +244,9 @@ export class StudyVaultModule {
 
     this.containerEl.innerHTML = `
       <div class="space-y-5" data-testid="study-vault-dedicated-section-page">
+        <!-- Pomodoro-Style Subject Focus Timer & Profile Statistics Logger -->
+        ${this.renderPomodoroFocusWidget()}
+
         <!-- Dedicated Section Page Hero Header with Back Button -->
         <section
           aria-label="Dedicated Section Page Header"
@@ -441,6 +456,178 @@ export class StudyVaultModule {
     `;
 
     this.bindEvents();
+  }
+
+  private renderPomodoroFocusWidget(): string {
+    const focusStats = dataStore.getFocusStatsSummary();
+    const recentSessions = dataStore.getFocusSessions().slice(0, 3);
+    const subjectsList: SubjectName[] = ['Physics', 'Chemistry', 'Math', 'Biology'];
+    const presets = [
+      { minutes: 25, label: '25m Classic Pomodoro' },
+      { minutes: 50, label: '50m Deep Focus' },
+      { minutes: 15, label: '15m PYQ Sprint' },
+      { minutes: 5, label: '5m Reset Break' },
+    ];
+
+    const totalSec = Math.max(60, this.focusModeMinutes * 60);
+    const progressPct = Math.min(
+      100,
+      Math.max(0, Math.round(((totalSec - this.focusRemainingSeconds) / totalSec) * 100))
+    );
+
+    return `
+      <section
+        aria-label="Pomodoro Subject Focus Timer"
+        data-testid="study-pomodoro-timer-card"
+        class="bg-white border-2 border-indigo-100 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4"
+      >
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <!-- Left: Subject Selector & Timer Presets -->
+          <div class="space-y-2.5 flex-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200 text-[11px] font-extrabold uppercase tracking-wider">
+                ⏱️ Pomodoro Focus Timer · Synced to Profile Stats
+              </span>
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-mono-tabular font-bold" data-testid="pomodoro-total-focus-badge">
+                Profile Total: ${focusStats.totalFocusHours} hrs (${focusStats.totalFocusMinutes} mins)
+              </span>
+            </div>
+
+            <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
+              Select Subject & Log Deep-Focus Hours to Your Profile
+            </h2>
+
+            <!-- Subject Pills -->
+            <div class="flex flex-wrap items-center gap-1.5" role="group" aria-label="Select Focus Subject">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mr-1">Subject:</span>
+              ${subjectsList
+                .map((sub) => {
+                  const active = this.focusSubject === sub;
+                  const hrs = focusStats.subjectFocusHours[sub] ?? 0;
+                  return `
+                    <button
+                      type="button"
+                      data-action="select-focus-subject"
+                      data-subject="${sub}"
+                      data-testid="focus-subject-btn-${sub.toLowerCase()}"
+                      class="min-h-[34px] px-3 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        active
+                          ? 'bg-[#4F46E5] text-white shadow-sm'
+                          : 'bg-[#F8FAFC] hover:bg-slate-100 text-slate-700 border border-[#E2E8F0]'
+                      }"
+                    >
+                      ${sub} <span class="opacity-80 font-mono-tabular text-[10px]">(${hrs}h)</span>
+                    </button>
+                  `;
+                })
+                .join('')}
+            </div>
+
+            <!-- Duration Presets -->
+            <div class="flex flex-wrap items-center gap-1.5">
+              <span class="text-[11px] font-bold uppercase tracking-wider text-slate-500 mr-1">Mode:</span>
+              ${presets
+                .map((p) => {
+                  const active = this.focusModeMinutes === p.minutes;
+                  return `
+                    <button
+                      type="button"
+                      data-action="select-focus-preset"
+                      data-minutes="${p.minutes}"
+                      data-label="${this.escapeHtml(p.label)}"
+                      class="min-h-[30px] px-2.5 py-1 rounded-lg text-[11px] font-bold transition-colors cursor-pointer ${
+                        active
+                          ? 'bg-slate-900 text-white'
+                          : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                      }"
+                    >
+                      ${this.escapeHtml(p.label)}
+                    </button>
+                  `;
+                })
+                .join('')}
+            </div>
+          </div>
+
+          <!-- Center/Right: Digital Clock & Controls -->
+          <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-2xl p-4 flex flex-col sm:flex-row items-center gap-4 shrink-0">
+            <div class="text-center sm:text-left">
+              <div class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                Active: ${this.focusSubject} · ${this.escapeHtml(this.focusModeLabel)}
+              </div>
+              <div
+                id="pomodoro-countdown-display"
+                data-testid="pomodoro-countdown-display"
+                class="text-3xl sm:text-4xl font-mono-tabular font-extrabold text-slate-900 tracking-tight my-0.5"
+              >
+                ${formatDuration(this.focusRemainingSeconds)}
+              </div>
+              <div class="w-40 h-1.5 bg-slate-200 rounded-full overflow-hidden mx-auto sm:mx-0">
+                <div class="h-full bg-[#4F46E5] transition-all" style="width: ${progressPct}%"></div>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap sm:flex-col gap-2">
+              <div class="flex items-center gap-2">
+                <button
+                  type="button"
+                  data-action="toggle-focus-timer"
+                  data-testid="pomodoro-start-pause-btn"
+                  class="min-h-[38px] px-4 py-1.5 rounded-xl ${
+                    this.isFocusRunning
+                      ? 'bg-amber-500 hover:bg-amber-600 text-white'
+                      : 'bg-[#4F46E5] hover:bg-indigo-700 text-white'
+                  } text-xs font-extrabold shadow-sm cursor-pointer"
+                >
+                  ${this.isFocusRunning ? '⏸ Pause' : '▶ Start Timer'}
+                </button>
+                <button
+                  type="button"
+                  data-action="reset-focus-timer"
+                  class="min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-bold cursor-pointer"
+                >
+                  ↺ Reset
+                </button>
+              </div>
+              <button
+                type="button"
+                data-action="complete-log-focus-session"
+                data-testid="pomodoro-complete-log-btn"
+                class="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+              >
+                ✓ Complete & Log +${this.focusModeMinutes}m to Profile
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Subject Focus Breakdown Bar & Recent Logged Sessions -->
+        <div class="pt-3 border-t border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+          <div class="flex flex-wrap items-center gap-2" data-testid="pomodoro-subject-breakdown">
+            <span class="font-extrabold text-slate-700 uppercase tracking-wider text-[11px]">Profile Subject Hours:</span>
+            <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-[#4F46E5] font-mono-tabular font-bold">
+              Physics: ${focusStats.subjectFocusHours.Physics}h (${focusStats.subjectFocusMinutes.Physics}m)
+            </span>
+            <span class="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-emerald-700 font-mono-tabular font-bold">
+              Chemistry: ${focusStats.subjectFocusHours.Chemistry}h (${focusStats.subjectFocusMinutes.Chemistry}m)
+            </span>
+            <span class="px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 font-mono-tabular font-bold">
+              Math: ${focusStats.subjectFocusHours.Math}h (${focusStats.subjectFocusMinutes.Math}m)
+            </span>
+            <span class="px-2.5 py-0.5 rounded-lg bg-rose-50 text-rose-700 font-mono-tabular font-bold">
+              Biology: ${focusStats.subjectFocusHours.Biology}h (${focusStats.subjectFocusMinutes.Biology}m)
+            </span>
+          </div>
+          <div class="text-[11px] text-slate-500 font-medium truncate">
+            Latest Log: ${
+              recentSessions[0]
+                ? `${this.escapeHtml(recentSessions[0].subject)} (+${recentSessions[0].durationMinutes}m · ${this.escapeHtml(recentSessions[0].modeLabel)})`
+                : 'No focus session logged yet'
+            }
+          </div>
+        </div>
+      </section>
+    `;
   }
 
   private renderSecurePdfModal(): string {
@@ -899,9 +1086,100 @@ export class StudyVaultModule {
             }
             break;
           }
+          case 'select-focus-subject': {
+            const sub = el.dataset.subject as SubjectName | undefined;
+            if (sub) {
+              this.focusSubject = sub;
+              this.rerender();
+            }
+            break;
+          }
+          case 'select-focus-preset': {
+            const mins = Number(el.dataset.minutes) || 25;
+            const label = el.dataset.label || `${mins}m Pomodoro`;
+            this.stopFocusTimerInterval();
+            this.isFocusRunning = false;
+            this.focusModeMinutes = mins;
+            this.focusModeLabel = label;
+            this.focusRemainingSeconds = mins * 60;
+            this.rerender();
+            break;
+          }
+          case 'toggle-focus-timer': {
+            if (this.isFocusRunning) {
+              this.stopFocusTimerInterval();
+              this.isFocusRunning = false;
+              this.rerender();
+            } else {
+              this.isFocusRunning = true;
+              this.startFocusTimerInterval();
+              this.rerender();
+            }
+            break;
+          }
+          case 'reset-focus-timer': {
+            this.stopFocusTimerInterval();
+            this.isFocusRunning = false;
+            this.focusRemainingSeconds = this.focusModeMinutes * 60;
+            this.rerender();
+            break;
+          }
+          case 'complete-log-focus-session': {
+            this.stopFocusTimerInterval();
+            this.isFocusRunning = false;
+            const logged = await dataStore.logFocusSession({
+              subject: this.focusSubject,
+              durationMinutes: this.focusModeMinutes,
+              modeLabel: this.focusModeLabel,
+            });
+            this.focusRemainingSeconds = this.focusModeMinutes * 60;
+            const updatedStats = dataStore.getFocusStatsSummary();
+            this.callbacks.onShowToast(
+              `Logged +${logged.durationMinutes}m (${logged.subject}) to Profile! Total Focus: ${updatedStats.totalFocusHours} hrs.`
+            );
+            this.rerender();
+            break;
+          }
         }
       });
     });
+  }
+
+  private startFocusTimerInterval(): void {
+    this.stopFocusTimerInterval();
+    this.focusIntervalId = window.setInterval(() => {
+      if (!this.isFocusRunning) return;
+      this.focusRemainingSeconds = Math.max(0, this.focusRemainingSeconds - 1);
+      const clockEl = this.containerEl?.querySelector('#pomodoro-countdown-display');
+      if (clockEl) {
+        clockEl.textContent = formatDuration(this.focusRemainingSeconds);
+      }
+      if (this.focusRemainingSeconds <= 0) {
+        this.stopFocusTimerInterval();
+        this.isFocusRunning = false;
+        void dataStore
+          .logFocusSession({
+            subject: this.focusSubject,
+            durationMinutes: this.focusModeMinutes,
+            modeLabel: this.focusModeLabel,
+          })
+          .then((logged) => {
+            const updatedStats = dataStore.getFocusStatsSummary();
+            this.focusRemainingSeconds = this.focusModeMinutes * 60;
+            this.callbacks.onShowToast(
+              `🎉 Pomodoro Complete! Logged +${logged.durationMinutes}m (${logged.subject}) · Total: ${updatedStats.totalFocusHours} hrs.`
+            );
+            this.rerender();
+          });
+      }
+    }, 1000);
+  }
+
+  private stopFocusTimerInterval(): void {
+    if (this.focusIntervalId !== null) {
+      window.clearInterval(this.focusIntervalId);
+      this.focusIntervalId = null;
+    }
   }
 
   private escapeHtml(str: string): string {

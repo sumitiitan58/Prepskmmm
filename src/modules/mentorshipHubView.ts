@@ -1,7 +1,14 @@
 import { LECTURE_COVER_PATH, MENTOR_AVATAR_PATH } from '../constants';
 import { dataStore } from '../services/firebaseService';
-import type { MentorProfileItem, VideoRoadmapItem } from '../types';
-import { formatDuration } from '../utils/examLogic';
+import type {
+  MentorProfileItem,
+  MentorshipMessage,
+  VideoRoadmapItem,
+} from '../types';
+import {
+  canStudentInitiateMentorCall,
+  formatDuration,
+} from '../utils/examLogic';
 
 export interface MentorshipHubCallbacks {
   onShowToast: (message: string) => void;
@@ -29,7 +36,14 @@ export class MentorshipHubModule {
     mode: 'AUDIO' | 'VIDEO';
     roomName: string;
     mentor: MentorProfileItem;
+    isGroupCall?: boolean;
+    scheduledTime?: string;
   } | null = null;
+
+  // Chat "+" Menu & Appointment Composer State
+  private isChatPlusMenuOpen = false;
+  private isAppointmentFormOpen = false;
+  private pendingChatUploadKind: 'IMAGE' | 'VIDEO' | 'FILE' = 'IMAGE';
 
   private animId: number | null = null;
   private lastTick = 0;
@@ -102,17 +116,28 @@ export class MentorshipHubModule {
     const speed = SPEED_OPTIONS[this.speedIdx];
     const isRealVideo = this.hasRealVideoSource(this.activeVideo);
     const isMentorOnline = activeMentor.isOnline !== false;
+    const isAdminOrMentor = dataStore.isAuthorizedAdminOrMentor();
+
+    // Strict Call Gate Evaluation: Disabled when mentor is offline unless student has ACCEPTED appointment
+    const callGate = canStudentInitiateMentorCall({
+      isMentorOnline,
+      appointmentStatus: mySession?.appointmentStatus,
+      scheduledCallTime: mySession?.scheduledCallTime,
+    });
+
+    const groupSchedule = dataStore.getGroupCallSchedule();
+    const appointmentStatus = mySession?.appointmentStatus ?? 'NONE';
 
     this.containerEl.innerHTML = `
       <div class="space-y-6">
-        <!-- TOP PROMINENT 1:1 MENTORSHIP BAR (Chat, Voice Call & Video Call Gated by Admin/Mentor Active Status) -->
+        <!-- TOP PROMINENT 1:1 MENTORSHIP BAR (Strict Offline Call Gate + Appointment Status + Multi-Mentor Switcher) -->
         <section
           aria-label="Top 1:1 Mentorship Live Bar"
           data-testid="top-1on1-mentorship-bar"
           class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white border border-indigo-500/30 rounded-3xl p-4 sm:p-6 shadow-md space-y-4"
         >
           <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-            <div class="space-y-1">
+            <div class="space-y-1.5">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-[11px] font-extrabold uppercase tracking-wider">
                   🎯 1:1 Mentorship Live Connect
@@ -131,19 +156,43 @@ export class MentorshipHubModule {
                   ${
                     isMentorOnline
                       ? `${this.escapeHtml(activeMentor.name)} is ACTIVE — Voice & Video Calls Open`
-                      : `${this.escapeHtml(activeMentor.name)} is OFFLINE — 1:1 Chat Open (Calls Locked Until Active)`
+                      : `${this.escapeHtml(activeMentor.name)} is OFFLINE — Calls Disabled (Take Appointment in Chat)`
                   }
                 </span>
+                ${
+                  appointmentStatus !== 'NONE'
+                    ? `
+                  <span
+                    data-testid="top-appointment-status-badge"
+                    class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                      appointmentStatus === 'ACCEPTED'
+                        ? 'bg-emerald-500 text-slate-950'
+                        : appointmentStatus === 'PENDING'
+                          ? 'bg-amber-400 text-slate-950'
+                          : 'bg-rose-500 text-white'
+                    }"
+                  >
+                    ${
+                      appointmentStatus === 'ACCEPTED'
+                        ? `✅ Appointment Accepted · Call Time: ${this.escapeHtml(mySession?.scheduledCallTime || 'Scheduled')}`
+                        : appointmentStatus === 'PENDING'
+                          ? `⏳ Appointment Pending Admin Approval (${this.escapeHtml(mySession?.requestedCallTime || 'Requested')})`
+                          : '✕ Appointment Declined — Request Another Time'
+                    }
+                  </span>
+                `
+                    : ''
+                }
               </div>
               <h1 class="text-lg sm:text-2xl font-extrabold tracking-tight">
-                1:1 Mentorship Desk (Chat, Voice Call & Video Call with Admin & Mentors)
+                1:1 Mentorship Desk (Chat, Voice Call, Video Call & Scheduled Group Calls)
               </h1>
               <p class="text-xs text-slate-300 max-w-2xl">
-                Choose any subject mentor below to chat 24/7. Voice & Video Calls unlock automatically whenever your selected Admin/Mentor is <strong>Active Online</strong>.
+                ${this.escapeHtml(callGate.reason)} Use the <strong>+</strong> button inside chat to send images, videos, files, or book a 1:1 call appointment.
               </p>
             </div>
 
-            <!-- Action Buttons: Chat, Voice Call (Gated by Active), Video Call (Gated by Active) + Admin Status Toggle -->
+            <!-- Action Buttons: Chat, Voice Call (Strictly Disabled when Offline & No Accepted Appointment), Video Call -->
             <div class="flex flex-wrap items-center gap-2">
               <button
                 type="button"
@@ -158,14 +207,18 @@ export class MentorshipHubModule {
                 data-call-type="AUDIO"
                 data-mentor-id="${activeMentor.id}"
                 data-testid="launch-jitsi-audio-btn"
-                ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                ${!callGate.canCall ? 'disabled data-offline-blocked="true"' : ''}
                 class="min-h-[42px] px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                  isMentorOnline
+                  callGate.canCall
                     ? 'bg-[#10B981] hover:bg-emerald-600 text-white shadow-sm cursor-pointer'
-                    : 'bg-slate-800/90 border border-slate-700 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-800/90 border border-slate-700 text-slate-500 cursor-not-allowed opacity-60'
                 }"
               >
-                ${isMentorOnline ? `📞 Voice Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})` : '🔒 Voice Call (Wait for Active)'}
+                ${
+                  callGate.canCall
+                    ? `📞 Voice Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})`
+                    : '🔒 Voice Call Disabled (Mentor Offline)'
+                }
               </button>
               <button
                 type="button"
@@ -173,15 +226,33 @@ export class MentorshipHubModule {
                 data-call-type="VIDEO"
                 data-mentor-id="${activeMentor.id}"
                 data-testid="launch-jitsi-video-btn"
-                ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                ${!callGate.canCall ? 'disabled data-offline-blocked="true"' : ''}
                 class="min-h-[42px] px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
-                  isMentorOnline
+                  callGate.canCall
                     ? 'bg-[#4F46E5] hover:bg-indigo-500 text-white shadow-sm cursor-pointer'
-                    : 'bg-slate-800/90 border border-slate-700 text-slate-400 cursor-not-allowed'
+                    : 'bg-slate-800/90 border border-slate-700 text-slate-500 cursor-not-allowed opacity-60'
                 }"
               >
-                ${isMentorOnline ? `🎥 Video Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})` : '🔒 Video Call (Wait for Active)'}
+                ${
+                  callGate.canCall
+                    ? `🎥 Video Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})`
+                    : '🔒 Video Call Disabled (Mentor Offline)'
+                }
               </button>
+              ${
+                !callGate.canCall
+                  ? `
+                <button
+                  type="button"
+                  data-action="open-appointment-in-chat"
+                  data-testid="book-appointment-shortcut-btn"
+                  class="min-h-[42px] px-3.5 py-2 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-extrabold shadow-xs"
+                >
+                  📅 Book Appointment in Chat
+                </button>
+              `
+                  : ''
+              }
               <button
                 type="button"
                 data-action="toggle-mentor-online-status"
@@ -190,7 +261,7 @@ export class MentorshipHubModule {
                 title="Admin/Mentor Presence Control: Toggle Active/Offline Status in Firebase"
                 class="min-h-[42px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-mono-tabular font-bold text-indigo-200"
               >
-                ⚡ Set ${isMentorOnline ? 'Offline' : 'Active'}
+                ⚡ Admin: Set ${isMentorOnline ? 'Offline' : 'Active'}
               </button>
             </div>
           </div>
@@ -229,31 +300,103 @@ export class MentorshipHubModule {
           </div>
         </section>
 
-        <!-- VIDEO LECTURES SECTION DIRECTORY FOLDERS (Organized by Section Like Study Vault PDFs!) -->
+        <!-- ADMIN SCHEDULED MULTI-STUDENT GROUP CALL BANNER (Multiple Students Join Together at Admin's Set Time) -->
+        ${
+          groupSchedule
+            ? `
+          <section
+            aria-label="Scheduled Multi-Student Group Call"
+            data-testid="group-call-schedule-banner"
+            class="bg-gradient-to-r from-emerald-950 via-teal-900 to-slate-900 text-white border border-emerald-500/30 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4"
+          >
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-full bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider">
+                  👥 Multi-Student Live Group Session · Firestore Synced
+                </span>
+                <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-mono-tabular text-[11px] font-extrabold" data-testid="group-call-scheduled-time">
+                  ⏰ Scheduled Time: ${this.escapeHtml(groupSchedule.scheduledTime)}
+                </span>
+                <span class="text-[11px] text-emerald-200 font-semibold">
+                  Host: ${this.escapeHtml(groupSchedule.mentorName)}
+                </span>
+              </div>
+              <h2 class="text-base sm:text-lg font-extrabold text-white">
+                ${this.escapeHtml(groupSchedule.title)}
+              </h2>
+              <p class="text-xs text-emerald-100">
+                Multiple students can join this room simultaneously at the scheduled time. Currently joined (${(groupSchedule.participantNames || []).length}):
+                <strong>${(groupSchedule.participantNames || []).map((n) => this.escapeHtml(n)).join(', ')}</strong>
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                data-action="join-group-call-slot"
+                data-testid="join-group-call-btn"
+                class="min-h-[42px] px-4 py-2 rounded-xl bg-[#10B981] hover:bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-sm transition-colors"
+              >
+                👥 Join Multi-Student Group Call (${(groupSchedule.participantNames || []).length} Joined) →
+              </button>
+              ${
+                isAdminOrMentor
+                  ? `
+                <div class="flex items-center gap-1.5 bg-slate-900/80 border border-white/15 rounded-xl p-1.5">
+                  <input
+                    id="quick-group-call-time-input"
+                    type="text"
+                    value="${this.escapeHtml(groupSchedule.scheduledTime)}"
+                    placeholder="e.g. Today, 08:30 PM IST"
+                    class="min-h-[32px] px-2.5 py-1 rounded-lg bg-slate-800 text-white text-xs font-mono-tabular border border-slate-700 w-40"
+                  />
+                  <button
+                    type="button"
+                    data-action="admin-update-group-time"
+                    data-testid="admin-update-group-time-btn"
+                    class="min-h-[32px] px-2.5 py-1 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-extrabold"
+                  >
+                    Set Time
+                  </button>
+                </div>
+              `
+                  : ''
+              }
+            </div>
+          </section>
+        `
+            : ''
+        }
+
+        <!-- VIDEO LECTURES SECTION DIRECTORY FOLDERS + THUMBNAIL CARDS (Clicking Any Video Opens Full-Screen Horizontal Player!) -->
         <section
           aria-label="Video Lecture Sections Directory"
           data-testid="video-sections-directory"
-          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm space-y-3"
+          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm space-y-4"
         >
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
               <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                Structured Video Vault · Same Section Architecture as PDF Study Vault
+                Structured Video Vault · Section Folders with Thumbnails
               </span>
               <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
-                Browse Video Lectures by Section (${videoSections.length - 1} Sections)
+                1. Select a Video Section Folder (${videoSections.length - 1} Sections)
               </h2>
+              <p class="text-xs text-slate-500">
+                Choose a section below to view all lectures in that section with thumbnails. Clicking any video opens it directly in <strong>Full-Screen Horizontal Mode</strong> (with a crop/vertical icon inside the player to view suggested videos below).
+              </p>
             </div>
             <a
-              href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}"
+              href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}&mode=horizontal"
               data-testid="open-dedicated-player-link"
               class="min-h-[38px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold inline-flex items-center gap-1.5 self-start sm:self-auto transition-colors"
             >
-              <span>⛶ Open Dedicated Full-Screen / Mobile Player</span>
+              <span>⛶ Open Full-Screen Horizontal Player</span>
               <span>→</span>
             </a>
           </div>
 
+          <!-- Section Folder Cards -->
           <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
             ${videoSections
               .map((sec) => {
@@ -289,13 +432,100 @@ export class MentorshipHubModule {
               })
               .join('')}
           </div>
+
+          <!-- Videos in Selected Section with Thumbnails (Direct Full-Screen Horizontal Launch) -->
+          <div class="pt-3 border-t border-slate-100 space-y-3" data-testid="section-video-thumbnail-grid">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <h3 class="text-sm sm:text-base font-extrabold text-slate-900">
+                2. ${this.selectedVideoSection === 'ALL' ? 'All Section Videos' : `Videos in "${this.escapeHtml(this.selectedVideoSection)}"`} (${filteredVideos.length} Videos with Thumbnails)
+              </h3>
+              <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-[#4F46E5] text-[11px] font-extrabold">
+                📲 Click any video thumbnail → Opens Full-Screen Horizontal Player
+              </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              ${filteredVideos
+                .map((v) => {
+                  const isSelected = v.id === this.activeVideo.id;
+                  return `
+                  <div
+                    data-testid="section-video-card"
+                    class="rounded-2xl border overflow-hidden transition-all flex flex-col justify-between group ${
+                      isSelected
+                        ? 'border-[#4F46E5] ring-2 ring-indigo-500/20 bg-indigo-50/30'
+                        : 'border-[#E2E8F0] bg-[#F8FAFC] hover:bg-white hover:shadow-md'
+                    }"
+                  >
+                    <!-- Clicking the Video Card Opens Full-Screen Horizontal Player Directly -->
+                    <a
+                      href="/player.html?videoId=${encodeURIComponent(v.id)}&mode=horizontal"
+                      data-testid="video-card-fullscreen-launch"
+                      class="block text-left w-full"
+                    >
+                      <div class="relative h-36 w-full bg-slate-900 overflow-hidden">
+                        <img
+                          src="${v.thumbnailUrl || LECTURE_COVER_PATH}"
+                          alt="${this.escapeHtml(v.title)}"
+                          referrerpolicy="no-referrer"
+                          class="w-full h-full object-cover opacity-90 group-hover:scale-105 transition-transform duration-300"
+                        />
+                        <span class="absolute top-2.5 left-2.5 px-2 py-0.5 rounded-md bg-indigo-600/95 text-white text-[10px] font-extrabold">
+                          📁 ${this.escapeHtml(v.section || 'Strategy Roadmaps')}
+                        </span>
+                        <span class="absolute bottom-2.5 right-2.5 px-2 py-0.5 rounded-md bg-slate-950/90 text-white text-[10px] font-mono-tabular font-bold">
+                          ${v.duration}
+                        </span>
+                        <div class="absolute inset-0 bg-slate-950/25 flex items-center justify-center opacity-90 group-hover:opacity-100 transition-opacity">
+                          <span class="px-3 py-1.5 rounded-full bg-indigo-600/95 text-white text-[11px] font-extrabold shadow-lg flex items-center gap-1.5">
+                            <span>▶ Full-Screen Horizontal</span>
+                          </span>
+                        </div>
+                      </div>
+                      <div class="p-3.5 space-y-1">
+                        <div class="text-xs sm:text-sm font-extrabold text-slate-900 line-clamp-2">
+                          ${this.escapeHtml(v.title)}
+                        </div>
+                        <div class="text-[11px] text-slate-500 line-clamp-1">
+                          ${this.escapeHtml(v.topicTag)}
+                        </div>
+                        <div class="flex items-center gap-1.5 pt-1">
+                          <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+                          <span class="text-[11px] font-bold text-slate-700 truncate">
+                            By ${this.escapeHtml(v.mentorName || 'Sumit Kumar')}
+                          </span>
+                        </div>
+                      </div>
+                    </a>
+
+                    <div class="px-3.5 pb-3 pt-1.5 flex items-center justify-between gap-2 border-t border-slate-100">
+                      <button
+                        type="button"
+                        data-action="select-video-inline"
+                        data-video-id="${v.id}"
+                        class="text-[11px] font-bold text-slate-600 hover:text-slate-900"
+                      >
+                        Preview Inline
+                      </button>
+                      <a
+                        href="/player.html?videoId=${encodeURIComponent(v.id)}&mode=horizontal"
+                        class="text-[11px] font-extrabold text-[#4F46E5] hover:underline shrink-0"
+                      >
+                        ⛶ Open Horizontal Full-Screen →
+                      </a>
+                    </div>
+                  </div>
+                `;
+                })
+                .join('')}
+            </div>
+          </div>
         </section>
 
-        <!-- Main Grid: Enhanced Media Player + Doubt Attacher + Video Playlist (7 cols) & Multi-Mentor 1:1 Connect (5 cols) -->
+        <!-- Main Grid: Inline Preview + Doubt Attacher (7 cols) & Multi-Mentor 1:1 Chat with "+" Action Menu (5 cols) -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          <!-- Left 7 Cols: Media Player + Timestamped Doubt Attacher + Section Playlist -->
+          <!-- Left 7 Cols: Media Player + Timestamped Doubt Attacher -->
           <div class="lg:col-span-7 space-y-6">
-            <!-- Enhanced Media Player Card -->
             <section
               aria-label="Enhanced Lecture Media Player"
               id="privacy-player-wrapper"
@@ -327,10 +557,10 @@ export class MentorshipHubModule {
 
                 <div class="flex items-center gap-2">
                   <a
-                    href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}"
+                    href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}&mode=horizontal"
                     class="min-h-[34px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold inline-flex items-center gap-1"
                   >
-                    <span>⛶ Dedicated Player</span>
+                    <span>⛶ Full-Screen Horizontal Player</span>
                   </a>
                   <button
                     type="button"
@@ -447,13 +677,13 @@ export class MentorshipHubModule {
                     >
                       ${speed}x
                     </button>
-                    <button
-                      type="button"
-                      data-action="vid-fullscreen"
-                      class="min-h-[34px] px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-700"
+                    <a
+                      href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}&mode=horizontal"
+                      class="min-h-[34px] px-2.5 py-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-700 inline-flex items-center"
+                      title="Open in Full-Screen Horizontal Player"
                     >
                       ⛶
-                    </button>
+                    </a>
                   </div>
                 </div>
                 <p class="text-xs text-slate-600">
@@ -461,7 +691,7 @@ export class MentorshipHubModule {
                 </p>
               </div>
 
-              <!-- ATTACH DOUBT AT CURRENT TIMESTAMP (With Optional Screenshot/File) -->
+              <!-- ATTACH DOUBT AT CURRENT TIMESTAMP -->
               <div class="p-4 bg-gradient-to-r from-indigo-50/50 via-[#F8FAFC] to-emerald-50/40 border-t border-[#E2E8F0] space-y-3">
                 <div class="flex items-center justify-between">
                   <div class="flex items-center gap-2">
@@ -550,98 +780,20 @@ export class MentorshipHubModule {
                 </div>
               </div>
             </section>
-
-            <!-- Video Lectures & Section Playlist Cards (Showing Mentor Name + Open in Fullscreen Player) -->
-            <section aria-label="Mentor Video Roadmaps" class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <h2 class="text-base font-extrabold text-slate-900">
-                    ${this.selectedVideoSection === 'ALL' ? 'All Video Lectures' : `${this.escapeHtml(this.selectedVideoSection)} Lectures`} (${filteredVideos.length})
-                  </h2>
-                  <p class="text-xs text-slate-500">Click any lecture to play inline or open in the dedicated full-screen / mobile YouTube-style player.</p>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                ${filteredVideos
-                  .map((v) => {
-                    const isSelected = v.id === this.activeVideo.id;
-                    return `
-                    <div
-                      class="rounded-xl border overflow-hidden transition-all flex flex-col justify-between ${
-                        isSelected
-                          ? 'border-[#4F46E5] ring-2 ring-indigo-500/20 bg-indigo-50/30'
-                          : 'border-[#E2E8F0] bg-[#F8FAFC] hover:bg-white'
-                      }"
-                    >
-                      <button
-                        type="button"
-                        data-action="select-video"
-                        data-video-id="${v.id}"
-                        class="text-left w-full"
-                      >
-                        <div class="relative h-28 w-full bg-slate-900 overflow-hidden">
-                          <img
-                            src="${v.thumbnailUrl || LECTURE_COVER_PATH}"
-                            alt="${this.escapeHtml(v.title)}"
-                            referrerpolicy="no-referrer"
-                            class="w-full h-full object-cover opacity-85"
-                          />
-                          <span class="absolute top-2 left-2 px-2 py-0.5 rounded bg-indigo-600/95 text-white text-[10px] font-bold">
-                            ${this.escapeHtml(v.section || 'Strategy Roadmaps')}
-                          </span>
-                          <span class="absolute bottom-2 right-2 px-2 py-0.5 rounded bg-slate-950/85 text-white text-[10px] font-mono-tabular">
-                            ${v.duration}
-                          </span>
-                        </div>
-                        <div class="p-3 space-y-1">
-                          <div class="text-xs font-extrabold text-slate-900 line-clamp-2">
-                            ${this.escapeHtml(v.title)}
-                          </div>
-                          <div class="flex items-center gap-1.5 pt-1">
-                            <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
-                            <span class="text-[11px] font-bold text-slate-700 truncate">
-                              By ${this.escapeHtml(v.mentorName || 'Sumit Kumar')}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-
-                      <div class="px-3 pb-3 pt-1 flex items-center justify-between gap-1 border-t border-slate-100">
-                        <a
-                          href="/player.html?videoId=${encodeURIComponent(v.id)}"
-                          class="text-[11px] font-extrabold text-slate-800 hover:text-[#4F46E5] shrink-0"
-                        >
-                          ⛶ Full Player
-                        </a>
-                        <button
-                          type="button"
-                          data-action="connect-video-mentor"
-                          data-mentor-id="${v.mentorId || 'mentor_sumit_master'}"
-                          class="text-[11px] font-extrabold text-[#4F46E5] hover:underline shrink-0"
-                        >
-                          Ask Mentor →
-                        </button>
-                      </div>
-                    </div>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </section>
           </div>
 
-          <!-- Right 5 Cols: Multi-Mentor 1:1 Connect (Select Specific Mentor + Chat + Active-Gated Call) -->
+          <!-- Right 5 Cols: Upgraded 1:1 Chat Centre with "+" Menu (Send Image, Video, File & Take Appointment) -->
           <div class="lg:col-span-5 space-y-6">
             <section
               aria-label="1:1 Mentorship Connect"
               id="mentor-1on1-chat-panel"
-              class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm flex flex-col h-[680px]"
+              data-testid="mentor-1on1-chat-panel"
+              class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm flex flex-col min-h-[720px]"
             >
               <!-- Specific Mentor Selector Strip -->
               <div class="pb-3 border-b border-slate-100 space-y-2">
                 <div class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                  Select Specific Mentor to Chat or Call (${mentors.length} Mentors)
+                  Select Specific Mentor to Chat or Book Appointment (${mentors.length} Mentors)
                 </div>
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1" data-testid="mentor-selector-strip">
                   ${mentors
@@ -705,86 +857,283 @@ export class MentorshipHubModule {
                   </div>
                 </div>
                 <span class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
-                  isMentorOnline
+                  callGate.canCall
                     ? 'bg-emerald-50 text-[#10B981] border border-emerald-200'
                     : 'bg-amber-50 text-amber-800 border border-amber-200'
                 }">
-                  ${isMentorOnline ? '🟢 ACTIVE FOR CALLS' : '⚪ OFFLINE (CHAT ONLY)'}
+                  ${callGate.canCall ? '🟢 CALLS UNLOCKED' : '🔒 OFFLINE (BOOK IN CHAT)'}
                 </span>
               </div>
 
-              <!-- 3-Mode Quick Request Strip (Chat Always Open, Voice/Video Gated by Mentor Active Status) -->
+              <!-- 3-Mode Quick Request Strip (Voice/Video Strictly Disabled When Offline & No Accepted Appointment) -->
               <div class="grid grid-cols-3 gap-2 py-3 border-b border-slate-100">
                 <button
                   type="button"
-                  data-action="request-call"
-                  data-call-type="CHAT"
-                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-indigo-50 text-[#4F46E5] text-xs font-bold hover:bg-indigo-100 transition-colors"
+                  data-action="open-appointment-in-chat"
+                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-indigo-50 text-[#4F46E5] text-xs font-extrabold hover:bg-indigo-100 transition-colors"
                 >
-                  💬 1:1 Chat
+                  📅 Take Appointment
                 </button>
                 <button
                   type="button"
                   data-action="start-jitsi-call"
                   data-call-type="AUDIO"
                   data-mentor-id="${activeMentor.id}"
-                  ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                  ${!callGate.canCall ? 'disabled data-offline-blocked="true"' : ''}
                   class="min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-                    isMentorOnline
-                      ? 'bg-emerald-50 text-[#10B981] hover:bg-emerald-100'
-                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    callGate.canCall
+                      ? 'bg-emerald-50 text-[#10B981] hover:bg-emerald-100 cursor-pointer'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
                   }"
                 >
-                  ${isMentorOnline ? '🎙️ Voice Call' : '🔒 Voice (Offline)'}
+                  ${callGate.canCall ? '🎙️ Voice Call' : '🔒 Voice (Disabled)'}
                 </button>
                 <button
                   type="button"
                   data-action="start-jitsi-call"
                   data-call-type="VIDEO"
                   data-mentor-id="${activeMentor.id}"
-                  ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                  ${!callGate.canCall ? 'disabled data-offline-blocked="true"' : ''}
                   class="min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
-                    isMentorOnline
-                      ? 'bg-amber-50 text-amber-800 hover:bg-amber-100'
-                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                    callGate.canCall
+                      ? 'bg-amber-50 text-amber-800 hover:bg-amber-100 cursor-pointer'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed opacity-60'
                   }"
                 >
-                  ${isMentorOnline ? '📹 Video Call' : '🔒 Video (Offline)'}
+                  ${callGate.canCall ? '📹 Video Call' : '🔒 Video (Disabled)'}
                 </button>
               </div>
 
-              <!-- Real-time Chat Thread with Selected Mentor -->
-              <div id="mentorship-chat-scroll" class="flex-1 overflow-y-auto py-4 space-y-3 pr-1">
-                ${(mySession?.messages ?? [])
-                  .map((m) => {
-                    const isStudent = m.senderRole === 'student';
-                    return `
-                    <div class="flex flex-col ${isStudent ? 'items-end' : 'items-start'}">
-                      <div class="max-w-[85%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
-                        isStudent
-                          ? 'bg-[#4F46E5] text-white rounded-br-xs'
-                          : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-800 rounded-bl-xs'
-                      }">
-                        <div class="font-bold text-[10px] mb-1 ${
-                          isStudent ? 'text-indigo-200' : 'text-[#4F46E5]'
-                        }">
-                          ${this.escapeHtml(m.senderName)} · ${m.timestamp}
-                        </div>
-                        <div>${this.escapeHtml(m.text)}</div>
-                      </div>
+              <!-- Current Appointment Status Banner Inside Chat -->
+              ${
+                appointmentStatus !== 'NONE'
+                  ? `
+                <div
+                  data-testid="chat-appointment-status-banner"
+                  class="mt-2.5 p-3 rounded-xl border text-xs space-y-1.5 ${
+                    appointmentStatus === 'ACCEPTED'
+                      ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                      : appointmentStatus === 'PENDING'
+                        ? 'bg-amber-50 border-amber-200 text-amber-950'
+                        : 'bg-rose-50 border-rose-200 text-rose-950'
+                  }"
+                >
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="font-extrabold uppercase tracking-wider text-[10px]">
+                      ${
+                        appointmentStatus === 'ACCEPTED'
+                          ? '✅ APPOINTMENT ACCEPTED BY ADMIN'
+                          : appointmentStatus === 'PENDING'
+                            ? '⏳ APPOINTMENT STATUS: PENDING'
+                            : '✕ APPOINTMENT REJECTED'
+                      }
+                    </span>
+                    <span class="font-mono-tabular font-bold text-[11px]">
+                      ${
+                        appointmentStatus === 'ACCEPTED'
+                          ? `Call Time: ${this.escapeHtml(mySession?.scheduledCallTime || 'Scheduled')}`
+                          : `Pref: ${this.escapeHtml(mySession?.requestedCallTime || 'Flexible')}`
+                      }
+                    </span>
+                  </div>
+                  <p class="text-[11px] leading-snug">
+                    ${
+                      appointmentStatus === 'ACCEPTED'
+                        ? `Admin accepted your appointment for ${this.escapeHtml(mySession?.scheduledCallTime || 'now')}. Voice & Video call buttons are now unlocked for you!`
+                        : appointmentStatus === 'PENDING'
+                          ? `Topic: "${this.escapeHtml(mySession?.appointmentNote || '1:1 Doubt Session')}". Waiting for Admin to Accept & assign a call time.`
+                          : `Your previous slot could not be scheduled. Click "+" → Take Appointment to request another time.`
+                    }
+                  </p>
+                  ${
+                    isAdminOrMentor && mySession
+                      ? `
+                    <div class="pt-2 border-t border-black/10 flex flex-wrap items-center gap-1.5" data-testid="inline-admin-appointment-controls">
+                      <input
+                        id="inline-admin-call-time-input"
+                        type="text"
+                        value="${this.escapeHtml(mySession.scheduledCallTime || mySession.requestedCallTime || 'Today, 07:30 PM IST')}"
+                        placeholder="Set Call Time (e.g. 07:30 PM)"
+                        class="flex-1 min-h-[32px] px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-[11px] font-mono-tabular text-slate-900"
+                      />
+                      <button
+                        type="button"
+                        data-action="admin-accept-appointment"
+                        data-session-id="${mySession.id}"
+                        data-testid="inline-admin-accept-appointment-btn"
+                        class="min-h-[32px] px-2.5 py-1 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-[11px] font-extrabold"
+                      >
+                        ✓ Accept & Set Time
+                      </button>
+                      <button
+                        type="button"
+                        data-action="admin-reject-appointment"
+                        data-session-id="${mySession.id}"
+                        data-testid="inline-admin-reject-appointment-btn"
+                        class="min-h-[32px] px-2.5 py-1 rounded-lg bg-[#EF4444] hover:bg-red-600 text-white text-[11px] font-extrabold"
+                      >
+                        ✕ Reject
+                      </button>
                     </div>
-                  `;
-                  })
+                  `
+                      : ''
+                  }
+                </div>
+              `
+                  : ''
+              }
+
+              <!-- Real-time Chat Thread with Rich Attachment & Appointment Cards -->
+              <div id="mentorship-chat-scroll" class="flex-1 overflow-y-auto py-4 space-y-3 pr-1 max-h-[360px]">
+                ${(mySession?.messages ?? [])
+                  .map((m) => this.renderChatMessageBubble(m))
                   .join('')}
               </div>
 
-              <!-- Send Message Form -->
+              <!-- Inline Appointment Booking Form (Opened via "+" -> Take Appointment) -->
+              ${
+                this.isAppointmentFormOpen
+                  ? `
+                <form
+                  id="chat-appointment-form"
+                  data-testid="chat-appointment-form"
+                  class="mb-3 p-3.5 rounded-2xl bg-indigo-50/90 border border-indigo-200 space-y-2.5"
+                >
+                  <div class="flex items-center justify-between">
+                    <span class="text-xs font-extrabold text-[#4F46E5]">
+                      📅 Take 1:1 Call Appointment with ${this.escapeHtml(activeMentor.name)}
+                    </span>
+                    <button
+                      type="button"
+                      data-action="close-appointment-form"
+                      class="text-xs font-bold text-slate-500 hover:text-slate-800"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <input
+                      id="appointment-time-input"
+                      type="text"
+                      required
+                      value="Today, 07:30 PM IST"
+                      placeholder="Preferred Time (e.g. Today 7:30 PM)"
+                      class="min-h-[38px] px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-xs font-mono-tabular text-slate-900"
+                    />
+                    <input
+                      id="appointment-reason-input"
+                      type="text"
+                      required
+                      placeholder="Topic / Doubt (e.g. Rotational Mechanics PYQ)"
+                      class="min-h-[38px] px-3 py-1.5 rounded-xl bg-white border border-indigo-200 text-xs text-slate-900"
+                    />
+                  </div>
+                  <button
+                    type="submit"
+                    data-testid="submit-appointment-request-btn"
+                    class="w-full min-h-[38px] px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs"
+                  >
+                    Send Appointment Request (Sets Status to PENDING) →
+                  </button>
+                </form>
+              `
+                  : ''
+              }
+
+              <!-- "+" Attachment & Appointment Action Menu Drawer -->
+              ${
+                this.isChatPlusMenuOpen
+                  ? `
+                <div
+                  data-testid="chat-plus-action-menu"
+                  class="mb-3 p-3 rounded-2xl bg-slate-900 text-white border border-slate-800 shadow-lg space-y-2"
+                >
+                  <div class="flex items-center justify-between text-[11px] font-extrabold text-indigo-300 uppercase tracking-wider">
+                    <span>+ Chat Actions (Send Media or Take Appointment)</span>
+                    <button type="button" data-action="toggle-chat-plus-menu" class="text-slate-400 hover:text-white">✕</button>
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      data-action="chat-send-media"
+                      data-media-kind="IMAGE"
+                      data-testid="chat-plus-send-image-btn"
+                      class="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-left flex items-center gap-2 text-xs font-bold transition-colors"
+                    >
+                      <span class="text-base">📷</span>
+                      <div>
+                        <div>Send Image</div>
+                        <div class="text-[10px] text-slate-300 font-normal">Photo / Doubt Snap</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      data-action="chat-send-media"
+                      data-media-kind="VIDEO"
+                      data-testid="chat-plus-send-video-btn"
+                      class="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-left flex items-center gap-2 text-xs font-bold transition-colors"
+                    >
+                      <span class="text-base">🎬</span>
+                      <div>
+                        <div>Send Video</div>
+                        <div class="text-[10px] text-slate-300 font-normal">Short Clip / Screen</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      data-action="chat-send-media"
+                      data-media-kind="FILE"
+                      data-testid="chat-plus-send-file-btn"
+                      class="p-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-left flex items-center gap-2 text-xs font-bold transition-colors"
+                    >
+                      <span class="text-base">📎</span>
+                      <div>
+                        <div>Send File / PDF</div>
+                        <div class="text-[10px] text-slate-300 font-normal">Notes / Worksheet</div>
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      data-action="open-appointment-in-chat"
+                      data-testid="chat-plus-take-appointment-btn"
+                      class="p-2.5 rounded-xl bg-amber-400 hover:bg-amber-300 text-slate-950 text-left flex items-center gap-2 text-xs font-extrabold transition-colors"
+                    >
+                      <span class="text-base">📅</span>
+                      <div>
+                        <div>Take Appointment</div>
+                        <div class="text-[10px] text-slate-800 font-semibold">Request 1:1 Call Time</div>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              `
+                  : ''
+              }
+
+              <!-- Hidden File Input for Chat "+" Media Upload -->
+              <input
+                id="chat-hidden-media-input"
+                type="file"
+                class="hidden"
+              />
+
+              <!-- Send Message Form with "+" Button -->
               <form id="mentorship-chat-form" class="pt-3 border-t border-slate-100 flex items-center gap-2">
+                <button
+                  type="button"
+                  data-action="toggle-chat-plus-menu"
+                  data-testid="chat-plus-menu-btn"
+                  aria-label="Open Chat Attachments and Appointment Menu"
+                  title="Send Image, Video, File or Take Appointment"
+                  class="w-10 h-10 rounded-xl bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[#4F46E5] text-lg font-extrabold flex items-center justify-center shrink-0 transition-colors"
+                >
+                  +
+                </button>
                 <input
                   id="mentorship-chat-input"
                   type="text"
                   required
-                  placeholder="Message ${this.escapeHtml(activeMentor.name)} directly..."
+                  placeholder="Message ${this.escapeHtml(activeMentor.name)} or click + for Media/Appointment..."
                   aria-label="Message to Mentor"
                   class="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#4F46E5]"
                 />
@@ -807,9 +1156,80 @@ export class MentorshipHubModule {
     this.bindEvents();
   }
 
+  private renderChatMessageBubble(m: MentorshipMessage): string {
+    const isStudent = m.senderRole === 'student';
+    const attachmentHtml =
+      m.attachmentType === 'IMAGE' && m.attachmentUrl
+        ? `
+          <div class="mt-2 rounded-xl overflow-hidden border border-white/20 bg-black/10 p-1">
+            <img src="${m.attachmentUrl}" alt="${this.escapeHtml(m.attachmentName || 'Image')}" class="max-h-36 rounded-lg object-contain mx-auto" />
+            <div class="text-[10px] opacity-80 mt-1 truncate">📷 ${this.escapeHtml(m.attachmentName || 'Image Attachment')}</div>
+          </div>
+        `
+        : m.attachmentType === 'VIDEO'
+          ? `
+          <div class="mt-2 p-2.5 rounded-xl bg-slate-900/90 text-white flex items-center gap-2 text-[11px]">
+            <span>🎬</span>
+            <span class="font-bold truncate">${this.escapeHtml(m.attachmentName || 'Video Doubt Clip.mp4')}</span>
+          </div>
+        `
+          : m.attachmentType === 'FILE'
+            ? `
+          <div class="mt-2 p-2.5 rounded-xl bg-white/15 border border-current/20 flex items-center gap-2 text-[11px]">
+            <span>📎</span>
+            <span class="font-bold truncate">${this.escapeHtml(m.attachmentName || 'Study_Document.pdf')}</span>
+          </div>
+        `
+            : m.attachmentType === 'APPOINTMENT'
+              ? `
+          <div class="mt-2 p-2.5 rounded-xl ${
+            m.appointmentStatus === 'ACCEPTED'
+              ? 'bg-emerald-500 text-slate-950'
+              : m.appointmentStatus === 'REJECTED'
+                ? 'bg-rose-500 text-white'
+                : 'bg-amber-400 text-slate-950'
+          } text-[11px] font-bold space-y-0.5">
+            <div>
+              ${
+                m.appointmentStatus === 'ACCEPTED'
+                  ? `✅ APPOINTMENT ACCEPTED · TIME: ${this.escapeHtml(m.scheduledCallTime || '')}`
+                  : m.appointmentStatus === 'REJECTED'
+                    ? '✕ APPOINTMENT DECLINED'
+                    : '⏳ APPOINTMENT STATUS: PENDING'
+              }
+            </div>
+            ${
+              m.requestedCallTime
+                ? `<div class="text-[10px] opacity-90">Requested Slot: ${this.escapeHtml(m.requestedCallTime)}</div>`
+                : ''
+            }
+          </div>
+        `
+              : '';
+
+    return `
+      <div class="flex flex-col ${isStudent ? 'items-end' : 'items-start'}">
+        <div class="max-w-[88%] rounded-2xl px-4 py-2.5 text-xs leading-relaxed ${
+          isStudent
+            ? 'bg-[#4F46E5] text-white rounded-br-xs'
+            : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-800 rounded-bl-xs'
+        }">
+          <div class="font-bold text-[10px] mb-1 ${
+            isStudent ? 'text-indigo-200' : 'text-[#4F46E5]'
+          }">
+            ${this.escapeHtml(m.senderName)} · ${m.timestamp}
+          </div>
+          <div>${this.escapeHtml(m.text)}</div>
+          ${attachmentHtml}
+        </div>
+      </div>
+    `;
+  }
+
   private renderJitsiCallModal(): string {
     if (!this.activeJitsiModal) return '';
-    const { mode, roomName, mentor } = this.activeJitsiModal;
+    const { mode, roomName, mentor, isGroupCall, scheduledTime } =
+      this.activeJitsiModal;
     const user = dataStore.getUser();
     const jitsiUrl = `https://meet.jit.si/${encodeURIComponent(
       roomName
@@ -823,7 +1243,7 @@ export class MentorshipHubModule {
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Jitsi Meet 1:1 Live Call Room"
+        aria-label="Jitsi Meet Live Call Room"
         data-testid="jitsi-call-modal"
         class="fixed inset-0 z-50 bg-slate-900/75 backdrop-blur-sm flex items-center justify-center p-3 sm:p-6"
       >
@@ -834,7 +1254,11 @@ export class MentorshipHubModule {
               <span class="w-2.5 h-2.5 rounded-full bg-[#10B981] animate-ping"></span>
               <div>
                 <div class="text-xs font-extrabold uppercase tracking-wider text-emerald-400">
-                  Jitsi Meet Live ${mode} Room · Connected with ${this.escapeHtml(mentor.name)}
+                  ${
+                    isGroupCall
+                      ? `👥 Multi-Student Group Call (${this.escapeHtml(scheduledTime || 'Live Slot')}) · Host: ${this.escapeHtml(mentor.name)}`
+                      : `Jitsi Meet Live ${mode} Room · Connected with ${this.escapeHtml(mentor.name)}`
+                  }
                 </div>
                 <div class="text-[11px] font-mono-tabular text-slate-300">
                   Room ID: ${this.escapeHtml(roomName)}
@@ -865,7 +1289,7 @@ export class MentorshipHubModule {
           <div class="relative bg-slate-950 w-full h-[460px] sm:h-[520px]">
             <iframe
               src="${jitsiUrl}"
-              title="Jitsi Meet 1:1 Mentorship Video Call"
+              title="Jitsi Meet Mentorship Call"
               allow="camera; microphone; fullscreen; display-capture; autoplay"
               class="w-full h-full border-0"
             ></iframe>
@@ -873,7 +1297,7 @@ export class MentorshipHubModule {
 
           <div class="px-5 py-3 bg-[#F8FAFC] border-t border-[#E2E8F0] flex flex-wrap items-center justify-between gap-2 text-xs text-slate-600">
             <span>
-              Mentor <strong>${this.escapeHtml(mentor.name)}</strong> receives this exact Jitsi room (<code class="font-mono text-[#4F46E5]">${this.escapeHtml(roomName)}</code>) in the Admin Mentorship Desk.
+              Mentor <strong>${this.escapeHtml(mentor.name)}</strong> & joined aspirants share this exact Jitsi room (<code class="font-mono text-[#4F46E5]">${this.escapeHtml(roomName)}</code>).
             </span>
             <span class="font-mono-tabular text-[#10B981] font-bold">End-to-End Encrypted Jitsi WebRTC</span>
           </div>
@@ -964,8 +1388,10 @@ export class MentorshipHubModule {
       ctx.fillText(b.pct, 1020, y + 52);
     });
 
-    // Animated Live Playhead Progress Indicator on Canvas
-    const progressRatio = Math.min(1, Math.max(0, this.currentTimeSec / Math.max(1, this.totalDurationSec)));
+    const progressRatio = Math.min(
+      1,
+      Math.max(0, this.currentTimeSec / Math.max(1, this.totalDurationSec))
+    );
     ctx.fillStyle = 'rgba(79, 70, 229, 0.35)';
     ctx.fillRect(64, 595, 1140, 26);
     ctx.fillStyle = '#10B981';
@@ -1014,7 +1440,9 @@ export class MentorshipHubModule {
   private bindEvents(): void {
     if (!this.containerEl) return;
 
-    const playerWrapper = this.containerEl.querySelector('#privacy-player-wrapper');
+    const playerWrapper = this.containerEl.querySelector(
+      '#privacy-player-wrapper'
+    );
     playerWrapper?.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       this.callbacks.onShowToast(
@@ -1038,8 +1466,9 @@ export class MentorshipHubModule {
       this.drawPrivacyStreamFrame();
     });
 
-    const realVideoEl =
-      this.containerEl.querySelector<HTMLVideoElement>('#real-html5-video-player');
+    const realVideoEl = this.containerEl.querySelector<HTMLVideoElement>(
+      '#real-html5-video-player'
+    );
     realVideoEl?.addEventListener('loadedmetadata', () => {
       if (realVideoEl.duration && Number.isFinite(realVideoEl.duration)) {
         this.totalDurationSec = Math.max(10, Math.round(realVideoEl.duration));
@@ -1119,6 +1548,76 @@ export class MentorshipHubModule {
         `Doubt attached at ${formattedTime} & notified ${
           this.activeVideo.mentorName || 'Sumit Kumar'
         }!`
+      );
+      this.rerender();
+      this.drawPrivacyStreamFrame();
+    });
+
+    // Chat "+" Hidden Media Input
+    const chatMediaInput = this.containerEl.querySelector<HTMLInputElement>(
+      '#chat-hidden-media-input'
+    );
+    chatMediaInput?.addEventListener('change', () => {
+      const file = chatMediaInput.files?.[0];
+      if (!file) return;
+      const mentors = dataStore.getMentors();
+      const activeMentor =
+        mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
+
+      const reader = new FileReader();
+      reader.onload = async () => {
+        const dataUrl =
+          typeof reader.result === 'string' ? reader.result : LECTURE_COVER_PATH;
+        await dataStore.sendMentorshipAttachment({
+          mentorId: activeMentor.id,
+          mentorName: activeMentor.name,
+          attachmentType: this.pendingChatUploadKind,
+          attachmentName: file.name,
+          attachmentUrl: dataUrl,
+          caption: `Sent ${this.pendingChatUploadKind.toLowerCase()}: ${file.name}`,
+        });
+        this.isChatPlusMenuOpen = false;
+        this.callbacks.onShowToast(
+          `${this.pendingChatUploadKind} "${file.name}" sent to ${activeMentor.name} & saved to Firebase!`
+        );
+        this.rerender();
+        this.drawPrivacyStreamFrame();
+      };
+      reader.readAsDataURL(file);
+    });
+
+    // Appointment Request Form Submission
+    const appointmentForm = this.containerEl.querySelector<HTMLFormElement>(
+      '#chat-appointment-form'
+    );
+    appointmentForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const timeInput = appointmentForm.querySelector<HTMLInputElement>(
+        '#appointment-time-input'
+      );
+      const reasonInput = appointmentForm.querySelector<HTMLInputElement>(
+        '#appointment-reason-input'
+      );
+      const preferredTime =
+        timeInput?.value.trim() || 'Today, 07:30 PM IST';
+      const reason =
+        reasonInput?.value.trim() || '1:1 Strategy & Concept Doubt Session';
+
+      const mentors = dataStore.getMentors();
+      const activeMentor =
+        mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
+
+      await dataStore.requestMentorshipAppointment({
+        mentorId: activeMentor.id,
+        mentorName: activeMentor.name,
+        preferredTime,
+        reason,
+      });
+
+      this.isAppointmentFormOpen = false;
+      this.isChatPlusMenuOpen = false;
+      this.callbacks.onShowToast(
+        `Appointment requested for ${preferredTime} — Status is now PENDING Admin approval!`
       );
       this.rerender();
       this.drawPrivacyStreamFrame();
@@ -1208,13 +1707,6 @@ export class MentorshipHubModule {
             this.drawPrivacyStreamFrame();
             break;
           }
-          case 'vid-fullscreen': {
-            const stage = this.containerEl?.querySelector('#privacy-video-stage');
-            if (stage && stage.requestFullscreen) {
-              void stage.requestFullscreen().catch(() => {});
-            }
-            break;
-          }
           case 'seek-to-doubt': {
             const sec = Number(el.dataset.sec || 0);
             this.currentTimeSec = sec;
@@ -1229,7 +1721,7 @@ export class MentorshipHubModule {
             this.drawPrivacyStreamFrame();
             break;
           }
-          case 'select-video': {
+          case 'select-video-inline': {
             const vidId = el.dataset.videoId;
             const found = dataStore.getVideos().find((v) => v.id === vidId);
             if (found) {
@@ -1241,7 +1733,7 @@ export class MentorshipHubModule {
               this.isPlaying = true;
               this.lastTick = performance.now();
               this.startPlaybackLoop();
-              this.callbacks.onShowToast(`Playing "${found.title}"`);
+              this.callbacks.onShowToast(`Previewing "${found.title}" inline`);
               this.rerender();
               this.drawPrivacyStreamFrame();
             }
@@ -1255,6 +1747,132 @@ export class MentorshipHubModule {
             chatInput?.focus();
             break;
           }
+          case 'toggle-chat-plus-menu': {
+            this.isChatPlusMenuOpen = !this.isChatPlusMenuOpen;
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
+          case 'open-appointment-in-chat': {
+            this.isAppointmentFormOpen = true;
+            this.isChatPlusMenuOpen = false;
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            const formEl = this.containerEl?.querySelector('#chat-appointment-form');
+            formEl?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            break;
+          }
+          case 'close-appointment-form': {
+            this.isAppointmentFormOpen = false;
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
+          case 'chat-send-media': {
+            const kind =
+              (el.dataset.mediaKind as 'IMAGE' | 'VIDEO' | 'FILE') || 'IMAGE';
+            this.pendingChatUploadKind = kind;
+            const mentors = dataStore.getMentors();
+            const activeMentor =
+              mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
+
+            // Immediately log attachment to chat AND allow optional file picker
+            const sampleName =
+              kind === 'IMAGE'
+                ? 'Doubt_FBD_Diagram.jpg'
+                : kind === 'VIDEO'
+                  ? 'Concept_Question_Clip.mp4'
+                  : 'Chapter_Formula_Sheet.pdf';
+            await dataStore.sendMentorshipAttachment({
+              mentorId: activeMentor.id,
+              mentorName: activeMentor.name,
+              attachmentType: kind,
+              attachmentName: sampleName,
+              attachmentUrl:
+                kind === 'IMAGE' ? LECTURE_COVER_PATH : undefined,
+              caption: `Shared ${kind.toLowerCase()} in 1:1 Chat (${sampleName})`,
+            });
+            this.isChatPlusMenuOpen = false;
+            this.callbacks.onShowToast(
+              `${kind} "${sampleName}" sent in chat & saved to Firebase!`
+            );
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
+          case 'admin-accept-appointment': {
+            const sessionId = el.dataset.sessionId;
+            if (!sessionId) return;
+            const timeInput = this.containerEl?.querySelector<HTMLInputElement>(
+              '#inline-admin-call-time-input'
+            );
+            const scheduledTime =
+              timeInput?.value.trim() || 'Today, 07:30 PM IST';
+            await dataStore.respondToMentorshipAppointment({
+              sessionId,
+              decision: 'ACCEPTED',
+              scheduledCallTime: scheduledTime,
+            });
+            this.callbacks.onShowToast(
+              `Appointment ACCEPTED for ${scheduledTime}! Student can now join the call.`
+            );
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
+          case 'admin-reject-appointment': {
+            const sessionId = el.dataset.sessionId;
+            if (!sessionId) return;
+            await dataStore.respondToMentorshipAppointment({
+              sessionId,
+              decision: 'REJECTED',
+            });
+            this.callbacks.onShowToast('Appointment marked as REJECTED.');
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
+          case 'join-group-call-slot': {
+            const updatedSlot = await dataStore.joinGroupCallSchedule();
+            const mentors = dataStore.getMentors();
+            const hostMentor =
+              mentors.find((m) => m.id === updatedSlot?.mentorId) ?? mentors[0];
+            if (updatedSlot) {
+              this.activeJitsiModal = {
+                mode: 'VIDEO',
+                roomName: updatedSlot.jitsiRoom,
+                mentor: hostMentor,
+                isGroupCall: true,
+                scheduledTime: updatedSlot.scheduledTime,
+              };
+              this.callbacks.onShowToast(
+                `Joined Multi-Student Group Call (${updatedSlot.scheduledTime})!`
+              );
+              this.rerender();
+              this.drawPrivacyStreamFrame();
+            }
+            break;
+          }
+          case 'admin-update-group-time': {
+            const timeInput = this.containerEl?.querySelector<HTMLInputElement>(
+              '#quick-group-call-time-input'
+            );
+            const currentSlot = dataStore.getGroupCallSchedule();
+            const nextTime =
+              timeInput?.value.trim() || 'Today, 08:30 PM IST';
+            await dataStore.saveGroupCallSchedule({
+              title:
+                currentSlot?.title ||
+                'Live Multi-Student Doubt Clearing & Rank Strategy Group Call',
+              scheduledTime: nextTime,
+            });
+            this.callbacks.onShowToast(
+              `Group Call Time updated to "${nextTime}" in Firebase!`
+            );
+            this.rerender();
+            this.drawPrivacyStreamFrame();
+            break;
+          }
           case 'toggle-mentor-online-status': {
             const mId = el.dataset.mentorId || this.activeMentorId;
             const updated = await dataStore.toggleMentorOnlineStatus(mId);
@@ -1263,7 +1881,7 @@ export class MentorshipHubModule {
                 `${updated.name} is now ${
                   updated.isOnline
                     ? '🟢 ACTIVE (Voice & Video Calls Unlocked!)'
-                    : '⚪ OFFLINE (Calls Gated — Chat Open)'
+                    : '⚪ OFFLINE (Calls Disabled — Book Appointment in Chat)'
                 }`
               );
               this.rerender();
@@ -1289,25 +1907,6 @@ export class MentorshipHubModule {
             }
             break;
           }
-          case 'request-call': {
-            const callType =
-              (el.dataset.callType as 'CHAT' | 'AUDIO' | 'VIDEO') || 'CHAT';
-            const mentors = dataStore.getMentors();
-            const mentor =
-              mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
-            await dataStore.createMentorshipRequest({
-              requestType: callType,
-              initialMessage: `Student requested a 1:1 ${callType} session with ${mentor.name}.`,
-              mentorId: mentor.id,
-              mentorName: mentor.name,
-            });
-            this.callbacks.onShowToast(
-              `1:1 ${callType} request sent to ${mentor.name}`
-            );
-            this.rerender();
-            this.drawPrivacyStreamFrame();
-            break;
-          }
           case 'start-jitsi-call': {
             const callType =
               (el.dataset.callType as 'AUDIO' | 'VIDEO') || 'VIDEO';
@@ -1316,11 +1915,16 @@ export class MentorshipHubModule {
             const mentor = mentors.find((m) => m.id === mId) ?? mentors[0];
             this.activeMentorId = mentor.id;
 
-            // Enforce Active Status Call Gate!
-            if (mentor.isOnline === false) {
-              this.callbacks.onShowToast(
-                `🔒 ${mentor.name} is currently Offline. Voice & Video Calls are only available when the Admin/Mentor is Active! Send a 1:1 Chat message or toggle Active status.`
-              );
+            const sessions = dataStore.getMentorshipSessions();
+            const mySession = sessions.find((s) => s.mentorId === mentor.id);
+            const gate = canStudentInitiateMentorCall({
+              isMentorOnline: mentor.isOnline !== false,
+              appointmentStatus: mySession?.appointmentStatus,
+              scheduledCallTime: mySession?.scheduledCallTime,
+            });
+
+            if (!gate.canCall) {
+              this.callbacks.onShowToast(`🔒 ${gate.reason}`);
               return;
             }
 
@@ -1353,8 +1957,8 @@ export class MentorshipHubModule {
     });
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str?: string | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

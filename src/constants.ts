@@ -51,6 +51,13 @@ export const DEFAULT_USER: AspirantUser = {
   isGuest: false,
   currentStreak: 4,
   dailyGoalTasks: 4,
+  totalFocusMinutes: 210,
+  subjectFocusMinutes: {
+    Physics: 95,
+    Chemistry: 55,
+    Math: 60,
+    Biology: 0,
+  },
   lastActiveDate: '2026-11-03',
   createdAt: '2026-10-15T09:00:00Z',
 };

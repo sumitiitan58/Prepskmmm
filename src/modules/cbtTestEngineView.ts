@@ -655,15 +655,46 @@ export class CBTTestEngineModule {
             </div>
           </div>
 
-          <!-- Step 2: Select Chapters -->
+          <!-- Step 2: Select Any Number of Chapters (Dynamic N-Multiplier Rule) -->
           <div class="space-y-2.5">
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                2. Select Chapters (${selectedChapterCount} Selected)
+                2. Select Any Number of Chapters (${selectedChapterCount} Selected — Not Fixed to 3!)
               </label>
-              <span class="text-xs font-semibold text-[#4F46E5]">
-                Each selected chapter will contribute ${questionsPerChapter} question${questionsPerChapter > 1 ? 's' : ''}
-              </span>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button
+                  type="button"
+                  data-action="quick-select-chapter-count"
+                  data-count="1"
+                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700"
+                >
+                  Select 1 Ch
+                </button>
+                <button
+                  type="button"
+                  data-action="quick-select-chapter-count"
+                  data-count="2"
+                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700"
+                >
+                  Select 2 Ch
+                </button>
+                <button
+                  type="button"
+                  data-action="quick-select-chapter-count"
+                  data-count="4"
+                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700"
+                >
+                  Select 4 Ch
+                </button>
+                <button
+                  type="button"
+                  data-action="quick-select-chapter-count"
+                  data-count="${allChapters.length}"
+                  class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-extrabold text-[#4F46E5]"
+                >
+                  Select All (${allChapters.length} Ch)
+                </button>
+              </div>
             </div>
 
             <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5 max-h-64 overflow-y-auto p-1">
@@ -701,7 +732,7 @@ export class CBTTestEngineModule {
           <!-- Step 3: Total Question Count (Multiples of Selected Chapters Only) -->
           <div class="space-y-2">
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              3. Total Questions (Multiples of ${selectedChapterCount} Chapter${selectedChapterCount > 1 ? 's' : ''})
+              3. Total Questions (Multiples of ${selectedChapterCount} Selected Chapter${selectedChapterCount > 1 ? 's' : ''}: ${validMultiples.slice(0, 6).join(', ')}...)
             </label>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               ${validMultiples.slice(0, 8).map((totalQ) => {
@@ -1773,8 +1804,21 @@ export class CBTTestEngineModule {
             const tid = el.dataset.testId;
             if (tid) {
               this.selectedHistoryTestId = tid;
-              this.rerender();
+              window.location.href = `/test-history.html?testId=${encodeURIComponent(tid)}&view=single`;
             }
+            break;
+          }
+          case 'quick-select-chapter-count': {
+            const targetCount = Math.max(1, Number(el.dataset.count) || 1);
+            const allChapters = dataStore.getChapters();
+            this.selectedChapterIds = new Set(
+              allChapters.slice(0, targetCount).map((c) => c.id)
+            );
+            const validMultiples = getValidInfinitePracticeCounts(
+              this.selectedChapterIds.size
+            );
+            this.infiniteTotalCount = validMultiples[1] ?? validMultiples[0];
+            this.rerender();
             break;
           }
           case 'filter-history-subject': {

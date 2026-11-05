@@ -55,8 +55,35 @@ export interface AspirantUser {
   isGuest: boolean;
   currentStreak: number;
   dailyGoalTasks?: number;
+  totalFocusMinutes?: number;
+  subjectFocusMinutes?: Record<SubjectName, number>;
   lastActiveDate: string;
   createdAt: string;
+}
+
+export interface FocusSessionRecord {
+  id: string;
+  uid: string;
+  studentName: string;
+  subject: SubjectName;
+  durationMinutes: number;
+  modeLabel: string;
+  completedAt: string;
+}
+
+export interface GroupCallSchedule {
+  id: string;
+  title: string;
+  mentorId: string;
+  mentorName: string;
+  scheduledTimeText: string;
+  scheduledTime?: string;
+  targetCohort: string;
+  jitsiRoom: string;
+  isActive: boolean;
+  joinedStudents: { uid: string; name: string; joinedAt: string }[];
+  participantNames?: string[];
+  updatedAt: string;
 }
 
 export interface StreakCalendarDay {
@@ -290,6 +317,12 @@ export interface MentorshipMessage {
   senderRole: 'student' | 'admin';
   text: string;
   timestamp: string;
+  attachmentType?: 'IMAGE' | 'VIDEO' | 'FILE' | 'APPOINTMENT';
+  attachmentUrl?: string;
+  attachmentName?: string;
+  appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  appointmentTime?: string;
+  appointmentTopic?: string;
 }
 
 export interface MentorshipSessionItem {
@@ -302,6 +335,10 @@ export interface MentorshipSessionItem {
   jitsiRoom?: string;
   requestType: 'CHAT' | 'AUDIO' | 'VIDEO';
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED';
+  appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
+  scheduledCallTime?: string;
+  requestedCallTime?: string;
+  appointmentTopic?: string;
   messages: MentorshipMessage[];
   updatedAt: string;
 }
@@ -309,6 +346,9 @@ export interface MentorshipSessionItem {
 export interface AdminQuestionItem {
   id: string;
   classId: string;
+  classCohort?: StudentClassYear;
+  targetExam?: TargetExam;
+  mockTestTitle?: string;
   subjectId: string;
   chapterId?: string;
   subjectName: SubjectName;

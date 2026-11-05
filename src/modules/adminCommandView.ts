@@ -26,10 +26,13 @@ export class AdminCommandModule {
   private callbacks: AdminCommandCallbacks;
   private activeAdminTab: AdminTabId = 'workbench';
 
-  // Dual-Crop Workbench State
-  private selectedClassId = 'cls_11';
-  private selectedSubjectId = 'sub_phy_11';
-  private selectedChapterId = 'ch_rotational';
+  // Dual-Crop Workbench State (Default Mock Test Values + Subject-Only Selection, No Chapter!)
+  private defaultMockClassCohort = 'Class 12';
+  private defaultMockExamTrack: 'JEE' | 'NEET' = 'JEE';
+  private defaultMockTestTitle = 'All-India Official NTA Major Mock #14';
+  private selectedCropSubjectName: SubjectName = 'Physics';
+  private selectedClassId = 'cls_12';
+  private selectedSubjectId = 'sub_phy_12';
   private questionType: 'MCQ' | 'NUMERICAL' | 'MULTI_MCQ' = 'MCQ';
   private singleMcqAnswer = '0';
   private numericalAnswer = '4.9';
@@ -88,13 +91,13 @@ export class AdminCommandModule {
     const isMaster = dataStore.isMasterAdmin();
 
     const tabs: { id: AdminTabId; label: string }[] = [
-      { id: 'workbench', label: '1. Dual-Crop Workbench' },
+      { id: 'workbench', label: '1. Mock Test & Crop Builder' },
       { id: 'videos', label: '2. Video Lecture Uploader' },
       { id: 'mentors_broadcast', label: '3. Mentors & Broadcast' },
       { id: 'theme_brand', label: '4. Theme & Logo Customizer' },
       { id: 'materials', label: '5. PDF Vault Uploader' },
       { id: 'structure', label: '6. Classes & Chapters' },
-      { id: 'mentorship', label: '7. Jitsi Mentorship Desk' },
+      { id: 'mentorship', label: '7. Admin Chat & Call Centre' },
     ];
 
     this.containerEl.innerHTML = `
@@ -245,379 +248,461 @@ export class AdminCommandModule {
   }
 
   private renderDualCropWorkbench(): string {
-    const classes = dataStore.getClasses();
-    const subjects = dataStore.getSubjects(this.selectedClassId);
     const adminQuestions = dataStore.getAdminQuestions();
+    const cohortChoices = [
+      'Class 12',
+      'Class 11',
+      'Dropper',
+      'Class 11 Foundation',
+      'Class 10 Foundation',
+      'Class 10',
+      'Class 9',
+    ];
+    const subjectChoices: SubjectName[] = [
+      'Physics',
+      'Chemistry',
+      'Math',
+      'Biology',
+    ];
 
     return `
-      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        <!-- Left 7 Cols: Interactive Drag-and-Resize Dual-Crop Canvas Workbench -->
-        <section
-          aria-label="Dual-Crop Image Canvas"
-          class="lg:col-span-7 bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
-        >
-          <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+      <div class="space-y-6" data-testid="admin-mock-crop-builder">
+        <!-- STEP 1: DEFAULT MOCK TEST VALUES BAR (Class/Foundation + Exam Track + Mock Test Title -> Then Select Subject Only!) -->
+        <section class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white border border-indigo-500/30 rounded-2xl p-5 shadow-sm space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <span class="text-xs font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                Interactive Drag & Resize Dual-Box Engine · Question + Solution
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider">
+                Step 1 · Set Default Mock Test Values Once (Saved Across Questions)
               </span>
-              <h2 class="text-lg font-bold text-slate-900 mt-0.5">
-                Drag or Resize Crop Box 1 & Crop Box 2 Directly on Canvas
+              <h2 class="text-base sm:text-lg font-extrabold text-white mt-1">
+                Mock Test Default Configuration (Class, Foundation & Exam) → Select Subject Only & Start Cropping
               </h2>
             </div>
-
-            <div class="flex items-center gap-2">
-              <label
-                for="admin-crop-file-input"
-                class="min-h-[38px] px-3.5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer inline-flex items-center"
-              >
-                Upload Exam Sheet Image
-              </label>
-              <input
-                id="admin-crop-file-input"
-                type="file"
-                accept="image/*"
-                class="hidden"
-              />
-              <button
-                type="button"
-                data-action="reset-crop-boxes"
-                class="min-h-[38px] px-3 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-slate-700"
-              >
-                Reset Crop Boxes
-              </button>
-            </div>
-          </div>
-
-          <div class="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs text-slate-700 flex items-center justify-between">
-            <span>💡 <strong>Interactive Canvas:</strong> Drag inside Box 1 (Indigo) or Box 2 (Emerald) to move, or drag the bottom-right corner handle <code class="font-mono font-bold">↘</code> to resize!</span>
-          </div>
-
-          <!-- Source Exam Sheet Canvas with Interactive Pointer Drag/Resize -->
-          <div class="rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-900 p-2">
-            <canvas
-              id="admin-source-sheet-canvas"
-              width="860"
-              height="520"
-              class="w-full h-auto block rounded-lg bg-white cursor-move touch-none"
-            ></canvas>
-          </div>
-
-          <!-- Dual Crop Box Precision Controls & Live Previews -->
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <!-- Crop Box 1 Controls -->
-            <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2.5">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-[#4F46E5]">
-                  Crop Box 1: Question + Options
-                </span>
-                <span id="crop1-coords-label" class="text-[11px] font-mono-tabular text-slate-600">
-                  X:${this.cropBox1.x}% Y:${this.cropBox1.y}% W:${this.cropBox1.w}% H:${this.cropBox1.h}%
-                </span>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <label class="text-[11px] text-slate-600">
-                  Top Y (${this.cropBox1.y}%)
-                  <input
-                    type="range"
-                    min="2"
-                    max="60"
-                    value="${this.cropBox1.y}"
-                    data-crop-slider="b1-y"
-                    class="w-full accent-[#4F46E5]"
-                  />
-                </label>
-                <label class="text-[11px] text-slate-600">
-                  Height H (${this.cropBox1.h}%)
-                  <input
-                    type="range"
-                    min="15"
-                    max="65"
-                    value="${this.cropBox1.h}"
-                    data-crop-slider="b1-h"
-                    class="w-full accent-[#4F46E5]"
-                  />
-                </label>
-              </div>
-              <canvas
-                id="admin-crop1-preview"
-                width="420"
-                height="130"
-                class="w-full h-auto rounded-lg border border-indigo-200 bg-white"
-              ></canvas>
-            </div>
-
-            <!-- Crop Box 2 Controls -->
-            <div class="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2.5">
-              <div class="flex items-center justify-between">
-                <span class="text-xs font-bold text-[#10B981]">
-                  Crop Box 2: Step-by-Step Solution
-                </span>
-                <span id="crop2-coords-label" class="text-[11px] font-mono-tabular text-slate-600">
-                  X:${this.cropBox2.x}% Y:${this.cropBox2.y}% W:${this.cropBox2.w}% H:${this.cropBox2.h}%
-                </span>
-              </div>
-              <div class="grid grid-cols-2 gap-2">
-                <label class="text-[11px] text-slate-600">
-                  Top Y (${this.cropBox2.y}%)
-                  <input
-                    type="range"
-                    min="30"
-                    max="82"
-                    value="${this.cropBox2.y}"
-                    data-crop-slider="b2-y"
-                    class="w-full accent-[#10B981]"
-                  />
-                </label>
-                <label class="text-[11px] text-slate-600">
-                  Height H (${this.cropBox2.h}%)
-                  <input
-                    type="range"
-                    min="15"
-                    max="60"
-                    value="${this.cropBox2.h}"
-                    data-crop-slider="b2-h"
-                    class="w-full accent-[#10B981]"
-                  />
-                </label>
-              </div>
-              <canvas
-                id="admin-crop2-preview"
-                width="420"
-                height="130"
-                class="w-full h-auto rounded-lg border border-emerald-200 bg-white"
-              ></canvas>
-            </div>
-          </div>
-        </section>
-
-        <!-- Right 5 Cols: Simplified Taxonomy (Only Title, Class & Subject — No Chapter!) & Save Flow -->
-        <section
-          aria-label="Question Metadata and Save Form"
-          class="lg:col-span-5 bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
-        >
-          <div class="pb-3 border-b border-slate-100">
-            <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#10B981]">
-              Simplified Upload · Only Title, Class & Subject Required
+            <span class="px-3 py-1 rounded-xl bg-white/10 text-indigo-200 font-mono-tabular text-xs font-bold">
+              Active Subject: ${this.selectedCropSubjectName} (No Chapter Needed)
             </span>
-            <h2 class="text-base font-bold text-slate-900 mt-0.5">
-              Save Cropped Question + Solution to Firebase
-            </h2>
-            <p class="text-xs text-slate-500">
-              Extracts Crop 1 (Question) & Crop 2 (Solution) and syncs directly to Firebase Firestore for all students and admins.
-            </p>
           </div>
 
-          <form id="admin-save-question-form" class="space-y-4">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label for="wb-prompt-input" class="block text-xs font-bold text-slate-700 mb-1">
-                1. Question Title / Prompt Caption (No Chapter Needed)
+              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+                Default Class / Foundation Cohort
               </label>
-              <input
-                id="wb-prompt-input"
-                type="text"
-                required
-                value="${this.escapeHtml(this.questionPromptText)}"
-                placeholder="e.g., Solid Cylinder Pure Rolling on Inclined Plane PYQ"
-                class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-900"
-              />
-            </div>
-
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">2. Select Class / Cohort</label>
-                <select
-                  id="wb-class-select"
-                  class="w-full min-h-[40px] px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
-                >
-                  ${classes
-                    .map(
-                      (c) =>
-                        `<option value="${c.id}" ${this.selectedClassId === c.id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
-                    )
-                    .join('')}
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">3. Select Subject</label>
-                <select
-                  id="wb-subject-select"
-                  class="w-full min-h-[40px] px-2.5 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
-                >
-                  ${subjects
-                    .map(
-                      (s) =>
-                        `<option value="${s.id}" ${this.selectedSubjectId === s.id ? 'selected' : ''}>${this.escapeHtml(s.name)}</option>`
-                    )
-                    .join('')}
-                </select>
-              </div>
-            </div>
-
-            <div class="space-y-2">
-              <label class="block text-xs font-bold text-slate-700">Question Type</label>
-              <div class="grid grid-cols-3 gap-2">
-                ${(
-                  [
-                    { id: 'MCQ', label: 'Single MCQ' },
-                    { id: 'NUMERICAL', label: 'Numerical Value' },
-                    { id: 'MULTI_MCQ', label: 'Multiple MCQ' },
-                  ] as const
-                )
+              <select
+                id="wb-default-cohort-select"
+                data-testid="wb-default-cohort-select"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-extrabold text-white"
+              >
+                ${cohortChoices
                   .map(
-                    (qt) => `
-                  <button
-                    type="button"
-                    data-action="wb-select-qtype"
-                    data-qtype="${qt.id}"
-                    class="min-h-[38px] px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
-                      this.questionType === qt.id
-                        ? 'bg-[#4F46E5] border-[#4F46E5] text-white'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700'
-                    }"
-                  >
-                    ${qt.label}
-                  </button>
-                `
+                    (c) =>
+                      `<option value="${c}" ${this.defaultMockClassCohort === c ? 'selected' : ''}>${c}</option>`
                   )
                   .join('')}
-              </div>
+              </select>
             </div>
 
-            ${
-              this.questionType === 'MCQ'
-                ? `
-              <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
-                <div class="text-xs font-bold text-slate-700">Select Correct Single Option</div>
-                <div class="grid grid-cols-4 gap-2">
-                  ${['A', 'B', 'C', 'D']
-                    .map((opt, idx) => {
-                      const active = this.singleMcqAnswer === String(idx);
-                      return `
-                      <button
-                        type="button"
-                        data-action="wb-select-single-opt"
-                        data-opt="${idx}"
-                        class="min-h-[40px] rounded-xl border font-mono-tabular text-xs font-bold ${
-                          active
-                            ? 'bg-[#10B981] border-[#10B981] text-white'
-                            : 'bg-white border-[#E2E8F0] text-slate-700'
-                        }"
-                      >
-                        Option ${opt}
-                      </button>
-                    `;
-                    })
-                    .join('')}
-                </div>
-              </div>
-            `
-                : this.questionType === 'NUMERICAL'
-                  ? `
-              <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
-                <label for="wb-numerical-val" class="block text-xs font-bold text-slate-700">
-                  Exact Numerical Answer (or Decimal Value)
-                </label>
-                <input
-                  id="wb-numerical-val"
-                  type="text"
-                  value="${this.escapeHtml(this.numericalAnswer)}"
-                  placeholder="e.g. 4.9"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] font-mono-tabular text-sm font-bold text-slate-900"
-                />
-              </div>
-            `
-                  : `
-              <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
-                <div class="text-xs font-bold text-slate-700">Select All Correct Options (Multiple MCQ)</div>
-                <div class="grid grid-cols-4 gap-2">
-                  ${['A', 'B', 'C', 'D']
-                    .map((opt) => {
-                      const checked = this.multiMcqAnswers.has(opt);
-                      return `
-                      <button
-                        type="button"
-                        data-action="wb-toggle-multi-opt"
-                        data-opt="${opt}"
-                        class="min-h-[40px] rounded-xl border font-mono-tabular text-xs font-bold ${
-                          checked
-                            ? 'bg-[#10B981] border-[#10B981] text-white'
-                            : 'bg-white border-[#E2E8F0] text-slate-700'
-                        }"
-                      >
-                        ${checked ? '✓ ' : ''}${opt}
-                      </button>
-                    `;
-                    })
-                    .join('')}
-                </div>
-              </div>
-            `
-            }
-
-            <button
-              type="submit"
-              data-testid="wb-save-next-btn"
-              class="w-full min-h-[46px] px-5 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-sm transition-colors"
-            >
-              Save Cropped Question & Prepare Next →
-            </button>
-          </form>
-
-          <div class="pt-3 border-t border-slate-100 space-y-2">
-            <div class="text-xs font-bold text-slate-700">
-              Recently Uploaded Cropped Questions & Solutions (${adminQuestions.length})
+            <div>
+              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+                Default Target Exam Track
+              </label>
+              <select
+                id="wb-default-exam-select"
+                data-testid="wb-default-exam-select"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-extrabold text-white"
+              >
+                <option value="JEE" ${this.defaultMockExamTrack === 'JEE' ? 'selected' : ''}>JEE Main / Advanced</option>
+                <option value="NEET" ${this.defaultMockExamTrack === 'NEET' ? 'selected' : ''}>NEET UG Medical</option>
+              </select>
             </div>
-            <div class="space-y-2.5 max-h-60 overflow-y-auto">
-              ${
-                adminQuestions.length === 0
-                  ? `<div class="text-xs text-slate-400">Click "Save Cropped Question & Prepare Next" to upload your first cropped question & solution.</div>`
-                  : adminQuestions
-                      .map(
-                        (aq) => `
-                      <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2 text-xs" data-testid="uploaded-cropped-question-item">
-                        <div class="flex items-center justify-between gap-2">
-                          <div class="truncate">
-                            <span class="font-bold text-[#4F46E5]">[${aq.type} · ${this.escapeHtml(aq.subjectName)}]</span>
-                            <span class="font-semibold text-slate-800"> ${this.escapeHtml(aq.prompt)}</span>
-                            <span class="text-slate-500"> · Key: ${this.escapeHtml(aq.correctVal)}</span>
-                          </div>
-                          <button
-                            type="button"
-                            data-action="delete-admin-q"
-                            data-qid="${aq.id}"
-                            class="text-[#EF4444] font-bold px-2"
-                          >
-                            ✕
-                          </button>
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                          ${
-                            aq.questionImg
-                              ? `<div class="rounded-lg border border-indigo-200 bg-white p-1">
-                                  <span class="block text-[9px] font-bold text-[#4F46E5]">CROP 1: QUESTION</span>
-                                  <img src="${aq.questionImg}" alt="Cropped Question" class="h-12 w-full object-contain" />
-                                </div>`
-                              : ''
-                          }
-                          ${
-                            aq.solutionImg
-                              ? `<div class="rounded-lg border border-emerald-200 bg-white p-1">
-                                  <span class="block text-[9px] font-bold text-[#10B981]">CROP 2: SOLUTION</span>
-                                  <img src="${aq.solutionImg}" alt="Cropped Solution" class="h-12 w-full object-contain" />
-                                </div>`
-                              : ''
-                          }
-                        </div>
-                      </div>
-                    `
-                      )
-                      .join('')
-              }
+
+            <div>
+              <label class="block text-[11px] font-bold text-indigo-200 uppercase mb-1">
+                Default Mock Test Series Title
+              </label>
+              <input
+                id="wb-default-mock-title"
+                type="text"
+                value="${this.escapeHtml(this.defaultMockTestTitle)}"
+                placeholder="e.g. All-India Full Syllabus Mock #14"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-slate-800 border border-slate-700 text-xs font-bold text-white"
+              />
+            </div>
+          </div>
+
+          <!-- STEP 2: SUBJECT-ONLY PILL SELECTOR (NO CHAPTER SELECTION REQUIRED!) -->
+          <div class="pt-3 border-t border-white/10 flex flex-wrap items-center justify-between gap-3">
+            <span class="text-xs font-extrabold text-emerald-300 uppercase tracking-wider">
+              Step 2 · Choose Subject Only (No Chapter Selection — Start Cropping Immediately):
+            </span>
+            <div class="flex flex-wrap items-center gap-2" data-testid="wb-subject-only-selector">
+              ${subjectChoices
+                .map((sub) => {
+                  const active = this.selectedCropSubjectName === sub;
+                  return `
+                  <button
+                    type="button"
+                    data-action="wb-select-subject-only"
+                    data-subject-name="${sub}"
+                    class="min-h-[38px] px-4 py-1.5 rounded-xl text-xs font-extrabold transition-all ${
+                      active
+                        ? 'bg-[#10B981] text-slate-950 shadow-sm scale-105'
+                        : 'bg-white/10 text-white hover:bg-white/20 border border-white/15'
+                    }"
+                  >
+                    ${active ? '✓ ' : ''}${sub}
+                  </button>
+                `;
+                })
+                .join('')}
             </div>
           </div>
         </section>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          <!-- Left 7 Cols: Interactive Drag-and-Resize Dual-Crop Canvas Workbench -->
+          <section
+            aria-label="Dual-Crop Image Canvas"
+            class="lg:col-span-7 bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
+          >
+            <div class="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+              <div>
+                <span class="text-xs font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                  Step 3 · Crop Question (Box 1) & Answer/Solution (Box 2)
+                </span>
+                <h2 class="text-lg font-bold text-slate-900 mt-0.5">
+                  Drag or Resize Question & Solution Crop Boxes Directly
+                </h2>
+              </div>
+
+              <div class="flex items-center gap-2">
+                <label
+                  for="admin-crop-file-input"
+                  class="min-h-[38px] px-3.5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold cursor-pointer inline-flex items-center"
+                >
+                  Upload Exam Sheet Image
+                </label>
+                <input
+                  id="admin-crop-file-input"
+                  type="file"
+                  accept="image/*"
+                  class="hidden"
+                />
+                <button
+                  type="button"
+                  data-action="reset-crop-boxes"
+                  class="min-h-[38px] px-3 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-slate-700"
+                >
+                  Reset Crop Boxes
+                </button>
+              </div>
+            </div>
+
+            <div class="p-2.5 rounded-xl bg-indigo-50/70 border border-indigo-200 text-xs text-slate-700 flex items-center justify-between">
+              <span>💡 <strong>Interactive Canvas:</strong> Drag inside Box 1 (Question) or Box 2 (Solution) to move, or drag the bottom-right corner handle <code class="font-mono font-bold">↘</code> to resize!</span>
+            </div>
+
+            <!-- Source Exam Sheet Canvas with Interactive Pointer Drag/Resize -->
+            <div class="rounded-xl overflow-hidden border border-[#E2E8F0] bg-slate-900 p-2">
+              <canvas
+                id="admin-source-sheet-canvas"
+                width="860"
+                height="520"
+                class="w-full h-auto block rounded-lg bg-white cursor-move touch-none"
+              ></canvas>
+            </div>
+
+            <!-- Dual Crop Box Precision Controls & Live Previews -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <!-- Crop Box 1 Controls -->
+              <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-[#4F46E5]">
+                    Crop Box 1: Question + Options
+                  </span>
+                  <span id="crop1-coords-label" class="text-[11px] font-mono-tabular text-slate-600">
+                    X:${this.cropBox1.x}% Y:${this.cropBox1.y}% W:${this.cropBox1.w}% H:${this.cropBox1.h}%
+                  </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="text-[11px] text-slate-600">
+                    Top Y (${this.cropBox1.y}%)
+                    <input
+                      type="range"
+                      min="2"
+                      max="60"
+                      value="${this.cropBox1.y}"
+                      data-crop-slider="b1-y"
+                      class="w-full accent-[#4F46E5]"
+                    />
+                  </label>
+                  <label class="text-[11px] text-slate-600">
+                    Height H (${this.cropBox1.h}%)
+                    <input
+                      type="range"
+                      min="15"
+                      max="65"
+                      value="${this.cropBox1.h}"
+                      data-crop-slider="b1-h"
+                      class="w-full accent-[#4F46E5]"
+                    />
+                  </label>
+                </div>
+                <canvas
+                  id="admin-crop1-preview"
+                  width="420"
+                  height="130"
+                  class="w-full h-auto rounded-lg border border-indigo-200 bg-white"
+                ></canvas>
+              </div>
+
+              <!-- Crop Box 2 Controls -->
+              <div class="p-3.5 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-2.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-xs font-bold text-[#10B981]">
+                    Crop Box 2: Answer & Step-by-Step Solution
+                  </span>
+                  <span id="crop2-coords-label" class="text-[11px] font-mono-tabular text-slate-600">
+                    X:${this.cropBox2.x}% Y:${this.cropBox2.y}% W:${this.cropBox2.w}% H:${this.cropBox2.h}%
+                  </span>
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <label class="text-[11px] text-slate-600">
+                    Top Y (${this.cropBox2.y}%)
+                    <input
+                      type="range"
+                      min="30"
+                      max="82"
+                      value="${this.cropBox2.y}"
+                      data-crop-slider="b2-y"
+                      class="w-full accent-[#10B981]"
+                    />
+                  </label>
+                  <label class="text-[11px] text-slate-600">
+                    Height H (${this.cropBox2.h}%)
+                    <input
+                      type="range"
+                      min="15"
+                      max="60"
+                      value="${this.cropBox2.h}"
+                      data-crop-slider="b2-h"
+                      class="w-full accent-[#10B981]"
+                    />
+                  </label>
+                </div>
+                <canvas
+                  id="admin-crop2-preview"
+                  width="420"
+                  height="130"
+                  class="w-full h-auto rounded-lg border border-emerald-200 bg-white"
+                ></canvas>
+              </div>
+            </div>
+          </section>
+
+          <!-- Right 5 Cols: Subject-Only Answer Key & Instant Save to Firebase -->
+          <section
+            aria-label="Question Metadata and Save Form"
+            class="lg:col-span-5 bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
+          >
+            <div class="pb-3 border-b border-slate-100">
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#10B981]">
+                Subject-Only Fast Crop · No Chapter Selection Required
+              </span>
+              <h2 class="text-base font-bold text-slate-900 mt-0.5">
+                Save Cropped ${this.selectedCropSubjectName} Question + Solution
+              </h2>
+              <p class="text-xs text-slate-500">
+                Auto-tagged to <strong>${this.escapeHtml(this.defaultMockClassCohort)} · ${this.defaultMockExamTrack}</strong> (${this.escapeHtml(this.defaultMockTestTitle)}) under <strong>${this.selectedCropSubjectName}</strong>.
+              </p>
+            </div>
+
+            <form id="admin-save-question-form" class="space-y-4">
+              <div class="p-3 rounded-xl bg-indigo-50/70 border border-indigo-100 flex items-center justify-between text-xs">
+                <span class="font-bold text-slate-700">Selected Subject:</span>
+                <span class="px-2.5 py-0.5 rounded-lg bg-[#4F46E5] text-white font-extrabold">
+                  ${this.selectedCropSubjectName} (No Chapter Required)
+                </span>
+              </div>
+
+              <div>
+                <label for="wb-prompt-input" class="block text-xs font-bold text-slate-700 mb-1">
+                  Optional Question Label / Tag
+                </label>
+                <input
+                  id="wb-prompt-input"
+                  type="text"
+                  required
+                  value="${this.escapeHtml(this.questionPromptText)}"
+                  placeholder="e.g., ${this.selectedCropSubjectName} High-Yield Mock Problem"
+                  class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-900"
+                />
+              </div>
+
+              <div class="space-y-2">
+                <label class="block text-xs font-bold text-slate-700">Question Type</label>
+                <div class="grid grid-cols-3 gap-2">
+                  ${(
+                    [
+                      { id: 'MCQ', label: 'Single MCQ' },
+                      { id: 'NUMERICAL', label: 'Numerical Value' },
+                      { id: 'MULTI_MCQ', label: 'Multiple MCQ' },
+                    ] as const
+                  )
+                    .map(
+                      (qt) => `
+                    <button
+                      type="button"
+                      data-action="wb-select-qtype"
+                      data-qtype="${qt.id}"
+                      class="min-h-[38px] px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-colors ${
+                        this.questionType === qt.id
+                          ? 'bg-[#4F46E5] border-[#4F46E5] text-white'
+                          : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700'
+                      }"
+                    >
+                      ${qt.label}
+                    </button>
+                  `
+                    )
+                    .join('')}
+                </div>
+              </div>
+
+              ${
+                this.questionType === 'MCQ'
+                  ? `
+                <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                  <div class="text-xs font-bold text-slate-700">Select Correct Option Key (A / B / C / D)</div>
+                  <div class="grid grid-cols-4 gap-2">
+                    ${['A', 'B', 'C', 'D']
+                      .map((opt, idx) => {
+                        const active = this.singleMcqAnswer === String(idx);
+                        return `
+                        <button
+                          type="button"
+                          data-action="wb-select-single-opt"
+                          data-opt="${idx}"
+                          class="min-h-[40px] rounded-xl border font-mono-tabular text-xs font-bold ${
+                            active
+                              ? 'bg-[#10B981] border-[#10B981] text-white'
+                              : 'bg-white border-[#E2E8F0] text-slate-700'
+                          }"
+                        >
+                          Option ${opt}
+                        </button>
+                      `;
+                      })
+                      .join('')}
+                  </div>
+                </div>
+              `
+                  : this.questionType === 'NUMERICAL'
+                    ? `
+                <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                  <label for="wb-numerical-val" class="block text-xs font-bold text-slate-700">
+                    Exact Numerical Answer (or Decimal Value)
+                  </label>
+                  <input
+                    id="wb-numerical-val"
+                    type="text"
+                    value="${this.escapeHtml(this.numericalAnswer)}"
+                    placeholder="e.g. 4.9"
+                    class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] font-mono-tabular text-sm font-bold text-slate-900"
+                  />
+                </div>
+              `
+                    : `
+                <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+                  <div class="text-xs font-bold text-slate-700">Select All Correct Options (Multiple MCQ)</div>
+                  <div class="grid grid-cols-4 gap-2">
+                    ${['A', 'B', 'C', 'D']
+                      .map((opt) => {
+                        const checked = this.multiMcqAnswers.has(opt);
+                        return `
+                        <button
+                          type="button"
+                          data-action="wb-toggle-multi-opt"
+                          data-opt="${opt}"
+                          class="min-h-[40px] rounded-xl border font-mono-tabular text-xs font-bold ${
+                            checked
+                              ? 'bg-[#10B981] border-[#10B981] text-white'
+                              : 'bg-white border-[#E2E8F0] text-slate-700'
+                          }"
+                        >
+                          ${checked ? '✓ ' : ''}${opt}
+                        </button>
+                      `;
+                      })
+                      .join('')}
+                  </div>
+                </div>
+              `
+              }
+
+              <button
+                type="submit"
+                data-testid="wb-save-next-btn"
+                class="w-full min-h-[46px] px-5 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold shadow-sm transition-colors"
+              >
+                Save Cropped ${this.selectedCropSubjectName} Question & Prepare Next →
+              </button>
+            </form>
+
+            <div class="pt-3 border-t border-slate-100 space-y-2">
+              <div class="text-xs font-bold text-slate-700">
+                Recently Uploaded Cropped Questions & Solutions (${adminQuestions.length})
+              </div>
+              <div class="space-y-2.5 max-h-60 overflow-y-auto">
+                ${
+                  adminQuestions.length === 0
+                    ? `<div class="text-xs text-slate-400">Click "Save Cropped Question & Prepare Next" to upload your first cropped question & solution.</div>`
+                    : adminQuestions
+                        .map(
+                          (aq) => `
+                        <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2 text-xs" data-testid="uploaded-cropped-question-item">
+                          <div class="flex items-center justify-between gap-2">
+                            <div class="truncate">
+                              <span class="font-bold text-[#4F46E5]">[${aq.type} · ${this.escapeHtml(aq.subjectName)} · ${this.escapeHtml(aq.classCohort || 'Class 12')}]</span>
+                              <span class="font-semibold text-slate-800"> ${this.escapeHtml(aq.prompt)}</span>
+                              <span class="text-slate-500"> · Key: ${this.escapeHtml(aq.correctVal)}</span>
+                            </div>
+                            <button
+                              type="button"
+                              data-action="delete-admin-q"
+                              data-qid="${aq.id}"
+                              class="text-[#EF4444] font-bold px-2"
+                            >
+                              ✕
+                            </button>
+                          </div>
+                          <div class="grid grid-cols-2 gap-2">
+                            ${
+                              aq.questionImg
+                                ? `<div class="rounded-lg border border-indigo-200 bg-white p-1">
+                                    <span class="block text-[9px] font-bold text-[#4F46E5]">CROP 1: QUESTION</span>
+                                    <img src="${aq.questionImg}" alt="Cropped Question" class="h-12 w-full object-contain" />
+                                  </div>`
+                                : ''
+                            }
+                            ${
+                              aq.solutionImg
+                                ? `<div class="rounded-lg border border-emerald-200 bg-white p-1">
+                                    <span class="block text-[9px] font-bold text-[#10B981]">CROP 2: SOLUTION</span>
+                                    <img src="${aq.solutionImg}" alt="Cropped Solution" class="h-12 w-full object-contain" />
+                                  </div>`
+                                : ''
+                            }
+                          </div>
+                        </div>
+                      `
+                        )
+                        .join('')
+                }
+              </div>
+            </div>
+          </section>
+        </div>
       </div>
     `;
   }
@@ -1546,80 +1631,223 @@ export class AdminCommandModule {
 
   private renderMentorshipDesk(): string {
     const sessions = dataStore.getMentorshipSessions();
+    const groupSchedule = dataStore.getGroupCallSchedule();
     return `
-      <div class="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm space-y-5">
-        <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-          <div>
-            <h2 class="text-lg font-extrabold text-slate-900">
-              Admin & Mentor 1:1 Consultation Desk (With Live Jitsi Video Call)
-            </h2>
-            <p class="text-xs text-slate-500">
-              Reply to student threads or click "Join Jitsi Video Call" to enter the live 1:1 room with that student.
-            </p>
+      <div data-testid="admin-chat-centre" class="space-y-6">
+        <!-- Multi-Student Group Call Time Slot Scheduler -->
+        <div class="bg-gradient-to-r from-indigo-950 via-slate-900 to-emerald-950 text-white rounded-2xl p-5 sm:p-6 shadow-md border border-indigo-500/30 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 text-[10px] font-extrabold uppercase tracking-wider">
+                👥 Multi-Student Scheduled Group Call Slot · Saved to Firebase
+              </span>
+              <h2 class="text-base sm:text-lg font-extrabold mt-1">
+                Schedule Group Mentorship Call Time (Multiple Students Join Together)
+              </h2>
+              <p class="text-xs text-slate-300">
+                Set a time slot below. At this scheduled time, multiple students can join the shared Jitsi call room simultaneously.
+              </p>
+            </div>
+            <div class="px-3 py-1.5 rounded-xl bg-white/10 border border-white/15 text-xs font-mono-tabular">
+              Joined Students: <strong class="text-emerald-300">${groupSchedule.joinedStudents.length}</strong> · Time: <strong class="text-amber-300">${this.escapeHtml(groupSchedule.scheduledTime)}</strong>
+            </div>
           </div>
-          <span class="px-3 py-1 rounded-xl bg-indigo-50 text-[#4F46E5] text-xs font-mono-tabular font-bold">
-            ${sessions.length} Active Threads
-          </span>
+
+          <form id="admin-group-call-form" data-testid="admin-group-call-form" class="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+            <div class="sm:col-span-5">
+              <label class="block text-[11px] font-bold text-indigo-200 mb-1">Group Session Title</label>
+              <input
+                id="group-call-title-input"
+                type="text"
+                required
+                value="${this.escapeHtml(groupSchedule.title)}"
+                placeholder="e.g., Evening JEE/NEET Strategy & Doubt Room"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-bold placeholder:text-slate-400"
+              />
+            </div>
+            <div class="sm:col-span-4">
+              <label class="block text-[11px] font-bold text-indigo-200 mb-1">Scheduled Call Time (For All Students)</label>
+              <input
+                id="group-call-time-input"
+                type="text"
+                required
+                value="${this.escapeHtml(groupSchedule.scheduledTime)}"
+                placeholder="e.g., Today, 08:30 PM IST"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-white/10 border border-white/20 text-white text-xs font-mono-tabular font-bold placeholder:text-slate-400"
+              />
+            </div>
+            <div class="sm:col-span-3 flex gap-2">
+              <button
+                type="submit"
+                data-testid="save-group-call-slot-btn"
+                class="flex-1 min-h-[40px] px-4 py-2 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+              >
+                💾 Save Time Slot
+              </button>
+              <button
+                type="button"
+                data-action="admin-join-jitsi"
+                data-room="${this.escapeHtml(groupSchedule.jitsiRoom)}"
+                data-student="Group Session (${groupSchedule.joinedStudents.length} Students)"
+                class="min-h-[40px] px-3 py-2 rounded-xl bg-white text-slate-900 text-xs font-extrabold cursor-pointer"
+              >
+                🎥 Host
+              </button>
+            </div>
+          </form>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-          ${sessions
-            .map(
-              (s) => `
-            <div class="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 flex flex-col justify-between">
-              <div class="space-y-3">
-                <div class="flex items-center justify-between gap-2">
-                  <div>
-                    <div class="text-sm font-extrabold text-slate-900">${this.escapeHtml(s.studentName)}</div>
-                    <div class="text-[11px] text-slate-500">
-                      ${this.escapeHtml(s.studentClass)} · Mentor: <strong class="text-[#4F46E5]">${this.escapeHtml(s.mentorName || 'Sumit Kumar')}</strong>
-                    </div>
-                  </div>
-                  <div class="flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      data-action="admin-join-jitsi"
-                      data-room="${this.escapeHtml(s.jitsiRoom || 'prepskm_sumit_live_room')}"
-                      data-student="${this.escapeHtml(s.studentName)}"
-                      class="px-2.5 py-1 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-[11px] font-extrabold shadow-2xs"
-                    >
-                      🎥 Join Jitsi Call
-                    </button>
-                  </div>
-                </div>
-
-                <div class="space-y-1.5 max-h-40 overflow-y-auto bg-white p-3 rounded-xl border border-[#E2E8F0]">
-                  ${s.messages
-                    .map(
-                      (m) => `
-                    <div class="text-xs">
-                      <strong class="${m.senderRole === 'admin' ? 'text-[#4F46E5]' : 'text-slate-900'}">${this.escapeHtml(m.senderName)}:</strong>
-                      <span class="text-slate-600"> ${this.escapeHtml(m.text)}</span>
-                    </div>
-                  `
-                    )
-                    .join('')}
-                </div>
-              </div>
-
-              <form data-admin-reply-session="${s.id}" class="flex gap-2 pt-2">
-                <input
-                  type="text"
-                  required
-                  placeholder="Reply as ${this.escapeHtml(s.mentorName || 'Sumit Kumar')}..."
-                  class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs"
-                />
-                <button
-                  type="submit"
-                  class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold"
-                >
-                  Reply
-                </button>
-              </form>
+        <!-- Admin 1:1 Student Chat Centre & Appointment Approval Desk -->
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl p-6 shadow-sm space-y-5">
+          <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+            <div>
+              <h2 class="text-lg font-extrabold text-slate-900">
+                Admin Chat Centre · Student Media, Doubts & Appointment Approvals
+              </h2>
+              <p class="text-xs text-slate-500">
+                Review student images, videos, files, and appointment requests. Accept an appointment and assign a call time to unlock calling for that student.
+              </p>
             </div>
-          `
-            )
-            .join('')}
+            <span class="px-3 py-1 rounded-xl bg-indigo-50 text-[#4F46E5] text-xs font-mono-tabular font-bold">
+              ${sessions.length} Active Student Threads
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            ${sessions
+              .map((s) => {
+                const apptStatus = s.appointmentStatus || 'NONE';
+                return `
+              <div class="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 flex flex-col justify-between">
+                <div class="space-y-3">
+                  <div class="flex items-center justify-between gap-2">
+                    <div>
+                      <div class="flex items-center gap-2">
+                        <span class="text-sm font-extrabold text-slate-900">${this.escapeHtml(s.studentName)}</span>
+                        ${
+                          apptStatus === 'PENDING'
+                            ? `<span class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-extrabold">⏳ PENDING APPOINTMENT</span>`
+                            : apptStatus === 'ACCEPTED'
+                              ? `<span class="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-extrabold">✓ ACCEPTED · ${this.escapeHtml(s.scheduledCallTime || '')}</span>`
+                              : apptStatus === 'REJECTED'
+                                ? `<span class="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-200 text-[10px] font-extrabold">✕ REJECTED</span>`
+                                : ''
+                        }
+                      </div>
+                      <div class="text-[11px] text-slate-500">
+                        ${this.escapeHtml(s.studentClass)} · Mentor: <strong class="text-[#4F46E5]">${this.escapeHtml(s.mentorName || 'Sumit Kumar')}</strong>
+                      </div>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        data-action="admin-join-jitsi"
+                        data-room="${this.escapeHtml(s.jitsiRoom || 'prepskm_sumit_live_room')}"
+                        data-student="${this.escapeHtml(s.studentName)}"
+                        class="px-2.5 py-1 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-[11px] font-extrabold shadow-2xs cursor-pointer"
+                      >
+                        🎥 Join Call
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Admin Appointment Accept / Reject + Time Setter Control Bar -->
+                  <div class="p-3 rounded-xl ${
+                    apptStatus === 'PENDING'
+                      ? 'bg-amber-50 border border-amber-200'
+                      : 'bg-white border border-[#E2E8F0]'
+                  } space-y-2">
+                    <div class="flex items-center justify-between text-[11px]">
+                      <span class="font-extrabold text-slate-800">
+                        📅 Call Appointment Control ${
+                          s.requestedCallTime
+                            ? `(Requested: ${this.escapeHtml(s.requestedCallTime)})`
+                            : ''
+                        }
+                      </span>
+                      <span class="font-mono-tabular font-bold ${
+                        apptStatus === 'ACCEPTED'
+                          ? 'text-emerald-700'
+                          : apptStatus === 'PENDING'
+                            ? 'text-amber-800'
+                            : 'text-slate-500'
+                      }">Status: ${apptStatus}</span>
+                    </div>
+                    <div class="flex flex-wrap items-center gap-1.5">
+                      <input
+                        id="admin-appt-time-${s.id}"
+                        data-testid="admin-appt-time-input-${s.id}"
+                        type="text"
+                        value="${this.escapeHtml(s.scheduledCallTime || s.requestedCallTime || 'Today, 07:30 PM IST')}"
+                        placeholder="Set Call Time (e.g., 07:30 PM IST)"
+                        class="flex-1 min-w-[140px] min-h-[32px] px-2.5 py-1 rounded-lg bg-white border border-slate-300 text-[11px] font-mono-tabular font-bold text-slate-900"
+                      />
+                      <button
+                        type="button"
+                        data-action="admin-accept-appointment"
+                        data-session-id="${s.id}"
+                        data-testid="admin-accept-appt-btn-${s.id}"
+                        class="min-h-[32px] px-2.5 py-1 rounded-lg bg-[#10B981] hover:bg-emerald-600 text-white text-[11px] font-extrabold cursor-pointer"
+                      >
+                        ✓ Accept & Set Time
+                      </button>
+                      <button
+                        type="button"
+                        data-action="admin-reject-appointment"
+                        data-session-id="${s.id}"
+                        data-testid="admin-reject-appt-btn-${s.id}"
+                        class="min-h-[32px] px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white text-[11px] font-extrabold cursor-pointer"
+                      >
+                        ✕ Reject
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Chat Messages & Attachments History -->
+                  <div class="space-y-2 max-h-48 overflow-y-auto bg-white p-3 rounded-xl border border-[#E2E8F0]">
+                    ${s.messages
+                      .map(
+                        (m) => `
+                      <div class="text-xs space-y-1 pb-1.5 border-b border-slate-50 last:border-b-0">
+                        <div>
+                          <strong class="${m.senderRole === 'admin' ? 'text-[#4F46E5]' : 'text-slate-900'}">${this.escapeHtml(m.senderName)}:</strong>
+                          <span class="text-slate-600"> ${this.escapeHtml(m.text)}</span>
+                        </div>
+                        ${
+                          m.attachmentType === 'IMAGE' && m.attachmentUrl
+                            ? `<img src="${this.escapeHtml(m.attachmentUrl)}" alt="${this.escapeHtml(m.attachmentName || 'Image')}" class="max-h-24 rounded-lg border border-slate-200 object-contain" />`
+                            : m.attachmentType === 'VIDEO' && m.attachmentUrl
+                              ? `<video src="${this.escapeHtml(m.attachmentUrl)}" controls class="max-h-28 rounded-lg border border-slate-200"></video>`
+                              : m.attachmentType === 'FILE' && m.attachmentUrl
+                                ? `<a href="${this.escapeHtml(m.attachmentUrl)}" download="${this.escapeHtml(m.attachmentName || 'file')}" class="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-slate-100 text-[#4F46E5] text-[10px] font-bold">📎 ${this.escapeHtml(m.attachmentName || 'Attached File')}</a>`
+                                : ''
+                        }
+                      </div>
+                    `
+                      )
+                      .join('')}
+                  </div>
+                </div>
+
+                <form data-admin-reply-session="${s.id}" class="flex gap-2 pt-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Reply as ${this.escapeHtml(s.mentorName || 'Sumit Kumar')}..."
+                    class="flex-1 min-h-[38px] px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs"
+                  />
+                  <button
+                    type="submit"
+                    class="px-3.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold cursor-pointer"
+                  >
+                    Reply
+                  </button>
+                </form>
+              </div>
+            `;
+              })
+              .join('')}
+          </div>
         </div>
       </div>
     `;
@@ -1703,7 +1931,7 @@ export class AdminCommandModule {
       offCtx.fillStyle = '#0F172A';
       offCtx.font = '700 18px "Plus Jakarta Sans", sans-serif';
       offCtx.fillText(
-        'JEE ADVANCED PHYSICS PAPER-1 · SECTION A (ROTATIONAL MECHANICS)',
+        `${this.defaultMockExamTrack} · ${this.defaultMockClassCohort.toUpperCase()} · ${this.selectedCropSubjectName.toUpperCase()}`,
         32,
         28
       );
@@ -1773,7 +2001,6 @@ export class AdminCommandModule {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '700 12px "JetBrains Mono", monospace';
     ctx.fillText('CROP BOX 1: QUESTION (DRAG / RESIZE ↘)', b1x + 8, Math.max(15, b1y - 7));
-    // Resize handle square for Box 1
     ctx.fillStyle = '#4F46E5';
     ctx.fillRect(b1x + b1w - 16, b1y + b1h - 16, 16, 16);
 
@@ -1795,11 +2022,9 @@ export class AdminCommandModule {
     ctx.fillStyle = '#FFFFFF';
     ctx.font = '700 12px "JetBrains Mono", monospace';
     ctx.fillText('CROP BOX 2: SOLUTION (DRAG / RESIZE ↘)', b2x + 8, Math.max(15, b2y - 7));
-    // Resize handle square for Box 2
     ctx.fillStyle = '#10B981';
     ctx.fillRect(b2x + b2w - 16, b2y + b2h - 16, 16, 16);
 
-    // Update coordinate labels
     const l1 = this.containerEl?.querySelector('#crop1-coords-label');
     if (l1) {
       l1.textContent = `X:${Math.round(this.cropBox1.x)}% Y:${Math.round(
@@ -1868,7 +2093,6 @@ export class AdminCommandModule {
       const b1 = this.cropBox1;
       const b2 = this.cropBox2;
 
-      // Check resize handle of Box 1 (bottom-right 5% x 6% zone)
       if (
         Math.abs(xPct - (b1.x + b1.w)) <= 5 &&
         Math.abs(yPct - (b1.y + b1.h)) <= 6
@@ -2037,23 +2261,33 @@ export class AdminCommandModule {
       reader.readAsDataURL(file);
     });
 
-    // Taxonomy dropdowns (Only Class & Subject needed)
-    const clsSelect =
-      this.containerEl.querySelector<HTMLSelectElement>('#wb-class-select');
-    clsSelect?.addEventListener('change', () => {
-      this.selectedClassId = clsSelect.value;
-      const subs = dataStore.getSubjects(this.selectedClassId);
-      this.selectedSubjectId = subs[0]?.id ?? '';
-      this.rerender();
+    // Step 1 Default Mock Test Metadata Controls (Class/Foundation, Exam Track, Mock Test Title)
+    const defaultCohortSelect = this.containerEl.querySelector<HTMLSelectElement>(
+      '#wb-default-cohort-select'
+    );
+    defaultCohortSelect?.addEventListener('change', () => {
+      this.defaultMockClassCohort = defaultCohortSelect.value as StudentClassYear;
+      this.drawDualCropCanvases();
     });
 
-    const subSelect =
-      this.containerEl.querySelector<HTMLSelectElement>('#wb-subject-select');
-    subSelect?.addEventListener('change', () => {
-      this.selectedSubjectId = subSelect.value;
+    const defaultExamSelect = this.containerEl.querySelector<HTMLSelectElement>(
+      '#wb-default-exam-select'
+    );
+    defaultExamSelect?.addEventListener('change', () => {
+      this.defaultMockExamTrack = defaultExamSelect.value as TargetExam;
+      this.drawDualCropCanvases();
     });
 
-    // Save & Next Cropped Question + Solution Form
+    const defaultMockTitleInput = this.containerEl.querySelector<HTMLInputElement>(
+      '#wb-default-mock-title'
+    );
+    defaultMockTitleInput?.addEventListener('input', () => {
+      if (defaultMockTitleInput.value.trim()) {
+        this.defaultMockTestTitle = defaultMockTitleInput.value.trim();
+      }
+    });
+
+    // Save & Next Cropped Question + Solution Form (Subject-Only, No Chapter Required)
     const saveQuestionForm = this.containerEl.querySelector<HTMLFormElement>(
       '#admin-save-question-form'
     );
@@ -2088,10 +2322,6 @@ export class AdminCommandModule {
         uploadDataUrlToStorage(`solutions/${ts}_s.png`, sDataUrl),
       ]);
 
-      const subObj = dataStore
-        .getSubjects()
-        .find((s) => s.id === this.selectedSubjectId);
-
       const correctVal =
         this.questionType === 'MCQ'
           ? this.singleMcqAnswer
@@ -2101,9 +2331,12 @@ export class AdminCommandModule {
 
       await dataStore.addAdminQuestion({
         classId: this.selectedClassId,
-        subjectId: this.selectedSubjectId,
-        subjectName: (subObj?.name as SubjectName) || 'Physics',
-        chapterName: this.questionPromptText.slice(0, 48),
+        subjectId: `sub_${this.selectedCropSubjectName.toLowerCase()}`,
+        subjectName: this.selectedCropSubjectName,
+        classCohort: this.defaultMockClassCohort,
+        targetExam: this.defaultMockExamTrack,
+        mockTestTitle: this.defaultMockTestTitle,
+        chapterName: `${this.selectedCropSubjectName} · ${this.defaultMockTestTitle}`,
         type: this.questionType,
         questionImg: questionImgUrl,
         solutionImg: solutionImgUrl,
@@ -2125,7 +2358,32 @@ export class AdminCommandModule {
 
       this.savedCountInSession += 1;
       this.callbacks.onShowToast(
-        `Saved Cropped Question & Solution #${this.savedCountInSession} to Firebase!`
+        `Saved ${this.selectedCropSubjectName} Question #${this.savedCountInSession} (${this.defaultMockClassCohort}) to Firebase!`
+      );
+      this.rerender();
+    });
+
+    // Multi-Student Scheduled Group Call Form
+    const groupCallForm = this.containerEl.querySelector<HTMLFormElement>(
+      '#admin-group-call-form'
+    );
+    groupCallForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const title =
+        groupCallForm
+          .querySelector<HTMLInputElement>('#group-call-title-input')
+          ?.value.trim() || 'Evening JEE/NEET Group Strategy & Doubt Session';
+      const scheduledTime =
+        groupCallForm
+          .querySelector<HTMLInputElement>('#group-call-time-input')
+          ?.value.trim() || 'Today, 08:00 PM IST';
+      await dataStore.saveGroupCallSchedule({
+        title,
+        scheduledTime,
+        isActive: true,
+      });
+      this.callbacks.onShowToast(
+        `Saved Multi-Student Group Call Slot for "${scheduledTime}" to Firebase!`
       );
       this.rerender();
     });
@@ -2428,7 +2686,7 @@ export class AdminCommandModule {
       this.rerender();
     });
 
-    // Material PDF File Input & Uploader Form (Title + Class + Subject + Section)
+    // Material PDF File Input & Uploader Form
     const pdfFileInput =
       this.containerEl.querySelector<HTMLInputElement>('#mat-pdf-file');
     pdfFileInput?.addEventListener('change', () => {
@@ -2526,6 +2784,14 @@ export class AdminCommandModule {
             }
             break;
           }
+          case 'wb-select-subject-only': {
+            const subj = el.dataset.subject as SubjectName;
+            if (subj) {
+              this.selectedCropSubjectName = subj;
+              this.rerender();
+            }
+            break;
+          }
           case 'reset-crop-boxes': {
             this.cropBox1 = { x: 4, y: 10, w: 92, h: 36 };
             this.cropBox2 = { x: 4, y: 53, w: 92, h: 40 };
@@ -2581,8 +2847,40 @@ export class AdminCommandModule {
               this.callbacks.onShowToast(
                 nextOnline
                   ? 'Mentor is now ACTIVE — Students can initiate 1:1 Voice & Video Calls!'
-                  : 'Mentor set to OFFLINE — 1:1 Voice & Video Calls are locked.'
+                  : 'Mentor set to OFFLINE — Direct calls locked unless student has an Accepted Appointment.'
               );
+              this.rerender();
+            }
+            break;
+          }
+          case 'admin-accept-appointment': {
+            const sessionId = el.dataset.sessionId;
+            if (sessionId) {
+              const timeInput = this.containerEl?.querySelector<HTMLInputElement>(
+                `#admin-appt-time-${sessionId}`
+              );
+              const scheduledTime =
+                timeInput?.value.trim() || 'Today, 07:30 PM IST';
+              await dataStore.respondToMentorshipAppointment(
+                sessionId,
+                'ACCEPTED',
+                scheduledTime
+              );
+              this.callbacks.onShowToast(
+                `Appointment ACCEPTED for ${scheduledTime} — Call unlocked for student!`
+              );
+              this.rerender();
+            }
+            break;
+          }
+          case 'admin-reject-appointment': {
+            const sessionId = el.dataset.sessionId;
+            if (sessionId) {
+              await dataStore.respondToMentorshipAppointment(
+                sessionId,
+                'REJECTED'
+              );
+              this.callbacks.onShowToast('Appointment marked as REJECTED.');
               this.rerender();
             }
             break;
@@ -2680,8 +2978,8 @@ export class AdminCommandModule {
     });
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str?: string | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

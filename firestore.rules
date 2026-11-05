@@ -184,6 +184,23 @@ service cloud.firestore {
       allow delete: if true;
     }
 
+    match /focus_sessions/{sessionId} {
+      allow read: if true;
+      allow create, update: if isValidId(sessionId)
+        && request.resource.data.uid is string
+        && request.resource.data.subject is string
+        && request.resource.data.durationMinutes is number;
+      allow delete: if true;
+    }
+
+    match /group_call_schedules/{slotId} {
+      allow read: if true;
+      allow create, update: if isValidId(slotId)
+        && request.resource.data.title is string
+        && request.resource.data.scheduledTimeText is string;
+      allow delete: if true;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }

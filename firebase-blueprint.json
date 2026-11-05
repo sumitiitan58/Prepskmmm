@@ -225,6 +225,39 @@
         "createdAt": { "type": "string" }
       },
       "required": ["uid", "studentName", "currentStreak", "riskLevel", "title", "message", "createdAt"]
+    },
+    "FocusSession": {
+      "title": "FocusSession",
+      "description": "Completed Pomodoro study focus session logged per subject.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "uid": { "type": "string" },
+        "studentName": { "type": "string" },
+        "subject": { "type": "string", "enum": ["Physics", "Chemistry", "Math", "Biology"] },
+        "durationMinutes": { "type": "number" },
+        "modeLabel": { "type": "string" },
+        "completedAt": { "type": "string" }
+      },
+      "required": ["uid", "subject", "durationMinutes", "completedAt"]
+    },
+    "GroupCallSchedule": {
+      "title": "GroupCallSchedule",
+      "description": "Admin-scheduled group call slot where multiple students can join simultaneously.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "scheduledTimeText": { "type": "string" },
+        "targetCohort": { "type": "string" },
+        "jitsiRoom": { "type": "string" },
+        "isActive": { "type": "boolean" },
+        "joinedStudents": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["title", "scheduledTimeText", "jitsiRoom", "isActive", "updatedAt"]
     }
   },
   "firestore": {
@@ -283,6 +316,14 @@
     "/streak_notifications/{notifId}": {
       "schema": { "$ref": "#/entities/StreakNotification" },
       "description": "Real-time study streak risk notifications."
+    },
+    "/focus_sessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/FocusSession" },
+      "description": "Pomodoro subject focus sessions."
+    },
+    "/group_call_schedules/{slotId}": {
+      "schema": { "$ref": "#/entities/GroupCallSchedule" },
+      "description": "Multi-student group call schedule set by Admin."
     }
   }
 }
