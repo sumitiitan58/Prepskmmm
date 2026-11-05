@@ -1196,46 +1196,58 @@ export function canStudentInitiateMentorCall(params: {
   canCall: boolean;
   badgeLabel: string;
   helperText: string;
+  reason: string;
 } {
   if (params.isMentorOnline) {
+    const helperText =
+      'Mentor is online now. You can start a live 1:1 voice or video call immediately.';
     return {
       canCall: true,
       badgeLabel: 'ONLINE · INSTANT CALL UNLOCKED',
-      helperText: 'Mentor is online now. You can start a live 1:1 voice or video call immediately.',
+      helperText,
+      reason: helperText,
     };
   }
 
   if (params.appointmentStatus === 'ACCEPTED' && params.scheduledCallTime) {
+    const helperText = `Your appointment is approved for ${params.scheduledCallTime}. Voice & Video calls are unlocked for your slot!`;
     return {
       canCall: true,
       badgeLabel: `APPOINTMENT ACCEPTED · ${params.scheduledCallTime}`,
-      helperText: `Your appointment is approved for ${params.scheduledCallTime}. Voice & Video calls are unlocked for your slot!`,
+      helperText,
+      reason: helperText,
     };
   }
 
   if (params.appointmentStatus === 'PENDING') {
+    const helperText =
+      'Mentor is currently offline. Your appointment request is PENDING — once Admin accepts and sets a time, calling will unlock.';
     return {
       canCall: false,
       badgeLabel: 'APPOINTMENT PENDING ADMIN APPROVAL',
-      helperText:
-        'Mentor is currently offline. Your appointment request is PENDING — once Admin accepts and sets a time, calling will unlock.',
+      helperText,
+      reason: helperText,
     };
   }
 
   if (params.appointmentStatus === 'REJECTED') {
+    const helperText =
+      'Mentor is offline and previous slot was declined. Use the + menu in Chat to request a new appointment slot.';
     return {
       canCall: false,
       badgeLabel: 'APPOINTMENT RESCHEDULE NEEDED',
-      helperText:
-        'Mentor is offline and previous slot was declined. Use the + menu in Chat to request a new appointment slot.',
+      helperText,
+      reason: helperText,
     };
   }
 
+  const helperText =
+    'Mentor has turned calls OFF right now. Click the + button in Chat below to Take an Appointment.';
   return {
     canCall: false,
     badgeLabel: 'OFFLINE · BOOK APPOINTMENT IN CHAT (+)',
-    helperText:
-      'Mentor has turned calls OFF right now. Click the + button in Chat below to Take an Appointment.',
+    helperText,
+    reason: helperText,
   };
 }
 

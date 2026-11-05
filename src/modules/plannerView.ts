@@ -1,5 +1,6 @@
 import { getCohortTheme, WEEK_DAYS } from '../constants';
 import { dataStore } from '../services/firebaseService';
+import { workspaceConnector } from '../services/workspaceService';
 import type { PageId, SubjectName, TaskPriority } from '../types';
 import {
   calculateBacklogKillerPlan,
@@ -17,6 +18,8 @@ export class PlannerModule {
   private backlogSubject: SubjectName = 'Physics';
   private backlogHours = 9;
   private backlogDays = 6;
+  private isConfirmSyncModalOpen = false;
+  private isSyncingGoogleWorkspace = false;
   private onNavigatePage: (page: PageId) => void;
   private onShowToast: (msg: string) => void;
 
@@ -42,6 +45,8 @@ export class PlannerModule {
     const validSubjects = getSubjectsForExam(user.targetExam);
     const dailyTarget = dataStore.getDailyGoalTarget();
     const goalRing = calculateDailyGoalProgress(allTasks, dailyTarget, 34);
+    const scheduleSyncs = workspaceConnector.getScheduleSyncRecords();
+    const isGoogleTokenActive = workspaceConnector.hasActiveAccessToken();
 
     const filteredTasks = allTasks.filter((t) => {
       if (this.activeFilter === 'Today' && t.type !== 'Today') return false;
@@ -72,7 +77,7 @@ export class PlannerModule {
                 Smart To-Do List & Backlog Killer Engine
               </h1>
               <p class="text-xs sm:text-sm text-white/90 max-w-2xl">
-                Lightweight, zero-clutter task execution workspace synced in real time with Firebase Firestore. Convert pending chapters into daily micro-quotas.
+                Lightweight, zero-clutter task execution workspace synced in real time with Firebase Firestore, Google Calendar & Google Tasks.
               </p>
             </div>
 
@@ -91,6 +96,48 @@ export class PlannerModule {
                 <div class="text-base sm:text-lg font-mono-tabular font-extrabold">${completedTotal}/${allTasks.length}</div>
               </div>
             </div>
+          </div>
+        </section>
+
+        <!-- GOOGLE CALENDAR & GOOGLE TASKS MULTI-DEVICE SYNC BAR -->
+        <section
+          data-testid="planner-workspace-sync-bar"
+          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+        >
+          <div class="space-y-1">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase tracking-wider">
+                🗓️ Google Calendar & Google Tasks Sync
+              </span>
+              <span class="text-[11px] font-mono-tabular font-bold text-slate-600">
+                ${scheduleSyncs.filter((s) => s.calendarEventStatus === 'SYNCED').length}/${scheduleSyncs.length} schedule blocks synced across devices
+              </span>
+            </div>
+            <p class="text-xs text-slate-500">
+              Automatically mirror your daily JEE/NEET study blocks and pending tasks to Google Calendar & Google Tasks across mobile, tablet, and desktop.
+            </p>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
+            <button
+              type="button"
+              data-planner-action="workspace-signin"
+              class="min-h-[38px] px-3 py-1.5 rounded-xl border ${
+                isGoogleTokenActive
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                  : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+              } text-xs font-extrabold transition-all"
+            >
+              ${isGoogleTokenActive ? '✓ Google OAuth Active' : '🔐 Connect Google OAuth'}
+            </button>
+            <button
+              type="button"
+              data-testid="planner-open-sync-confirm-btn"
+              data-planner-action="open-sync-confirm"
+              class="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-xs transition-all"
+            >
+              ${this.isSyncingGoogleWorkspace ? '⏳ Syncing...' : '🔄 Sync to Google Calendar & Tasks'}
+            </button>
           </div>
         </section>
 
@@ -443,10 +490,77 @@ export class PlannerModule {
             </div>
           </div>
         </div>
+
+        ${this.renderWorkspaceSyncConfirmModal(allTasks)}
       </div>
     `;
 
     this.bindEvents();
+  }
+
+  private renderWorkspaceSyncConfirmModal(allTasks: ReturnType<typeof dataStore.getTasks>): string {
+    if (!this.isConfirmSyncModalOpen) return '';
+    const openTasks = allTasks.filter((t) => !t.isCompleted).slice(0, 5);
+    return `
+      <div
+        data-testid="planner-workspace-sync-confirm-modal"
+        class="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-4"
+      >
+        <div class="w-full max-w-lg rounded-2xl bg-white border border-slate-200 shadow-2xl overflow-hidden">
+          <div class="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between">
+            <div>
+              <span class="text-[10px] font-extrabold uppercase tracking-wider text-emerald-400">
+                Google Workspace Action Confirmation
+              </span>
+              <h3 class="text-base font-extrabold mt-0.5">
+                Confirm Google Calendar & Google Tasks Multi-Device Sync
+              </h3>
+            </div>
+            <button
+              type="button"
+              data-planner-action="cancel-sync-confirm"
+              class="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-bold"
+            >
+              ✕
+            </button>
+          </div>
+          <div class="p-4 sm:p-5 space-y-3 text-xs text-slate-600">
+            <p class="leading-relaxed">
+              You are about to create or update the following <strong class="text-slate-900">${openTasks.length} study events & tasks</strong> in your primary <strong class="text-slate-900">Google Calendar</strong> (<code class="text-[11px] bg-slate-100 px-1 py-0.5 rounded">calendar/v3/calendars/primary/events</code>) and default <strong class="text-slate-900">Google Tasks</strong> list (<code class="text-[11px] bg-slate-100 px-1 py-0.5 rounded">tasks/v1/lists/@default/tasks</code>):
+            </p>
+            <div class="max-h-48 overflow-y-auto space-y-1.5 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              ${openTasks
+                .map(
+                  (t, idx) => `
+                <div class="flex items-center justify-between gap-2 py-1 border-b border-slate-200/60 last:border-0">
+                  <span class="font-bold text-slate-800 truncate">${idx + 1}. [${this.escapeHtml(t.subject)}] ${this.escapeHtml(t.title)}</span>
+                  <span class="font-mono-tabular text-[10px] font-bold text-[#4F46E5] shrink-0">${t.type} · ${t.priority ?? 'High'}</span>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                data-planner-action="cancel-sync-confirm"
+                class="min-h-[38px] px-4 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                data-testid="planner-confirm-sync-btn"
+                data-planner-action="confirm-workspace-sync"
+                class="min-h-[38px] px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-xs"
+              >
+                ✓ Confirm & Sync to Google Calendar + Tasks
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   private bindEvents(): void {
@@ -571,13 +685,37 @@ export class PlannerModule {
           } else if (action === 'go-test') {
             window.history.pushState({}, '', '/test.html');
             this.onNavigatePage('test');
+          } else if (action === 'workspace-signin') {
+            const token = await workspaceConnector.signInWithGoogleWorkspace();
+            this.onShowToast(
+              token
+                ? 'Connected Google Workspace OAuth for Calendar & Tasks!'
+                : 'Google OAuth popup closed or running in local preview mode.'
+            );
+            this.render();
+          } else if (action === 'open-sync-confirm') {
+            this.isConfirmSyncModalOpen = true;
+            this.render();
+          } else if (action === 'cancel-sync-confirm') {
+            this.isConfirmSyncModalOpen = false;
+            this.render();
+          } else if (action === 'confirm-workspace-sync') {
+            this.isConfirmSyncModalOpen = false;
+            this.isSyncingGoogleWorkspace = true;
+            this.render();
+            const synced = await workspaceConnector.syncStudyScheduleWithGoogleCalendarAndTasks();
+            this.isSyncingGoogleWorkspace = false;
+            this.onShowToast(
+              `Synced ${synced.syncedCount} study events & tasks with Google Calendar & Google Tasks!`
+            );
+            this.render();
           }
         });
       });
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str?: string | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

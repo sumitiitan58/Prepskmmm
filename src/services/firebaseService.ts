@@ -2132,7 +2132,7 @@ export class PrepskmDataStore {
     text?: string;
     caption?: string;
     attachmentType: 'IMAGE' | 'VIDEO' | 'FILE';
-    attachmentUrl: string;
+    attachmentUrl?: string;
     attachmentName: string;
   }): Promise<MentorshipSessionItem | undefined> {
     let targetSessionId = params.sessionId;
@@ -2154,9 +2154,9 @@ export class PrepskmDataStore {
     if (!targetSessionId) return undefined;
 
     const finalUrl =
-      params.attachmentType === 'IMAGE'
+      params.attachmentType === 'IMAGE' && params.attachmentUrl
         ? await compressImageDataUrl(params.attachmentUrl)
-        : params.attachmentUrl;
+        : params.attachmentUrl || '';
     const defaultCaption =
       params.attachmentType === 'IMAGE'
         ? `📷 Shared an image: ${params.attachmentName}`
@@ -2184,6 +2184,7 @@ export class PrepskmDataStore {
     preferredTime?: string;
     requestedTime?: string;
     topic?: string;
+    reason?: string;
   }): Promise<MentorshipSessionItem | undefined> {
     let session = params.sessionId
       ? this.mentorshipSessions.find((s) => s.id === params.sessionId)
@@ -2205,7 +2206,7 @@ export class PrepskmDataStore {
       (params.preferredTime || params.requestedTime || '').trim() ||
       'Today · 07:30 PM IST';
     const cleanTopic =
-      (params.topic || '').trim() ||
+      (params.topic || params.reason || '').trim() ||
       '1:1 Strategy, Backlog Audit & PYQ Doubt Call';
 
     session.appointmentStatus = 'PENDING';

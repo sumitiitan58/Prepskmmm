@@ -5,7 +5,7 @@ import {
   uploadDataUrlToStorage,
   uploadFileToStorage,
 } from '../services/firebaseService';
-import type { SubjectName } from '../types';
+import type { StudentClassYear, SubjectName, TargetExam } from '../types';
 
 export interface AdminCommandCallbacks {
   onShowToast: (message: string) => void;
@@ -2333,8 +2333,8 @@ export class AdminCommandModule {
         classId: this.selectedClassId,
         subjectId: `sub_${this.selectedCropSubjectName.toLowerCase()}`,
         subjectName: this.selectedCropSubjectName,
-        classCohort: this.defaultMockClassCohort,
-        targetExam: this.defaultMockExamTrack,
+        classCohort: this.defaultMockClassCohort as StudentClassYear,
+        targetExam: this.defaultMockExamTrack as TargetExam,
         mockTestTitle: this.defaultMockTestTitle,
         chapterName: `${this.selectedCropSubjectName} · ${this.defaultMockTestTitle}`,
         type: this.questionType,

@@ -322,6 +322,8 @@ export interface MentorshipMessage {
   attachmentName?: string;
   appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
   appointmentTime?: string;
+  scheduledCallTime?: string;
+  requestedCallTime?: string;
   appointmentTopic?: string;
 }
 
@@ -339,6 +341,7 @@ export interface MentorshipSessionItem {
   scheduledCallTime?: string;
   requestedCallTime?: string;
   appointmentTopic?: string;
+  appointmentNote?: string;
   messages: MentorshipMessage[];
   updatedAt: string;
 }

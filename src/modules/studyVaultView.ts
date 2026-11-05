@@ -1,5 +1,9 @@
 import { getCohortTheme } from '../constants';
 import { dataStore } from '../services/firebaseService';
+import {
+  signInWithGoogleWorkspace,
+  workspaceConnector,
+} from '../services/workspaceService';
 import type { StudyMaterialItem, SubjectName } from '../types';
 import { formatDuration } from '../utils/examLogic';
 
@@ -22,6 +26,11 @@ export class StudyVaultModule {
   private focusRemainingSeconds = 25 * 60;
   private isFocusRunning = false;
   private focusIntervalId: number | null = null;
+
+  // Google Classroom & Calendar/Tasks Sync State
+  private isFetchingClassroom = false;
+  private isSyncingCalendarTasks = false;
+  private isWorkspaceSyncConfirmOpen = false;
 
   // In-App Secure PDF Viewer Modal State
   private previewMaterial: StudyMaterialItem | null = null;
@@ -223,15 +232,20 @@ export class StudyVaultModule {
                   `;
                 })
                 .join('')}
-            </div>
-          </section>
+              </div>
+            </section>
 
-          <!-- In-App Secure PDF Viewer Modal -->
-          ${this.renderSecurePdfModal()}
-          <!-- Edit PDF Study Material Modal -->
-          ${this.renderEditMaterialModal()}
-        </div>
-      `;
+            <!-- Google Classroom Resources & Assignment Connector + Google Calendar/Tasks Multi-Device Sync Hub -->
+            ${this.renderGoogleClassroomAndCalendarSyncHub()}
+
+            <!-- In-App Secure PDF Viewer Modal -->
+            ${this.renderSecurePdfModal()}
+            <!-- Edit PDF Study Material Modal -->
+            ${this.renderEditMaterialModal()}
+            <!-- Explicit User Confirmation Modal for Mutating Google Calendar & Tasks Sync -->
+            ${this.renderWorkspaceSyncConfirmModal()}
+          </div>
+        `;
 
       this.bindEvents();
       return;
@@ -448,14 +462,287 @@ export class StudyVaultModule {
           }
         </section>
 
+        <!-- Google Classroom Resources & Assignment Connector + Google Calendar/Tasks Multi-Device Sync Hub -->
+        ${this.renderGoogleClassroomAndCalendarSyncHub()}
+
         <!-- In-App Secure PDF Viewer Modal -->
         ${this.renderSecurePdfModal()}
         <!-- Edit PDF Study Material Modal -->
         ${this.renderEditMaterialModal()}
+        <!-- Explicit User Confirmation Modal for Mutating Google Calendar & Tasks Sync -->
+        ${this.renderWorkspaceSyncConfirmModal()}
       </div>
     `;
 
     this.bindEvents();
+  }
+
+  private renderGoogleClassroomAndCalendarSyncHub(): string {
+    const user = dataStore.getUser();
+    const classroomItems = workspaceConnector.getClassroomResources(
+      user.classYear,
+      user.targetExam
+    );
+    const syncRecords = workspaceConnector.getScheduleSyncRecords();
+    const hasToken = workspaceConnector.hasLiveToken();
+    const lastClassroomSync = workspaceConnector.getLastClassroomSyncTime();
+    const lastScheduleSync = workspaceConnector.getLastCalendarTasksSyncTime();
+
+    return `
+      <div class="grid grid-cols-1 xl:grid-cols-12 gap-5">
+        <!-- LEFT 7 COLS: Google Classroom Resource & Assignment Connector -->
+        <section
+          aria-label="Google Classroom Resource and Assignment Connector"
+          data-testid="classroom-connector-panel"
+          class="xl:col-span-7 bg-white border-2 border-emerald-200/80 rounded-2xl p-4 sm:p-5 shadow-sm space-y-4"
+        >
+          <div class="flex flex-wrap items-start justify-between gap-3 pb-3 border-b border-slate-100">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase tracking-wider">
+                  🎓 Google Classroom Connector · Study Vault Direct Sync
+                </span>
+                <span class="px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-mono-tabular text-[10px] font-bold" data-testid="classroom-sync-status-badge">
+                  ${hasToken ? '✓ OAuth Connected' : 'Connector Ready'} · ${this.escapeHtml(lastClassroomSync)}
+                </span>
+              </div>
+              <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
+                Google Classroom Resources & Assignment Updates
+              </h2>
+              <p class="text-xs text-slate-600">
+                Fetch active classwork materials, teacher announcements, and graded assignments directly into your Study Vault and Study Planner.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              ${
+                !hasToken
+                  ? `
+                <button
+                  type="button"
+                  data-action="workspace-google-signin"
+                  data-testid="classroom-google-signin-btn"
+                  class="gsi-material-button min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-slate-50 border border-slate-300 shadow-2xs inline-flex items-center gap-2 text-xs font-bold text-slate-800 cursor-pointer"
+                >
+                  <svg class="w-4 h-4 shrink-0" viewBox="0 0 48 48">
+                    <path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"></path>
+                    <path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"></path>
+                    <path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"></path>
+                    <path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"></path>
+                  </svg>
+                  <span class="gsi-material-button-contents">Sign in with Google</span>
+                </button>
+              `
+                  : ''
+              }
+              <button
+                type="button"
+                data-action="fetch-classroom-feed"
+                data-testid="classroom-fetch-btn"
+                ${this.isFetchingClassroom ? 'disabled' : ''}
+                class="min-h-[38px] px-3.5 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-xs transition-colors cursor-pointer disabled:opacity-60"
+              >
+                ${this.isFetchingClassroom ? '⏳ Fetching Classroom...' : '🔄 Fetch Classroom Updates'}
+              </button>
+            </div>
+          </div>
+
+          <div class="space-y-2.5" data-testid="classroom-resources-list">
+            ${classroomItems
+              .map(
+                (item) => `
+              <article
+                data-testid="classroom-resource-card"
+                class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] hover:border-emerald-300 transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              >
+                <div class="space-y-1 min-w-0 flex-1">
+                  <div class="flex flex-wrap items-center gap-1.5">
+                    <span class="px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase ${
+                      item.itemType === 'ASSIGNMENT'
+                        ? 'bg-amber-100 text-amber-800 border border-amber-200'
+                        : 'bg-indigo-100 text-[#4F46E5] border border-indigo-200'
+                    }">
+                      ${item.itemType === 'ASSIGNMENT' ? '📝 Assignment Update' : '📚 Class Resource'}
+                    </span>
+                    <span class="px-2 py-0.5 rounded-md bg-white border border-slate-200 text-[10px] font-bold text-slate-700">
+                      ${this.escapeHtml(item.subjectTag)} · ${this.escapeHtml(item.vaultCategory)}
+                    </span>
+                    <span class="text-[11px] font-mono-tabular text-emerald-700 font-bold">
+                      ${this.escapeHtml(item.dueDateText)}
+                    </span>
+                  </div>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
+                    ${this.escapeHtml(item.title)}
+                  </h3>
+                  <p class="text-[11px] text-slate-600 line-clamp-2">
+                    ${this.escapeHtml(item.description)}
+                  </p>
+                  <div class="text-[10px] font-semibold text-slate-500">
+                    Course: <strong>${this.escapeHtml(item.courseName)}</strong>
+                    ${item.driveFileTitle ? ` · Attachment: <code class="text-[#4F46E5]">${this.escapeHtml(item.driveFileTitle)}</code>` : ''}
+                  </div>
+                </div>
+
+                <div class="flex sm:flex-col items-center sm:items-end justify-end gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    data-action="import-classroom-item"
+                    data-item-id="${item.id}"
+                    data-testid="classroom-import-vault-btn"
+                    ${item.importedToVault ? 'disabled' : ''}
+                    class="min-h-[34px] px-3 py-1.5 rounded-xl text-xs font-extrabold transition-colors cursor-pointer ${
+                      item.importedToVault
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 cursor-default'
+                        : 'bg-[#4F46E5] hover:bg-indigo-700 text-white shadow-2xs'
+                    }"
+                  >
+                    ${item.importedToVault ? '✓ In Study Vault' : '+ Import to Vault'}
+                  </button>
+                </div>
+              </article>
+            `
+              )
+              .join('')}
+          </div>
+        </section>
+
+        <!-- RIGHT 5 COLS: Google Calendar & Google Tasks Multi-Device Schedule Sync Service Layer -->
+        <section
+          aria-label="Google Calendar and Google Tasks Sync Service"
+          data-testid="workspace-calendar-tasks-sync-panel"
+          class="xl:col-span-5 bg-white border-2 border-indigo-100 rounded-2xl p-4 sm:p-5 shadow-sm flex flex-col justify-between gap-4"
+        >
+          <div class="space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-2 pb-3 border-b border-slate-100">
+              <div class="space-y-1">
+                <div class="flex flex-wrap items-center gap-1.5">
+                  <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200 text-[10px] font-extrabold uppercase tracking-wider">
+                    📅 Google Calendar + Tasks API Sync
+                  </span>
+                  <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 font-mono-tabular text-[10px] font-bold" data-testid="schedule-sync-status-badge">
+                    ${this.escapeHtml(lastScheduleSync)}
+                  </span>
+                </div>
+                <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
+                  Multi-Device Study Schedule & Task Sync
+                </h2>
+                <p class="text-xs text-slate-600">
+                  Automatically mirror your daily study blocks, backlog micro-tasks, and Classroom assignment deadlines to Google Calendar & Google Tasks across all devices.
+                </p>
+              </div>
+            </div>
+
+            <div class="space-y-2 max-h-[260px] overflow-y-auto pr-1" data-testid="workspace-synced-schedule-list">
+              ${syncRecords
+                .map(
+                  (rec) => `
+                <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-2 text-xs">
+                  <div class="min-w-0 flex-1">
+                    <div class="flex items-center gap-1.5">
+                      <span class="px-1.5 py-0.5 rounded bg-indigo-100 text-[#4F46E5] text-[10px] font-extrabold">
+                        ${this.escapeHtml(rec.subject)}
+                      </span>
+                      <span class="font-mono-tabular text-[10px] text-slate-500">
+                        ${this.escapeHtml(rec.scheduledDateIso)} · ${this.escapeHtml(rec.scheduledTimeSlot)}
+                      </span>
+                    </div>
+                    <div class="font-bold text-slate-900 truncate mt-0.5">
+                      ${this.escapeHtml(rec.title)}
+                    </div>
+                  </div>
+                  <div class="flex flex-col items-end shrink-0 text-[10px] font-mono-tabular">
+                    <span class="text-emerald-700 font-extrabold">✓ Calendar + Tasks</span>
+                    <span class="text-slate-400">${this.escapeHtml(rec.lastSyncedAt)}</span>
+                  </div>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          </div>
+
+          <div class="pt-3 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+            <span class="text-[11px] text-slate-500 font-semibold">
+              ${syncRecords.length} Study Events & Tasks Queued
+            </span>
+            <button
+              type="button"
+              data-action="open-workspace-sync-confirm"
+              data-testid="open-workspace-sync-confirm-btn"
+              ${this.isSyncingCalendarTasks ? 'disabled' : ''}
+              class="min-h-[40px] px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition-colors cursor-pointer disabled:opacity-60"
+            >
+              ${this.isSyncingCalendarTasks ? '⏳ Syncing Across Devices...' : '📅 Sync Schedule to Google Calendar & Tasks →'}
+            </button>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  private renderWorkspaceSyncConfirmModal(): string {
+    if (!this.isWorkspaceSyncConfirmOpen) return '';
+    const tasks = dataStore.getTasks();
+    return `
+      <div
+        id="workspace-sync-confirm-modal"
+        data-testid="workspace-sync-confirm-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Confirm Google Calendar and Google Tasks Sync"
+        class="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
+      >
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+          <div class="space-y-1">
+            <span class="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold uppercase tracking-wider">
+              Explicit User Confirmation Required · Google Workspace Mutation
+            </span>
+            <h3 class="text-lg font-extrabold text-slate-900">
+              Sync ${tasks.length} Study Events & Tasks to Google Calendar and Google Tasks?
+            </h3>
+            <p class="text-xs text-slate-600 leading-relaxed">
+              Confirming will create or update <strong>${tasks.length} scheduled study blocks</strong> in your primary <strong>Google Calendar</strong> and <strong>Google Tasks</strong> list so your study schedule is reflected across all your devices.
+            </p>
+          </div>
+
+          <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] max-h-44 overflow-y-auto space-y-1.5 text-xs">
+            <div class="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              Affected Study Schedule Items (${tasks.length}):
+            </div>
+            ${tasks
+              .slice(0, 6)
+              .map(
+                (t) => `
+              <div class="flex items-center justify-between gap-2 py-1 border-b border-slate-200/60 last:border-0">
+                <span class="font-bold text-slate-800 truncate">[${this.escapeHtml(t.subject)}] ${this.escapeHtml(t.title)}</span>
+                <span class="font-mono-tabular text-[10px] text-[#4F46E5] shrink-0">${this.escapeHtml(t.type)}</span>
+              </div>
+            `
+              )
+              .join('')}
+          </div>
+
+          <div class="flex items-center justify-end gap-2.5 pt-2">
+            <button
+              type="button"
+              data-action="cancel-workspace-sync"
+              data-testid="cancel-workspace-sync-btn"
+              class="min-h-[40px] px-4 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-bold cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              data-action="confirm-workspace-sync"
+              data-testid="confirm-workspace-sync-btn"
+              class="min-h-[40px] px-5 py-2 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm cursor-pointer"
+            >
+              ✓ Confirm & Sync to Google Calendar + Tasks
+            </button>
+          </div>
+        </div>
+      </div>
+    `;
   }
 
   private renderPomodoroFocusWidget(): string {
@@ -1140,6 +1427,69 @@ export class StudyVaultModule {
             this.rerender();
             break;
           }
+          case 'workspace-google-signin': {
+            const token = await workspaceConnector.signInWithGoogleWorkspace();
+            if (token) {
+              this.callbacks.onShowToast(
+                'Connected Google Workspace! Fetching Classroom resources & assignments...'
+              );
+              this.isFetchingClassroom = true;
+              this.rerender();
+              await workspaceConnector.fetchClassroomResourcesAndAssignments();
+              this.isFetchingClassroom = false;
+              this.rerender();
+            } else {
+              this.callbacks.onShowToast(
+                'Google Workspace sign-in cancelled or running in preview fallback mode.'
+              );
+            }
+            break;
+          }
+          case 'fetch-classroom-feed': {
+            this.isFetchingClassroom = true;
+            this.rerender();
+            const res = await workspaceConnector.fetchClassroomResourcesAndAssignments();
+            this.isFetchingClassroom = false;
+            this.callbacks.onShowToast(
+              `Fetched ${res.items.length} Google Classroom resources, materials & assignment updates into Study Vault!`
+            );
+            this.rerender();
+            break;
+          }
+          case 'import-classroom-item': {
+            const itemId = el.dataset.itemId;
+            if (!itemId) break;
+            const imported = await workspaceConnector.importClassroomItemToStudyVault(itemId);
+            if (imported) {
+              this.callbacks.onShowToast(
+                `Imported "${imported.title}" (${imported.subjectTag}) into Study Vault & Study Planner!`
+              );
+              this.rerender();
+            }
+            break;
+          }
+          case 'open-workspace-sync-confirm': {
+            this.isWorkspaceSyncConfirmOpen = true;
+            this.rerender();
+            break;
+          }
+          case 'cancel-workspace-sync': {
+            this.isWorkspaceSyncConfirmOpen = false;
+            this.rerender();
+            break;
+          }
+          case 'confirm-workspace-sync': {
+            this.isWorkspaceSyncConfirmOpen = false;
+            this.isSyncingCalendarTasks = true;
+            this.rerender();
+            const synced = await workspaceConnector.syncStudyScheduleWithGoogleCalendarAndTasks();
+            this.isSyncingCalendarTasks = false;
+            this.callbacks.onShowToast(
+              `Synced ${synced.syncedCount} study events & tasks with Google Calendar & Google Tasks across all devices!`
+            );
+            this.rerender();
+            break;
+          }
         }
       });
     });
@@ -1182,8 +1532,8 @@ export class StudyVaultModule {
     }
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str?: string | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')
