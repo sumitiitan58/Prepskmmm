@@ -170,38 +170,46 @@ export class HomePageModule {
     const rankAndLevel = dataStore.getStudentRankAndMonthlyLevel();
 
     this.containerEl.innerHTML = `
-      <div class="space-y-5">
-        <!-- COMPACT HERO BANNER (Sleek & Compact on Mobile, Rich on Desktop) -->
+      <div class="space-y-6">
+        <!-- BESPOKE CARBON-OBSIDIAN ARCHITECTURAL HERO DECK -->
         <section
           aria-label="Active Class and Exam Cohort Workspace Banner"
           data-testid="cohort-unique-banner"
-          class="rounded-2xl bg-gradient-to-r ${cohortTheme.gradientClass} text-white px-4 py-3 sm:p-5 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          class="obsidian-widget-card px-5 py-5 sm:p-7 flex flex-col lg:flex-row lg:items-center justify-between gap-5 relative overflow-hidden"
         >
-          <div class="space-y-1 max-w-2xl">
-            <div class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/20 backdrop-blur-xs text-[10px] font-extrabold uppercase tracking-wider">
-              <span>🎓 ${this.escapeHtml(cohortTheme.badgeText)}</span>
-              <span>·</span>
-              <span>⚡ ${user.xpPoints ?? 0} XP</span>
+          <div class="space-y-2.5 max-w-2xl relative z-10">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-[#FF4D1C] text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                <span>● ${this.escapeHtml(cohortTheme.badgeText)}</span>
+              </span>
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 border border-white/15 text-[#FBBF24] text-[10px] font-mono-tabular font-extrabold">
+                <span>🔥 ${user.currentStreak}d Streak</span>
+                <span>·</span>
+                <span>⚡ ${user.xpPoints ?? 0} XP</span>
+              </span>
+              <span class="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-[#00A86B]/20 border border-[#00A86B]/50 text-[#34D399] text-[10px] font-mono-tabular font-extrabold">
+                Rank #${rankAndLevel.currentUserRank} · Lv.${rankAndLevel.level}
+              </span>
             </div>
-            <h1 class="text-base sm:text-xl font-extrabold tracking-tight leading-snug">
+            <h1 class="text-xl sm:text-2xl lg:text-3xl font-extrabold tracking-tight text-white leading-tight">
               ${this.escapeHtml(cohortTheme.headline)}
             </h1>
-            <p class="hidden sm:block text-xs text-white/90 leading-relaxed">
+            <p class="text-xs sm:text-sm text-zinc-300 leading-relaxed max-w-xl">
               ${this.escapeHtml(cohortTheme.subheadline)}
             </p>
           </div>
 
-          <div class="flex flex-row sm:flex-col gap-2 shrink-0">
+          <div class="grid grid-cols-2 sm:flex sm:flex-row lg:flex-col gap-2.5 shrink-0 relative z-10">
             <a
               href="/mentorship.html"
-              class="flex-1 sm:flex-initial min-h-[36px] px-3.5 py-1.5 rounded-xl bg-white text-slate-900 hover:bg-slate-100 text-xs font-extrabold inline-flex items-center justify-center gap-1 shadow-2xs"
+              class="min-h-[42px] px-4 py-2.5 rounded-xl bg-[#FF4D1C] hover:bg-[#E03E10] text-white border-2 border-white/20 shadow-[0_3px_0_#000000] text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-transform hover:-translate-y-0.5"
             >
               <span>Video Batches &amp; Lectures</span>
               <span>→</span>
             </a>
             <a
               href="/test.html"
-              class="flex-1 sm:flex-initial min-h-[36px] px-3.5 py-1.5 rounded-xl bg-slate-900/35 hover:bg-slate-900/55 border border-white/30 text-white text-xs font-bold inline-flex items-center justify-center gap-1"
+              class="min-h-[42px] px-4 py-2.5 rounded-xl bg-white hover:bg-[#F4F0EA] text-[#121316] border-2 border-[#18181B] shadow-[0_3px_0_#FF4D1C] text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-transform hover:-translate-y-0.5"
             >
               <span>Attempt Mock Test</span>
               <span>→</span>
@@ -209,24 +217,24 @@ export class HomePageModule {
           </div>
         </section>
 
-        <!-- SYLLABUS PROGRESS TRACKER + GOOGLE TASKS INTEGRATION -->
+        <!-- BESPOKE BENTO WIDGET 1: SYLLABUS TELEMETRY MATRIX + GOOGLE TASKS -->
         <section
           aria-label="Syllabus Progress Tracker and Google Tasks Integration"
           data-testid="syllabus-progress-tracker"
-          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-6 shadow-sm space-y-4"
+          class="bento-widget-card p-5 sm:p-6 space-y-5"
         >
-          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-            <div class="space-y-0.5">
+          <div class="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b-2 border-[#18181B]/10">
+            <div class="space-y-1">
               <div class="flex items-center gap-2 flex-wrap">
-                <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-[#4F46E5] text-[10px] font-extrabold uppercase tracking-wider">
-                  📚 ${user.targetExam} 2027 Syllabus Progress Tracker
+                <span class="px-2.5 py-0.5 rounded-lg bg-[#121316] text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                  SYLLABUS TELEMETRY · ${user.targetExam} 2027
                 </span>
-                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 border border-emerald-200 text-[#10B981] text-[10px] font-mono-tabular font-extrabold">
+                <span class="px-2.5 py-0.5 rounded-lg bg-[#00A86B]/15 border border-[#00A86B] text-[#00A86B] text-[10px] font-mono-tabular font-extrabold">
                   ${syllabusProgress.overallCompleted}/${syllabusProgress.overallTotal} Chapters Done (${syllabusProgress.overallPercent}%)
                 </span>
               </div>
-              <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
-                Subject-Wise Syllabus Completion & Google Tasks Topic Reminders
+              <h2 class="text-base sm:text-xl font-extrabold text-[#121316]">
+                Subject Mastery &amp; Google Tasks Topic Reminders
               </h2>
             </div>
 
@@ -235,52 +243,52 @@ export class HomePageModule {
                 type="button"
                 data-action="open-syllabus-tasks-modal"
                 data-testid="notify-syllabus-google-tasks-btn"
-                class="min-h-[38px] px-4 py-2 rounded-xl bg-gradient-to-r from-[#4F46E5] to-indigo-600 hover:from-indigo-700 hover:to-indigo-800 text-white text-xs font-extrabold shadow-xs inline-flex items-center gap-2 cursor-pointer transition-all"
+                class="min-h-[40px] px-4 py-2 rounded-xl vermilion-cta-btn text-xs font-extrabold inline-flex items-center gap-2 cursor-pointer"
               >
-                <span>🔔 Notify Remaining Topics in Google Tasks</span>
-                <span class="px-1.5 py-0.5 rounded bg-white/20 text-[10px] font-mono-tabular">
+                <span>🔔 Sync Remaining to Google Tasks</span>
+                <span class="px-1.5 py-0.5 rounded bg-black/25 text-[10px] font-mono-tabular">
                   ${syllabusProgress.remainingTopics.length} left
                 </span>
               </button>
             </div>
           </div>
 
-          <!-- Subject Completion Rate Visual Bars -->
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <!-- Subject Completion Rate Tactile Gauge Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3.5">
             ${syllabusProgress.subjects
-              .map((subProg) => {
+              .map((subProg, idx) => {
                 const barColor =
-                  subProg.subject === 'Physics'
-                    ? 'from-indigo-500 to-violet-500'
-                    : subProg.subject === 'Chemistry'
-                      ? 'from-emerald-500 to-teal-500'
-                      : 'from-amber-500 to-orange-500';
-                const badgeBg =
-                  subProg.subject === 'Physics'
-                    ? 'bg-indigo-50 text-[#4F46E5] border-indigo-100'
-                    : subProg.subject === 'Chemistry'
-                      ? 'bg-emerald-50 text-[#10B981] border-emerald-100'
-                      : 'bg-amber-50 text-amber-700 border-amber-100';
+                  idx === 0
+                    ? 'bg-[#FF4D1C]'
+                    : idx === 1
+                      ? 'bg-[#00A86B]'
+                      : 'bg-[#D97706]';
+                const accentPill =
+                  idx === 0
+                    ? 'bg-[#FF4D1C]/10 text-[#FF4D1C] border-[#FF4D1C]/30'
+                    : idx === 1
+                      ? 'bg-[#00A86B]/10 text-[#00A86B] border-[#00A86B]/30'
+                      : 'bg-[#D97706]/10 text-[#D97706] border-[#D97706]/30';
                 return `
                   <div
                     data-testid="syllabus-subject-card-${subProg.subject.toLowerCase()}"
-                    class="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2"
+                    class="p-4 rounded-2xl bg-[#F4F0EA] border-2 border-[#18181B] shadow-[0_3px_0_#18181B] space-y-2.5"
                   >
                     <div class="flex items-center justify-between">
-                      <span class="text-xs font-extrabold text-slate-900">${subProg.subject}</span>
-                      <span class="px-2 py-0.5 rounded-lg border text-[11px] font-mono-tabular font-extrabold ${badgeBg}">
+                      <span class="text-sm font-extrabold text-[#121316]">${subProg.subject}</span>
+                      <span class="px-2 py-0.5 rounded-lg border text-xs font-mono-tabular font-extrabold ${accentPill}">
                         ${subProg.completionPercent}%
                       </span>
                     </div>
-                    <div class="w-full h-2.5 rounded-full bg-slate-200/80 overflow-hidden">
+                    <div class="w-full h-3 rounded-full bg-white border border-[#18181B] overflow-hidden p-0.5">
                       <div
-                        class="h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-300"
+                        class="h-full rounded-full ${barColor} transition-all duration-300"
                         style="width: ${subProg.completionPercent}%"
                       ></div>
                     </div>
-                    <div class="flex items-center justify-between text-[11px] text-slate-500 font-medium">
-                      <span>${subProg.completedTopics}/${subProg.totalTopics} chapters</span>
-                      <span>${subProg.remainingTopics.length} remaining</span>
+                    <div class="flex items-center justify-between text-[11px] font-mono-tabular text-zinc-600 font-bold">
+                      <span>${subProg.completedTopics}/${subProg.totalTopics} DONE</span>
+                      <span>${subProg.remainingTopics.length} LEFT</span>
                     </div>
                   </div>
                 `;
@@ -299,10 +307,10 @@ export class HomePageModule {
                     type="button"
                     data-action="filter-syllabus-subject"
                     data-subject="${sub}"
-                    class="min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                    class="min-h-[34px] px-3.5 py-1 rounded-xl text-xs font-extrabold transition-all cursor-pointer border-2 ${
                       this.selectedSyllabusSubject === sub
-                        ? 'bg-[#4F46E5] text-white shadow-2xs'
-                        : 'bg-[#F8FAFC] text-slate-600 hover:bg-slate-100 border border-[#E2E8F0]'
+                        ? 'bg-[#121316] text-white border-[#121316] shadow-[0_2px_0_#FF4D1C]'
+                        : 'bg-[#F4F0EA] text-[#121316] border-[#18181B]/20 hover:border-[#18181B]'
                     }"
                   >
                     ${sub === 'ALL' ? 'All Subjects' : sub}
@@ -311,8 +319,8 @@ export class HomePageModule {
                   )
                   .join('')}
               </div>
-              <span class="text-[11px] text-slate-500 font-semibold">
-                Check off completed chapters to update your ${user.targetExam} progress & earn +25 XP
+              <span class="text-[11px] font-mono-tabular text-zinc-600 font-bold">
+                Check off completed chapters to update ${user.targetExam} telemetry (+25 XP)
               </span>
             </div>
 
@@ -323,10 +331,10 @@ export class HomePageModule {
                   return `
                     <label
                       data-testid="syllabus-topic-item-${topic.id}"
-                      class="p-2.5 rounded-xl border transition-all flex items-start justify-between gap-2.5 cursor-pointer ${
+                      class="p-3 rounded-xl border-2 transition-all flex items-start justify-between gap-2.5 cursor-pointer ${
                         isDone
-                          ? 'bg-emerald-50/60 border-emerald-200 text-slate-500'
-                          : 'bg-white hover:bg-indigo-50/40 border-[#E2E8F0]'
+                          ? 'bg-[#00A86B]/10 border-[#00A86B] text-zinc-500'
+                          : 'bg-white hover:bg-[#F4F0EA] border-[#18181B]/20 hover:border-[#18181B]'
                       }"
                     >
                       <div class="flex items-start gap-2.5 min-w-0">
@@ -335,19 +343,19 @@ export class HomePageModule {
                           data-action="toggle-syllabus-topic"
                           data-topic-id="${topic.id}"
                           ${isDone ? 'checked' : ''}
-                          class="mt-0.5 w-4 h-4 rounded border-slate-300 text-[#10B981] focus:ring-[#4F46E5] cursor-pointer shrink-0"
+                          class="mt-0.5 w-4 h-4 rounded border-[#18181B] accent-[#00A86B] cursor-pointer shrink-0"
                         />
                         <div class="min-w-0">
-                          <div class="text-xs font-bold truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-900'}">
+                          <div class="text-xs font-extrabold truncate ${isDone ? 'line-through text-zinc-400' : 'text-[#121316]'}">
                             ${this.escapeHtml(topic.chapterName)}
                           </div>
-                          <div class="text-[10px] text-slate-500 mt-0.5 truncate">
-                            ${topic.subject} · ~${topic.estimatedHours ?? 12}h est. · +25 XP
+                          <div class="text-[10px] font-mono-tabular text-zinc-500 mt-0.5 truncate">
+                            ${topic.subject} · ~${topic.estimatedHours ?? 12}h · +25 XP
                           </div>
                         </div>
                       </div>
-                      <span class="px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 font-mono-tabular text-[10px] font-bold shrink-0">
-                        ${this.escapeHtml(topic.weightageLabel || 'High Yield')}
+                      <span class="px-1.5 py-0.5 rounded bg-[#121316] text-white font-mono-tabular text-[9px] font-extrabold shrink-0">
+                        ${this.escapeHtml(topic.weightageLabel || 'Core')}
                       </span>
                     </label>
                   `;
@@ -361,12 +369,12 @@ export class HomePageModule {
               ? `
             <div
               data-testid="syllabus-tasks-synced-banner"
-              class="p-3 rounded-xl bg-emerald-50 border border-emerald-200 flex flex-wrap items-center justify-between gap-2 text-xs text-emerald-950"
+              class="p-3.5 rounded-xl bg-[#00A86B]/15 border-2 border-[#00A86B] flex flex-wrap items-center justify-between gap-2 text-xs text-[#121316]"
             >
               <div>
                 <strong>✅ Google Tasks Notification Active:</strong> Synced ${this.lastSyncedSyllabusTitles.length} remaining ${user.targetExam} chapters to your Google Tasks reminders!
               </div>
-              <span class="font-mono-tabular text-[11px] font-bold text-[#10B981]">
+              <span class="font-mono-tabular text-[11px] font-extrabold text-[#00A86B]">
                 ${workspaceConnector.getLastCalendarTasksSyncTime()}
               </span>
             </div>
@@ -375,35 +383,35 @@ export class HomePageModule {
           }
         </section>
 
-        <!-- Main 2-Column Layout: Cute Weekly Schedule & Planner (8 cols) + Leaderboard & Mentors (4 cols) -->
+        <!-- Main 2-Column Bento Matrix: Daily Mission Console (8 cols) + Live Standings & Mentors (4 cols) -->
         <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 items-start">
           <!-- Left / Center Column (8 cols) -->
           <div class="xl:col-span-8 space-y-6">
-            <!-- 1. CUTE, SWEET-STYLE WEEKLY SCHEDULE & DAILY TO-DO LIST (+75 XP PER TASK) -->
+            <!-- 1. BESPOKE TACTILE WEEKLY SPRINT & DAILY CHECKLIST WIDGET (+75 XP PER TASK) -->
             <section
               aria-label="Weekly Schedule and Daily Task Planner"
               data-testid="cute-weekly-schedule-section"
-              class="bg-gradient-to-br from-rose-50/40 via-white to-indigo-50/40 border-2 border-indigo-100/90 rounded-3xl p-4 sm:p-6 shadow-sm space-y-5"
+              class="bento-widget-card p-5 sm:p-6 space-y-5"
             >
-              <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-indigo-100/80">
+              <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b-2 border-[#18181B]/10">
                 <div class="space-y-1">
-                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-gradient-to-r from-pink-100/80 via-purple-100/80 to-indigo-100/80 text-[#4F46E5] text-[11px] font-extrabold">
-                    <span>🌸 Sweet Daily Study Planner</span>
+                  <div class="inline-flex items-center gap-2 px-3 py-1 rounded-lg bg-[#121316] text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                    <span>⚡ DAILY SPRINT BOARD</span>
                     <span>·</span>
-                    <span class="text-emerald-700">⚡ +${XP_PER_COMPLETED_TASK} XP every task!</span>
+                    <span class="text-[#34D399]">+${XP_PER_COMPLETED_TASK} XP PER TASK</span>
                   </div>
-                  <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">
-                    My Cozy Weekly Schedule & Daily Checklist ✨
+                  <h2 class="text-lg sm:text-xl font-extrabold text-[#121316]">
+                    Weekly Schedule &amp; Daily Execution Checklist
                   </h2>
-                  <p class="text-xs text-slate-500">
-                    Plan your day gently, check off tasks as you finish them, and earn <strong class="text-[#4F46E5]">+${XP_PER_COMPLETED_TASK} XP</strong> for every completed task!
+                  <p class="text-xs text-zinc-600">
+                    Structure your daily study blocks and check off completed targets to earn <strong class="text-[#FF4D1C]">+${XP_PER_COMPLETED_TASK} XP</strong> per task.
                   </p>
                 </div>
 
-                <!-- Cute Daily Goal Ring -->
+                <!-- Tactile Daily Goal Gauge -->
                 <div
                   data-testid="daily-goal-progress-ring"
-                  class="flex items-center gap-3.5 bg-white/90 border border-pink-200/70 rounded-2xl px-4 py-2.5 shadow-2xs"
+                  class="flex items-center gap-3.5 bg-[#121316] text-white border-2 border-[#18181B] rounded-2xl px-4 py-2.5 shadow-[0_3px_0_#FF4D1C]"
                 >
                   <div class="relative w-14 h-14 flex items-center justify-center shrink-0">
                     <svg class="w-14 h-14 -rotate-90" viewBox="0 0 88 88">
@@ -411,7 +419,7 @@ export class HomePageModule {
                         cx="44"
                         cy="44"
                         r="${radius}"
-                        stroke="#FCE7F3"
+                        stroke="#27272A"
                         stroke-width="7"
                         fill="transparent"
                       />
@@ -420,7 +428,7 @@ export class HomePageModule {
                         cx="44"
                         cy="44"
                         r="${radius}"
-                        stroke="${goalProgress.goalMet ? '#10B981' : '#6366F1'}"
+                        stroke="${goalProgress.goalMet ? '#00A86B' : '#FF4D1C'}"
                         stroke-width="7"
                         stroke-linecap="round"
                         fill="transparent"
@@ -430,24 +438,24 @@ export class HomePageModule {
                     </svg>
                     <span
                       id="daily-goal-ring-pct"
-                      class="absolute text-[11px] font-mono-tabular font-extrabold text-slate-900"
+                      class="absolute text-[11px] font-mono-tabular font-extrabold text-white"
                     >
                       ${goalProgress.goalProgressPct}%
                     </span>
                   </div>
                   <div class="space-y-0.5">
                     <div class="flex items-center gap-1.5">
-                      <span class="text-xs font-extrabold text-slate-900">Daily Goal</span>
-                      <span class="px-1.5 py-0.5 rounded-full text-[10px] font-bold ${
+                      <span class="text-xs font-extrabold text-white">Daily Target</span>
+                      <span class="px-1.5 py-0.5 rounded text-[10px] font-mono-tabular font-extrabold ${
                         goalProgress.goalMet
-                          ? 'bg-emerald-100 text-[#10B981]'
-                          : 'bg-pink-100 text-pink-700'
+                          ? 'bg-[#00A86B] text-white'
+                          : 'bg-[#FF4D1C] text-white'
                       }">
-                        ${goalProgress.goalMet ? '🌟 Done!' : '🌱 Growing'}
+                        ${goalProgress.goalMet ? 'COMPLETE' : 'ACTIVE'}
                       </span>
                     </div>
-                    <div class="text-[11px] font-mono-tabular text-slate-600">
-                      <strong class="text-slate-900">${goalProgress.completedTasks}</strong> / <strong class="text-[#4F46E5]">${goalProgress.dailyGoalTarget}</strong> tasks done
+                    <div class="text-[11px] font-mono-tabular text-zinc-300">
+                      <strong class="text-white">${goalProgress.completedTasks}</strong> / <strong class="text-[#FF4D1C]">${goalProgress.dailyGoalTarget}</strong> done
                     </div>
                     <div class="flex items-center gap-1 pt-0.5">
                       <button
@@ -455,17 +463,17 @@ export class HomePageModule {
                         data-action="adjust-daily-goal"
                         data-delta="-1"
                         aria-label="Decrease daily goal target"
-                        class="w-5 h-5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 cursor-pointer"
+                        class="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer"
                       >
                         −
                       </button>
-                      <span class="text-[10px] font-mono-tabular font-bold text-slate-600">${goalProgress.dailyGoalTarget}/day</span>
+                      <span class="text-[10px] font-mono-tabular font-bold text-zinc-300">${goalProgress.dailyGoalTarget}/day</span>
                       <button
                         type="button"
                         data-action="adjust-daily-goal"
                         data-delta="1"
                         aria-label="Increase daily goal target"
-                        class="w-5 h-5 rounded-md bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-700 cursor-pointer"
+                        class="w-5 h-5 rounded bg-white/10 hover:bg-white/20 text-xs font-bold text-white cursor-pointer"
                       >
                         +
                       </button>
@@ -474,14 +482,14 @@ export class HomePageModule {
                 </div>
               </div>
 
-              <!-- Cute Day-wise Routine Selector Strip -->
+              <!-- Day-wise Routine Selector Strip -->
               <div class="grid grid-cols-7 gap-1.5 sm:gap-2" role="tablist" aria-label="Day of Week Schedule">
                 ${WEEK_DAYS.map((day, idx) => {
                   const active = this.selectedDay === day;
                   const countForDay = allTasks.filter(
                     (t) => (t.dayOfWeek ?? 'Mon') === day
                   ).length;
-                  const cuteEmojis = ['🌸', '🌷', '🌼', '🍀', '🌻', '⭐', '🌈'];
+                  const dayCodes = ['D1', 'D2', 'D3', 'D4', 'D5', 'D6', 'D7'];
                   return `
                     <button
                       type="button"
@@ -489,16 +497,16 @@ export class HomePageModule {
                       aria-selected="${active}"
                       data-action="select-day"
                       data-day="${day}"
-                      class="py-2 px-1 sm:px-2.5 rounded-2xl border text-xs font-extrabold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
+                      class="py-2.5 px-1 sm:px-2.5 rounded-xl border-2 text-xs font-extrabold transition-all flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                         active
-                          ? 'bg-gradient-to-b from-[#4F46E5] to-violet-600 border-[#4F46E5] text-white shadow-sm scale-[1.02]'
-                          : 'bg-white border-pink-100/90 text-slate-700 hover:border-indigo-200 hover:bg-indigo-50/40'
+                          ? 'bg-[#121316] border-[#121316] text-white shadow-[0_3px_0_#FF4D1C] -translate-y-0.5'
+                          : 'bg-[#F4F0EA] border-[#18181B]/20 text-[#121316] hover:border-[#18181B]'
                       }"
                     >
-                      <span class="text-xs">${cuteEmojis[idx % cuteEmojis.length]}</span>
+                      <span class="text-[9px] font-mono-tabular ${active ? 'text-[#FF4D1C]' : 'text-zinc-500'}">${dayCodes[idx % dayCodes.length]}</span>
                       <span>${day}</span>
-                      <span class="font-mono-tabular text-[10px] px-1.5 py-0.2 rounded-full ${
-                        active ? 'bg-white/25 text-white' : 'bg-slate-100 text-slate-600'
+                      <span class="font-mono-tabular text-[10px] px-1.5 py-0.2 rounded ${
+                        active ? 'bg-[#FF4D1C] text-white' : 'bg-white text-[#121316]'
                       }">${countForDay}</span>
                     </button>
                   `;
@@ -506,21 +514,21 @@ export class HomePageModule {
               </div>
 
               <!-- Add To-Do Task Form -->
-              <form id="smart-todo-form" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-white/95 p-3.5 rounded-2xl border border-indigo-100 shadow-2xs">
+              <form id="smart-todo-form" class="grid grid-cols-1 sm:grid-cols-12 gap-2.5 bg-[#F4F0EA] p-3.5 rounded-2xl border-2 border-[#18181B]">
                 <input
                   id="new-todo-title"
                   data-testid="home-todo-input"
                   type="text"
                   required
                   maxlength="200"
-                  placeholder="✨ Add a sweet study goal for ${this.selectedDay} (earns +${XP_PER_COMPLETED_TASK} XP)..."
+                  placeholder="Add study mission for ${this.selectedDay} (+${XP_PER_COMPLETED_TASK} XP)..."
                   aria-label="New task description"
-                  class="sm:col-span-5 min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-[#4F46E5]"
+                  class="sm:col-span-5 min-h-[42px] px-3.5 py-2 rounded-xl bg-white border-2 border-[#18181B] text-xs sm:text-sm font-bold text-[#121316] placeholder:text-zinc-400 focus:outline-none"
                 />
                 <select
                   id="new-todo-subject"
                   aria-label="Task Subject"
-                  class="sm:col-span-3 min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-700 focus:outline-none focus:border-[#4F46E5]"
+                  class="sm:col-span-3 min-h-[42px] px-3 py-2 rounded-xl bg-white border-2 border-[#18181B] text-xs font-extrabold text-[#121316] focus:outline-none"
                 >
                   ${subjects
                     .map((s) => `<option value="${s}">${s}</option>`)
@@ -529,16 +537,16 @@ export class HomePageModule {
                 <select
                   id="new-todo-priority"
                   aria-label="Task Priority"
-                  class="sm:col-span-2 min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-700 focus:outline-none focus:border-[#4F46E5]"
+                  class="sm:col-span-2 min-h-[42px] px-3 py-2 rounded-xl bg-white border-2 border-[#18181B] text-xs font-extrabold text-[#121316] focus:outline-none"
                 >
-                  <option value="High" ${this.newTaskPriority === 'High' ? 'selected' : ''}>💖 High</option>
-                  <option value="Medium" ${this.newTaskPriority === 'Medium' ? 'selected' : ''}>🌼 Medium</option>
+                  <option value="High" ${this.newTaskPriority === 'High' ? 'selected' : ''}>🔥 High</option>
+                  <option value="Medium" ${this.newTaskPriority === 'Medium' ? 'selected' : ''}>⚡ Medium</option>
                   <option value="Low" ${this.newTaskPriority === 'Low' ? 'selected' : ''}>🌱 Low</option>
                 </select>
                 <button
                   type="submit"
                   data-testid="home-add-todo-btn"
-                  class="sm:col-span-2 min-h-[42px] px-4 py-2 rounded-xl bg-gradient-to-r from-[#4F46E5] to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white text-xs font-extrabold shadow-xs transition-all whitespace-nowrap cursor-pointer"
+                  class="sm:col-span-2 min-h-[42px] px-4 py-2 rounded-xl vermilion-cta-btn text-xs font-extrabold whitespace-nowrap cursor-pointer"
                 >
                   + Add Task
                 </button>
@@ -554,10 +562,10 @@ export class HomePageModule {
                       type="button"
                       data-action="filter-subject"
                       data-subject="${sub}"
-                      class="min-h-[34px] px-3 py-1 rounded-full text-xs font-bold transition-colors cursor-pointer ${
+                      class="min-h-[34px] px-3.5 py-1 rounded-xl text-xs font-extrabold transition-colors cursor-pointer border-2 ${
                         this.selectedSubjectFilter === sub
-                          ? 'bg-slate-900 text-white'
-                          : 'bg-white text-slate-600 hover:bg-indigo-50 border border-indigo-100'
+                          ? 'bg-[#121316] text-white border-[#121316]'
+                          : 'bg-white text-[#121316] border-[#18181B]/20 hover:border-[#18181B]'
                       }"
                     >
                       ${sub === 'ALL' ? 'All Subjects' : sub}
@@ -569,9 +577,9 @@ export class HomePageModule {
                 <a
                   href="/planner.html"
                   data-testid="open-dedicated-planner-link"
-                  class="text-xs font-extrabold text-[#4F46E5] hover:underline"
+                  class="text-xs font-extrabold text-[#FF4D1C] hover:underline"
                 >
-                  Open Full Planner & Google Calendar Sync →
+                  Open Full Planner &amp; Google Calendar Sync →
                 </a>
               </div>
 
@@ -581,14 +589,14 @@ export class HomePageModule {
                   ? `
                 <div
                   data-testid="empty-todo-state"
-                  class="p-6 rounded-2xl bg-white/90 border border-dashed border-indigo-200 text-center space-y-2"
+                  class="p-6 rounded-2xl bg-[#F4F0EA] border-2 border-dashed border-[#18181B]/40 text-center space-y-2"
                 >
-                  <div class="text-2xl">🌸</div>
-                  <div class="text-sm font-extrabold text-slate-800">
-                    Your ${this.selectedDay} schedule is fresh & empty!
+                  <div class="text-2xl">🎯</div>
+                  <div class="text-sm font-extrabold text-[#121316]">
+                    No tasks scheduled for ${this.selectedDay} yet
                   </div>
-                  <p class="text-xs text-slate-500 max-w-md mx-auto">
-                    Add your first study goal above (like revising a chapter or solving 15 PYQs). Every task you complete rewards you with <strong class="text-[#10B981]">+${XP_PER_COMPLETED_TASK} XP</strong>!
+                  <p class="text-xs text-zinc-600 max-w-md mx-auto">
+                    Add your first study block above (e.g. solving 20 PYQs or completing chapter notes). Every completed task awards <strong class="text-[#00A86B]">+${XP_PER_COMPLETED_TASK} XP</strong>!
                   </p>
                 </div>
               `
@@ -599,14 +607,14 @@ export class HomePageModule {
                       const prio = task.priority ?? 'Medium';
                       const prioColor =
                         prio === 'High'
-                          ? 'text-rose-600 bg-rose-50 border-rose-200'
+                          ? 'text-[#FF4D1C] bg-[#FF4D1C]/10 border-[#FF4D1C]/30'
                           : prio === 'Medium'
-                            ? 'text-amber-700 bg-amber-50 border-amber-200'
-                            : 'text-emerald-700 bg-emerald-50 border-emerald-200';
+                            ? 'text-amber-800 bg-amber-100 border-amber-300'
+                            : 'text-[#00A86B] bg-[#00A86B]/10 border-[#00A86B]/30';
                       return `
                       <div
                         role="listitem"
-                        class="p-3.5 bg-white border border-indigo-100/90 hover:border-indigo-300 rounded-2xl flex items-start justify-between gap-3 shadow-2xs transition-all"
+                        class="p-3.5 bg-white border-2 border-[#18181B] rounded-2xl flex items-start justify-between gap-3 shadow-[0_2px_0_#18181B] transition-all"
                       >
                         <label class="flex items-start gap-3 cursor-pointer flex-1 min-w-0">
                           <input
@@ -614,22 +622,22 @@ export class HomePageModule {
                             data-action="toggle-task"
                             data-task-id="${task.taskId}"
                             ${task.isCompleted ? 'checked' : ''}
-                            class="mt-0.5 w-5 h-5 rounded-lg border-slate-300 text-[#4F46E5] focus:ring-[#4F46E5] cursor-pointer shrink-0"
+                            class="mt-0.5 w-5 h-5 rounded border-[#18181B] accent-[#00A86B] cursor-pointer shrink-0"
                           />
                           <div class="min-w-0 flex-1">
-                            <div class="text-sm font-bold ${
+                            <div class="text-sm font-extrabold ${
                               task.isCompleted
-                                ? 'line-through text-slate-400'
-                                : 'text-slate-900'
+                                ? 'line-through text-zinc-400'
+                                : 'text-[#121316]'
                             }">
                               ${this.escapeHtml(task.title)}
                             </div>
-                            <div class="flex flex-wrap items-center gap-2 mt-1.5 text-[11px] text-slate-500">
-                              <span class="px-2 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] font-bold">${task.subject}</span>
-                              <span class="px-2 py-0.5 rounded-full border font-bold ${prioColor}">
+                            <div class="flex flex-wrap items-center gap-2 mt-1.5 text-[11px]">
+                              <span class="px-2 py-0.5 rounded bg-[#121316] text-white font-mono-tabular font-bold">${task.subject}</span>
+                              <span class="px-2 py-0.5 rounded border font-bold ${prioColor}">
                                 ${prio}
                               </span>
-                              <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-[#10B981] font-mono-tabular font-extrabold">
+                              <span class="px-2 py-0.5 rounded bg-[#00A86B]/15 text-[#00A86B] font-mono-tabular font-extrabold">
                                 ${task.isCompleted ? `✓ Earned +${XP_PER_COMPLETED_TASK} XP` : `⚡ +${XP_PER_COMPLETED_TASK} XP`}
                               </span>
                             </div>
@@ -640,7 +648,7 @@ export class HomePageModule {
                           data-action="delete-task"
                           data-task-id="${task.taskId}"
                           aria-label="Delete task"
-                          class="min-h-[32px] min-w-[32px] rounded-xl text-slate-400 hover:text-[#EF4444] hover:bg-red-50 inline-flex items-center justify-center transition-colors cursor-pointer"
+                          class="min-h-[32px] min-w-[32px] rounded-xl text-zinc-400 hover:text-[#FF4D1C] hover:bg-red-50 inline-flex items-center justify-center transition-colors cursor-pointer"
                         >
                           ✕
                         </button>
@@ -653,27 +661,27 @@ export class HomePageModule {
               }
             </section>
 
-            <!-- 2. 7-DAY STREAK CALENDAR STRIP -->
+            <!-- 2. 7-DAY STREAK CONSISTENCY MATRIX WIDGET -->
             <section
               aria-label="7-Day Visual Streak Calendar Strip"
               data-testid="streak-calendar-strip"
-              class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm space-y-4"
+              class="bento-widget-card p-5 sm:p-6 space-y-4"
             >
               <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div class="flex items-center gap-2.5">
-                  <div class="w-10 h-10 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center shrink-0">
+                <div class="flex items-center gap-3">
+                  <div class="w-11 h-11 rounded-2xl bg-[#121316] border-2 border-[#18181B] flex items-center justify-center shrink-0">
                     ${this.renderLucideStreakIcon('Flame', true)}
                   </div>
                   <div>
-                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-600">
-                      Daily Consistency Tracker
+                    <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#FF4D1C]">
+                      CONSISTENCY MATRIX
                     </span>
-                    <h2 class="text-sm sm:text-base font-extrabold text-slate-900">
-                      🔥 ${user.currentStreak}-Day Active Streak & 7-Day Activity Log
+                    <h2 class="text-sm sm:text-base font-extrabold text-[#121316]">
+                      🔥 ${user.currentStreak}-Day Active Streak &amp; 7-Day Telemetry
                     </h2>
                   </div>
                 </div>
-                <span class="text-xs font-mono-tabular font-extrabold text-[#4F46E5] bg-indigo-50 px-3 py-1 rounded-xl">
+                <span class="text-xs font-mono-tabular font-extrabold text-white bg-[#121316] px-3 py-1.5 rounded-xl border border-[#18181B]">
                   ⚡ Total XP: ${user.xpPoints ?? 0} XP
                 </span>
               </div>
@@ -688,10 +696,10 @@ export class HomePageModule {
                         (!t.dateIso && (t.dayOfWeek ?? 'Mon') === d.dayShort)
                     );
                     const cardStyle = isSelectedDate
-                      ? 'bg-gradient-to-b from-indigo-100/90 via-white to-amber-50/70 border-2 border-[#4F46E5] shadow-xs'
+                      ? 'bg-[#121316] text-white border-2 border-[#18181B] shadow-[0_3px_0_#FF4D1C]'
                       : d.isToday
-                        ? 'bg-gradient-to-b from-indigo-50/90 via-white to-amber-50/60 border border-indigo-300'
-                        : 'bg-[#F8FAFC] border border-[#E2E8F0] hover:border-indigo-300';
+                        ? 'bg-[#F4F0EA] border-2 border-[#FF4D1C] text-[#121316]'
+                        : 'bg-[#F4F0EA] border-2 border-[#18181B]/20 text-[#121316] hover:border-[#18181B]';
 
                     return `
                       <button
@@ -704,18 +712,18 @@ export class HomePageModule {
                         data-streak-status="${d.status}"
                         class="rounded-2xl p-2 flex flex-col items-center justify-between gap-1 transition-all cursor-pointer text-center ${cardStyle}"
                       >
-                        <div class="text-[10px] font-extrabold uppercase ${
-                          isSelectedDate || d.isToday ? 'text-[#4F46E5]' : 'text-slate-600'
+                        <div class="text-[10px] font-mono-tabular font-extrabold uppercase ${
+                          isSelectedDate ? 'text-[#FF4D1C]' : 'text-zinc-600'
                         }">
                           ${d.dayLabel}
                         </div>
-                        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-white border border-slate-100 flex items-center justify-center">
+                        <div class="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-white border border-[#18181B]/20 flex items-center justify-center">
                           ${this.renderLucideStreakIcon(d.lucideIcon, d.isToday)}
                         </div>
-                        <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold ${
+                        <span class="px-1.5 py-0.5 rounded font-mono-tabular text-[9px] font-extrabold ${
                           isSelectedDate
-                            ? 'bg-[#4F46E5] text-white'
-                            : 'bg-slate-100 text-slate-600'
+                            ? 'bg-[#FF4D1C] text-white'
+                            : 'bg-white text-[#121316]'
                         }">
                           ${tasksForThisDate.length}
                         </span>
@@ -727,10 +735,10 @@ export class HomePageModule {
 
               <div
                 data-testid="calendar-day-task-panel"
-                class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between text-xs text-slate-600"
+                class="p-3 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] flex items-center justify-between text-xs text-[#121316]"
               >
                 <span>📅 <strong>${activeCalendarDay.dayLabel}:</strong> ${calendarDayTasks.length} scheduled task(s)</span>
-                <span class="font-mono-tabular font-bold text-[#10B981]">
+                <span class="font-mono-tabular font-extrabold text-[#00A86B]">
                   ${calendarDayTasks.filter((t) => t.isCompleted).length}/${calendarDayTasks.length} Done
                 </span>
               </div>
@@ -741,30 +749,30 @@ export class HomePageModule {
             <!-- 3. Backlog Killer Engine -->
             <section
               aria-label="Backlog Killer Engine"
-              class="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4"
+              class="bento-widget-card p-5 sm:p-6 space-y-4"
             >
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b-2 border-[#18181B]/10">
                 <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider text-[#F59E0B]">
-                    Smart Chapter Catch-Up
+                  <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#FF4D1C]">
+                    BACKLOG DECOMPRESSOR
                   </span>
-                  <h2 class="text-base sm:text-lg font-bold text-slate-900 mt-0.5">
+                  <h2 class="text-base sm:text-lg font-extrabold text-[#121316] mt-0.5">
                     Backlog Killer Micro-Task Split
                   </h2>
                 </div>
-                <div class="text-xs font-mono-tabular px-3 py-1 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                <div class="text-xs font-mono-tabular px-3 py-1 rounded-xl bg-[#121316] text-[#FBBF24] font-extrabold">
                   Quota: ${(Math.round((this.backlogHours / Math.max(1, this.backlogDays)) * 10) / 10).toFixed(1)} hrs / day
                 </div>
               </div>
 
               <form id="backlog-killer-form" class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label for="backlog-subject" class="block text-xs font-semibold text-slate-700 mb-1">
+                  <label for="backlog-subject" class="block text-xs font-extrabold text-[#121316] mb-1">
                     1. Select Subject
                   </label>
                   <select
                     id="backlog-subject"
-                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-sm font-medium text-slate-900"
+                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] text-sm font-bold text-[#121316]"
                   >
                     ${subjects
                       .map(
@@ -776,7 +784,7 @@ export class HomePageModule {
                 </div>
 
                 <div>
-                  <label for="backlog-chapter" class="block text-xs font-semibold text-slate-700 mb-1">
+                  <label for="backlog-chapter" class="block text-xs font-extrabold text-[#121316] mb-1">
                     2. Pending Chapter Name
                   </label>
                   <input
@@ -785,13 +793,13 @@ export class HomePageModule {
                     required
                     value="${this.escapeHtml(this.backlogChapter)}"
                     placeholder="e.g., Rotational Mechanics & IAOR"
-                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-sm text-slate-900"
+                    class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] text-sm font-bold text-[#121316]"
                   />
                 </div>
 
                 <div>
-                  <label for="backlog-hours" class="block text-xs font-semibold text-slate-700 mb-1">
-                    3. Pending Hours (<span id="backlog-hours-val" class="font-mono-tabular text-[#4F46E5]">${this.backlogHours} hrs</span>)
+                  <label for="backlog-hours" class="block text-xs font-extrabold text-[#121316] mb-1">
+                    3. Pending Hours (<span id="backlog-hours-val" class="font-mono-tabular text-[#FF4D1C]">${this.backlogHours} hrs</span>)
                   </label>
                   <input
                     id="backlog-hours"
@@ -800,13 +808,13 @@ export class HomePageModule {
                     max="40"
                     step="1"
                     value="${this.backlogHours}"
-                    class="w-full accent-[#4F46E5] cursor-pointer"
+                    class="w-full accent-[#FF4D1C] cursor-pointer"
                   />
                 </div>
 
                 <div>
-                  <label for="backlog-days" class="block text-xs font-semibold text-slate-700 mb-1">
-                    4. Target Days (<span id="backlog-days-val" class="font-mono-tabular text-[#10B981]">${this.backlogDays} days</span>)
+                  <label for="backlog-days" class="block text-xs font-extrabold text-[#121316] mb-1">
+                    4. Target Days (<span id="backlog-days-val" class="font-mono-tabular text-[#00A86B]">${this.backlogDays} days</span>)
                   </label>
                   <input
                     id="backlog-days"
@@ -815,18 +823,18 @@ export class HomePageModule {
                     max="21"
                     step="1"
                     value="${this.backlogDays}"
-                    class="w-full accent-[#10B981] cursor-pointer"
+                    class="w-full accent-[#00A86B] cursor-pointer"
                   />
                 </div>
 
-                <div class="md:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 bg-[#F8FAFC] p-3.5 rounded-xl border border-[#E2E8F0]">
-                  <div class="text-xs text-slate-600">
-                    Splits <strong class="text-slate-900">${this.backlogHours}h</strong> across <strong class="text-slate-900">${this.backlogDays} days</strong> and adds 3 micro-tasks (worth <strong class="text-[#10B981]">+${XP_PER_COMPLETED_TASK * 3} XP</strong>) to your To-Do list.
+                <div class="md:col-span-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1 bg-[#F4F0EA] p-3.5 rounded-xl border-2 border-[#18181B]">
+                  <div class="text-xs text-zinc-700">
+                    Splits <strong class="text-[#121316]">${this.backlogHours}h</strong> across <strong class="text-[#121316]">${this.backlogDays} days</strong> and adds 3 micro-tasks (worth <strong class="text-[#00A86B]">+${XP_PER_COMPLETED_TASK * 3} XP</strong>) to your To-Do list.
                   </div>
                   <button
                     type="submit"
                     data-testid="run-backlog-killer-btn"
-                    class="min-h-[40px] px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-colors shrink-0 cursor-pointer"
+                    class="min-h-[40px] px-4 py-2 rounded-xl vermilion-cta-btn text-xs font-extrabold shrink-0 cursor-pointer"
                   >
                     Push Micro-Tasks →
                   </button>
@@ -837,28 +845,28 @@ export class HomePageModule {
             <!-- 4. Personalized 4-Week Study Plan Generator -->
             <section
               aria-label="Personalized 4-Week Study Plan Generator"
-              class="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-4"
+              class="bento-widget-card p-5 sm:p-6 space-y-4"
             >
-              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b-2 border-[#18181B]/10">
                 <div>
-                  <span class="text-xs font-semibold uppercase tracking-wider text-[#4F46E5]">
-                    Smart Timetable Generator
+                  <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#00A86B]">
+                    ADAPTIVE TIMETABLE ARCHITECT
                   </span>
-                  <h2 class="text-base sm:text-lg font-bold text-slate-900 mt-0.5">
+                  <h2 class="text-base sm:text-lg font-extrabold text-[#121316] mt-0.5">
                     Personalized 4-Week Study Plan
                   </h2>
                 </div>
-                <span class="text-xs font-mono-tabular text-slate-600 bg-[#F8FAFC] px-3 py-1 rounded-xl border border-[#E2E8F0]">
+                <span class="text-xs font-mono-tabular font-extrabold text-white bg-[#121316] px-3 py-1 rounded-xl">
                   ${studyPlan.dailyHours}h/day · ${studyPlan.dailyHours * 7}h/week
                 </span>
               </div>
 
-              <div class="bg-[#F8FAFC] border border-[#E2E8F0] rounded-xl p-4 space-y-4">
+              <div class="bg-[#F4F0EA] border-2 border-[#18181B] rounded-2xl p-4 space-y-4">
                 <div class="flex items-center justify-between">
-                  <label for="home-plan-hours" class="text-xs font-semibold text-slate-700">
+                  <label for="home-plan-hours" class="text-xs font-extrabold text-[#121316]">
                     Preferred Study Duration Per Day
                   </label>
-                  <span id="home-plan-hours-label" class="text-xs font-mono-tabular font-bold text-[#4F46E5]">
+                  <span id="home-plan-hours-label" class="text-xs font-mono-tabular font-extrabold text-[#FF4D1C]">
                     ${this.planDailyHours} Hours / Day (${this.planDailyHours * 7} hrs/wk)
                   </span>
                 </div>
@@ -869,7 +877,7 @@ export class HomePageModule {
                   max="14"
                   step="1"
                   value="${this.planDailyHours}"
-                  class="w-full accent-[#4F46E5] cursor-pointer"
+                  class="w-full accent-[#FF4D1C] cursor-pointer"
                 />
 
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -877,15 +885,15 @@ export class HomePageModule {
                     .map((sub) => {
                       const currentLevel = this.planProficiency[sub] ?? 'Moderate';
                       return `
-                      <div class="bg-white border border-[#E2E8F0] rounded-xl p-3 space-y-2">
+                      <div class="bg-white border-2 border-[#18181B] rounded-xl p-3 space-y-2">
                         <div class="flex items-center justify-between">
-                          <span class="text-xs font-bold text-slate-800">${sub}</span>
-                          <span class="text-[11px] font-mono-tabular font-semibold ${
+                          <span class="text-xs font-extrabold text-[#121316]">${sub}</span>
+                          <span class="text-[11px] font-mono-tabular font-extrabold ${
                             currentLevel === 'Weak'
-                              ? 'text-[#EF4444]'
+                              ? 'text-[#FF4D1C]'
                               : currentLevel === 'Moderate'
-                                ? 'text-[#F59E0B]'
-                                : 'text-[#10B981]'
+                                ? 'text-amber-600'
+                                : 'text-[#00A86B]'
                           }">${currentLevel}</span>
                         </div>
                         <div class="grid grid-cols-3 gap-1">
@@ -897,14 +905,14 @@ export class HomePageModule {
                               data-action="set-proficiency"
                               data-subject="${sub}"
                               data-level="${lvl}"
-                              class="min-h-[30px] rounded-lg text-[11px] font-semibold transition-colors cursor-pointer ${
+                              class="min-h-[30px] rounded-lg text-[11px] font-extrabold transition-colors cursor-pointer ${
                                 currentLevel === lvl
                                   ? lvl === 'Weak'
-                                    ? 'bg-[#EF4444] text-white'
+                                    ? 'bg-[#FF4D1C] text-white'
                                     : lvl === 'Moderate'
-                                      ? 'bg-[#F59E0B] text-white'
-                                      : 'bg-[#10B981] text-white'
-                                  : 'bg-[#F8FAFC] text-slate-600 hover:bg-slate-200/60'
+                                      ? 'bg-amber-500 text-white'
+                                      : 'bg-[#00A86B] text-white'
+                                  : 'bg-[#F4F0EA] text-zinc-700 hover:bg-zinc-200'
                               }"
                             >
                               ${lvl}
@@ -923,7 +931,7 @@ export class HomePageModule {
                   <button
                     type="button"
                     data-action="generate-study-plan"
-                    class="min-h-[38px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+                    class="min-h-[38px] px-5 py-2 rounded-xl bg-[#121316] hover:bg-zinc-800 text-white text-xs font-extrabold shadow-[0_3px_0_#FF4D1C] transition-colors cursor-pointer"
                   >
                     Generate 4-Week Schedule
                   </button>
@@ -938,10 +946,10 @@ export class HomePageModule {
                     type="button"
                     data-action="select-plan-week"
                     data-week="${wk.weekNumber}"
-                    class="min-h-[38px] rounded-xl border text-xs font-mono-tabular font-bold transition-colors cursor-pointer ${
+                    class="min-h-[38px] rounded-xl border-2 text-xs font-mono-tabular font-extrabold transition-colors cursor-pointer ${
                       this.selectedPlanWeek === wk.weekNumber
-                        ? 'bg-indigo-50 border-[#4F46E5] text-[#4F46E5]'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-600 hover:text-slate-900'
+                        ? 'bg-[#121316] border-[#121316] text-white shadow-[0_2px_0_#FF4D1C]'
+                        : 'bg-[#F4F0EA] border-[#18181B]/20 text-[#121316] hover:border-[#18181B]'
                     }"
                   >
                     Week 0${wk.weekNumber}
@@ -955,16 +963,16 @@ export class HomePageModule {
                 ${activeWeekObj.allocations
                   .map(
                     (alloc) => `
-                  <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div class="p-3.5 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                     <div class="space-y-0.5">
-                      <div class="text-xs font-bold text-slate-900">
-                        ${alloc.subject} · <span class="text-[#4F46E5] font-mono-tabular">${alloc.allocatedHoursPerWeek} hrs/wk</span>
+                      <div class="text-xs font-extrabold text-[#121316]">
+                        ${alloc.subject} · <span class="text-[#FF4D1C] font-mono-tabular">${alloc.allocatedHoursPerWeek} hrs/wk</span>
                       </div>
-                      <p class="text-xs text-slate-600">${this.escapeHtml(alloc.focusTopics)}</p>
+                      <p class="text-xs text-zinc-600">${this.escapeHtml(alloc.focusTopics)}</p>
                     </div>
                     <a
                       href="${alloc.recommendedModule === 'cbt' ? '/test.html' : '/study.html'}"
-                      class="text-xs font-semibold text-[#4F46E5] hover:underline shrink-0"
+                      class="text-xs font-extrabold text-[#121316] bg-white px-3 py-1.5 rounded-lg border border-[#18181B] hover:bg-[#FF4D1C] hover:text-white transition-colors shrink-0"
                     >
                       ${this.escapeHtml(alloc.moduleActionLabel)} →
                     </a>
@@ -976,37 +984,37 @@ export class HomePageModule {
             </section>
           </div>
 
-          <!-- Right-Hand Live Widgets Column (4 cols on Desktop) -->
+          <!-- Right-Hand Live Bento Widgets Column (4 cols on Desktop) -->
           <aside class="xl:col-span-4 space-y-6" aria-label="Live Study Widgets">
             <!-- REAL WEEKLY ASPIRANT LEADERBOARD WIDGET (Renews Every Week, Rank #1 if Solo) -->
             <section
               data-testid="real-weekly-leaderboard"
-              class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4"
+              class="obsidian-widget-card p-5 space-y-4"
             >
-              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div class="flex items-center justify-between pb-3 border-b border-white/15">
                 <div>
                   <div class="flex items-center gap-1.5">
-                    <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                      🏆 Real Weekly Leaderboard
+                    <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#FF4D1C]">
+                      🏆 WEEKLY LEAGUE
                     </span>
-                    <span class="px-2 py-0.5 rounded-full bg-emerald-50 text-[#10B981] text-[9px] font-extrabold">
-                      Renews Weekly (${currentWeekKey})
+                    <span class="px-2 py-0.5 rounded bg-white/10 text-[#34D399] text-[9px] font-mono-tabular font-extrabold">
+                      ${currentWeekKey}
                     </span>
                   </div>
-                  <h3 class="text-base font-extrabold text-slate-900 mt-0.5">
+                  <h3 class="text-base font-extrabold text-white mt-0.5">
                     Live Student Standings
                   </h3>
                 </div>
                 <div class="flex items-center gap-1.5">
                   <span
                     data-testid="current-user-level-badge"
-                    class="px-2.5 py-1 rounded-xl bg-indigo-50 border border-indigo-200 text-xs font-mono-tabular font-extrabold text-[#4F46E5]"
+                    class="px-2.5 py-1 rounded-xl bg-white/10 border border-white/20 text-xs font-mono-tabular font-extrabold text-[#34D399]"
                   >
                     ⭐ Lv.${rankAndLevel.level}
                   </span>
                   <span
                     data-testid="current-user-rank-badge"
-                    class="px-2.5 py-1 rounded-xl bg-amber-50 border border-amber-200 text-xs font-mono-tabular font-extrabold text-amber-800"
+                    class="px-2.5 py-1 rounded-xl bg-[#FF4D1C] text-xs font-mono-tabular font-extrabold text-white"
                   >
                     Rank #${leaderboardStandings.currentUserRank}
                   </span>
@@ -1016,17 +1024,17 @@ export class HomePageModule {
               ${
                 leaderboardStandings.currentUserEntry
                   ? `
-                <div class="p-3.5 rounded-2xl bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/80 border border-indigo-200 flex items-center justify-between">
+                <div class="p-3.5 rounded-2xl bg-[#1C1E24] border border-white/15 flex items-center justify-between">
                   <div>
-                    <div class="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
-                      <span>🥇 #${leaderboardStandings.currentUserRank}</span>
-                      <span>${this.escapeHtml(leaderboardStandings.currentUserEntry.name)} (${user.isGuest ? 'Guest Preview' : 'Signed In'})</span>
+                    <div class="text-xs font-extrabold text-white flex items-center gap-1.5">
+                      <span class="text-[#FBBF24]">🥇 #${leaderboardStandings.currentUserRank}</span>
+                      <span>${this.escapeHtml(leaderboardStandings.currentUserEntry.name)} (${user.isGuest ? 'Guest Preview' : 'Enrolled'})</span>
                     </div>
-                    <div class="text-[11px] font-mono-tabular text-slate-600 mt-0.5">
-                      🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} XP · ⭐ Level ${rankAndLevel.level}
+                    <div class="text-[11px] font-mono-tabular text-zinc-400 mt-0.5">
+                      🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} XP · ⭐ Lv.${rankAndLevel.level}
                     </div>
                   </div>
-                  <div class="text-sm font-mono-tabular font-extrabold text-[#4F46E5]">
+                  <div class="text-sm font-mono-tabular font-extrabold text-[#FF4D1C]">
                     ${leaderboardStandings.currentUserEntry.compositePoints} pts
                   </div>
                 </div>
@@ -1034,70 +1042,70 @@ export class HomePageModule {
                   : ''
               }
 
-              <div class="divide-y divide-slate-100 max-h-[320px] overflow-y-auto">
+              <div class="divide-y divide-white/10 max-h-[320px] overflow-y-auto">
                 ${leaderboardStandings.top10
                   .map((entry) => {
                     const isMe = entry.uid === user.uid;
                     return `
-                    <div class="py-2.5 px-2 flex items-center justify-between text-xs ${
-                      isMe ? 'bg-indigo-50/50 font-semibold rounded-xl' : ''
+                    <div class="py-2.5 px-2.5 flex items-center justify-between text-xs ${
+                      isMe ? 'bg-white/10 font-bold rounded-xl' : ''
                     }">
                       <div class="flex items-center gap-2.5 min-w-0">
                         <span class="font-mono-tabular font-extrabold w-6 ${
-                          entry.rank === 1 ? 'text-amber-500' : 'text-slate-500'
+                          entry.rank === 1 ? 'text-[#FBBF24]' : 'text-zinc-400'
                         }">#${entry.rank}</span>
                         <div class="truncate">
-                          <div class="text-slate-900 truncate font-bold">${this.escapeHtml(entry.name)}</div>
-                          <div class="text-[10px] text-slate-500 font-mono-tabular">${entry.targetExam} · ${entry.currentStreak}d streak</div>
+                          <div class="text-white truncate font-bold">${this.escapeHtml(entry.name)}</div>
+                          <div class="text-[10px] text-zinc-400 font-mono-tabular">${entry.targetExam} · ${entry.currentStreak}d streak</div>
                         </div>
                       </div>
-                      <span class="font-mono-tabular font-extrabold text-slate-800">${entry.compositePoints} pts</span>
+                      <span class="font-mono-tabular font-extrabold text-[#34D399]">${entry.compositePoints} pts</span>
                     </div>
                   `;
                   })
                   .join('')}
               </div>
 
-              <div class="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-[11px] text-slate-500 text-center">
-                Complete To-Do tasks (<strong class="text-[#10B981]">+${XP_PER_COMPLETED_TASK} XP</strong> each) and Mock Tests to climb the weekly league!
+              <div class="p-2.5 rounded-xl bg-white/5 border border-white/10 text-[11px] text-zinc-300 text-center">
+                Complete To-Do tasks (<strong class="text-[#34D399]">+${XP_PER_COMPLETED_TASK} XP</strong> each) and Mock Tests to climb the weekly league!
               </div>
             </section>
 
             <!-- Mentor Live Directory & Quick Connect Widget -->
-            <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+            <section class="bento-widget-card p-5 space-y-4">
               <div class="flex items-center justify-between">
-                <span class="inline-flex items-center gap-1.5 text-xs font-bold text-[#10B981]">
-                  <span class="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
-                  Founder & Head Mentor
+                <span class="inline-flex items-center gap-1.5 text-xs font-extrabold text-[#00A86B]">
+                  <span class="w-2 h-2 rounded-full bg-[#00A86B] animate-pulse"></span>
+                  Founder &amp; Head Mentor
                 </span>
-                <span class="text-[11px] font-mono-tabular text-[#4F46E5] font-bold">1:1 Mentorship</span>
+                <span class="text-[11px] font-mono-tabular text-[#121316] font-extrabold">1:1 Mentorship</span>
               </div>
 
               <div class="space-y-2.5">
                 ${mentors
                   .map(
                     (m) => `
-                  <div class="p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-2.5">
+                  <div class="p-3 rounded-xl bg-[#F4F0EA] border-2 border-[#18181B] flex items-center justify-between gap-2.5">
                     <div class="flex items-center gap-2.5 min-w-0">
                       <div class="relative shrink-0">
                         <img
                           src="${m.avatarUrl}"
                           alt="${this.escapeHtml(m.name)}"
                           referrerpolicy="no-referrer"
-                          class="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]"
+                          class="w-10 h-10 rounded-full object-cover border-2 border-[#18181B]"
                         />
                         <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
-                          m.isOnline !== false ? 'bg-[#10B981]' : 'bg-slate-400'
+                          m.isOnline !== false ? 'bg-[#00A86B]' : 'bg-zinc-400'
                         }"></span>
                       </div>
                       <div class="min-w-0">
-                        <h3 class="text-xs font-bold text-slate-900 truncate">${this.escapeHtml(m.name)}</h3>
-                        <p class="text-[11px] text-slate-500 truncate">${this.escapeHtml(m.subjectSpecialty)} · ${m.isOnline !== false ? '🟢 Online' : '⚪ Offline'}</p>
+                        <h3 class="text-xs font-extrabold text-[#121316] truncate">${this.escapeHtml(m.name)}</h3>
+                        <p class="text-[11px] text-zinc-600 truncate">${this.escapeHtml(m.subjectSpecialty)} · ${m.isOnline !== false ? '🟢 Online' : '⚪ Offline'}</p>
                       </div>
                     </div>
                     <a
                       href="/mentorship.html"
-                      class="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-[11px] font-bold shrink-0"
+                      class="px-3 py-1.5 rounded-lg bg-[#121316] hover:bg-[#FF4D1C] text-white text-[11px] font-extrabold shrink-0 transition-colors"
                     >
                       Connect →
                     </a>
@@ -1110,13 +1118,13 @@ export class HomePageModule {
               <div class="grid grid-cols-2 gap-2.5 pt-1">
                 <a
                   href="/mentorship.html"
-                  class="min-h-[40px] px-3 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-semibold flex items-center justify-center transition-colors"
+                  class="min-h-[40px] px-3 py-2 rounded-xl vermilion-cta-btn text-xs font-extrabold flex items-center justify-center"
                 >
                   Lectures &amp; Chat
                 </a>
                 <a
                   href="/test-history.html"
-                  class="min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-xs font-semibold flex items-center justify-center transition-colors"
+                  class="min-h-[40px] px-3 py-2 rounded-xl bg-[#F4F0EA] hover:bg-zinc-200 border-2 border-[#18181B] text-[#121316] text-xs font-extrabold flex items-center justify-center transition-colors"
                 >
                   Test Analytics
                 </a>
@@ -1124,20 +1132,20 @@ export class HomePageModule {
             </section>
 
             <!-- Subject Accuracy Snapshot Widget -->
-            <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+            <section class="bento-widget-card p-5 space-y-4">
               <div class="flex items-center justify-between">
                 <div>
-                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                    Mock Exam Analytics
+                  <span class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-[#FF4D1C]">
+                    MOCK EXAM ANALYTICS
                   </span>
-                  <h3 class="text-sm sm:text-base font-extrabold text-slate-900">
+                  <h3 class="text-sm sm:text-base font-extrabold text-[#121316]">
                     Subject Accuracy Snapshot
                   </h3>
                 </div>
                 <a
                   href="/test-history.html"
                   data-testid="home-open-test-history-link"
-                  class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold"
+                  class="px-2.5 py-1 rounded-lg bg-[#121316] text-white text-xs font-extrabold"
                 >
                   History →
                 </a>

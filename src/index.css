@@ -4,6 +4,12 @@
   :root {
     --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+    --canvas-alabaster: #F4F0EA;
+    --surface-ivory: #FFFDF9;
+    --ink-obsidian: #121316;
+    --accent-vermilion: #FF4D1C;
+    --accent-jade: #00A86B;
+    --border-architectural: #DDD6CC;
   }
 
   html,
@@ -11,8 +17,8 @@
     margin: 0;
     padding: 0;
     min-height: 100%;
-    background-color: #f8fafc;
-    color: #0f172a;
+    background-color: #F4F0EA;
+    color: #121316;
     font-family: var(--font-sans);
     overflow-x: hidden;
     scroll-behavior: smooth;
@@ -24,26 +30,25 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Custom subtle scrollbars for Clean White Theme */
+/* Bespoke Warm Alabaster Scrollbars */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #EAE4DC;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #B8B0A4;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #121316;
 }
 
-/* Hide scrollbars on horizontal swipeable pill bars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -52,7 +57,6 @@
   scrollbar-width: none;
 }
 
-/* Privacy Video Player dynamic watermark drift */
 @keyframes watermarkDrift {
   0% {
     transform: translate(0px, 0px);
@@ -67,4 +71,83 @@
 
 .privacy-watermark {
   animation: watermarkDrift 14s ease-in-out infinite;
+}
+
+/* Signature Swiss-Tactile Architectural Canvas & Bento Widgets */
+.editorial-canvas-bg {
+  background-color: #F4F0EA;
+  background-image: radial-gradient(#D5CEC2 1px, transparent 1px);
+  background-size: 22px 22px;
+}
+
+.bento-widget-card {
+  background: #FFFDF9;
+  border: 1.5px solid #18181B;
+  box-shadow: 0 4px 0 #18181B;
+  border-radius: 1.25rem;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.bento-widget-soft {
+  background: #FFFDF9;
+  border: 1.5px solid #DED8CE;
+  box-shadow: 0 10px 26px -10px rgba(18, 19, 22, 0.07);
+  border-radius: 1.25rem;
+}
+
+.obsidian-widget-card {
+  background: #121316;
+  color: #FAF8F5;
+  border: 1.5px solid #27272A;
+  box-shadow: 0 14px 32px -12px rgba(18, 19, 22, 0.32);
+  border-radius: 1.35rem;
+}
+
+.vermilion-cta-btn {
+  background: #FF4D1C;
+  color: #FFFFFF;
+  border: 1.5px solid #121316;
+  box-shadow: 0 3px 0 #121316;
+  transition: all 120ms ease;
+}
+
+.vermilion-cta-btn:hover {
+  background: #E63E0F;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 0 #121316;
+}
+
+.vermilion-cta-btn:active {
+  transform: translateY(1px);
+  box-shadow: 0 1px 0 #121316;
+}
+
+/* Global Palette Harmonization: Replace generic Indigo/Violet with Obsidian & Electric Vermilion */
+.bg-\[\#4F46E5\] {
+  background-color: #FF4D1C !important;
+}
+.hover\:bg-indigo-700:hover {
+  background-color: #E03D10 !important;
+}
+.text-\[\#4F46E5\] {
+  color: #D9380E !important;
+}
+.border-\[\#4F46E5\] {
+  border-color: #FF4D1C !important;
+}
+.bg-\[\#F8FAFC\] {
+  background-color: #F7F4EE !important;
+}
+.border-\[\#E2E8F0\] {
+  border-color: #E2DBD0 !important;
+}
+.bg-indigo-50,
+.bg-indigo-50\/90,
+.bg-indigo-50\/95,
+.bg-indigo-50\/70 {
+  background-color: #FFF1EC !important;
+}
+.border-indigo-200,
+.border-indigo-100 {
+  border-color: #FFD5C7 !important;
 }

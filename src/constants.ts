@@ -30,17 +30,11 @@ export const LECTURE_COVER_PATH =
 
 export const DEFAULT_BRAND_LOGO_SVG = `data:image/svg+xml;utf8,${encodeURIComponent(
   `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
-    <defs>
-      <linearGradient id="prepskmGrad" x1="0" y1="0" x2="64" y2="64" gradientUnits="userSpaceOnUse">
-        <stop offset="0%" stop-color="#4F46E5"/>
-        <stop offset="52%" stop-color="#7C3AED"/>
-        <stop offset="100%" stop-color="#10B981"/>
-      </linearGradient>
-    </defs>
-    <rect width="64" height="64" rx="16" fill="url(#prepskmGrad)"/>
-    <path d="M18 44V20h13.5c5.5 0 9.5 3.4 9.5 8.5s-4 8.5-9.5 8.5H24.5V44H18zm6.5-12.5h6.2c2.3 0 3.8-1.2 3.8-3s-1.5-3-3.8-3h-6.2v6z" fill="#FFFFFF"/>
-    <circle cx="46" cy="42" r="5" fill="#FBBF24"/>
-    <path d="M46 16l2.2 4.6L53 21.5l-3.5 3.4.8 4.8-4.3-2.3-4.3 2.3.8-4.8-3.5-3.4 4.8-.9L46 16z" fill="#FFFFFF" fill-opacity="0.92"/>
+    <rect width="64" height="64" rx="16" fill="#121316"/>
+    <rect x="3" y="3" width="58" height="58" rx="13" stroke="#FF4D1C" stroke-width="2.5" stroke-opacity="0.85"/>
+    <path d="M18 44V20h13.5c5.5 0 9.5 3.4 9.5 8.5s-4 8.5-9.5 8.5H24.5V44H18zm6.5-12.5h6.2c2.3 0 3.8-1.2 3.8-3s-1.5-3-3.8-3h-6.2v6z" fill="#FAF8F5"/>
+    <circle cx="46" cy="42" r="5.5" fill="#FF4D1C"/>
+    <path d="M46 15l2.2 4.6L53 20.5l-3.5 3.4.8 4.8-4.3-2.3-4.3 2.3.8-4.8-3.5-3.4 4.8-.9L46 15z" fill="#00C853"/>
   </svg>`
 )}`;
 
@@ -1059,13 +1053,13 @@ export const DEFAULT_SITE_THEME: SiteThemeSettings = {
   brandName: 'prepskm.in',
   brandTagline: 'JEE · NEET · Class 9–12 & Dropper',
   logoDataUrl: DEFAULT_BRAND_LOGO_SVG,
-  primaryColor: '#4F46E5',
-  secondaryColor: '#10B981',
+  primaryColor: '#FF4D1C',
+  secondaryColor: '#00A86B',
   accentColor: '#F59E0B',
-  surfaceTint: '#F8FAFC',
-  surfaceBg: '#F8FAFC',
-  presetName: 'Indigo Emerald Mix',
-  updatedAt: '2026-11-04T08:00:00Z',
+  surfaceTint: '#F4F0EA',
+  surfaceBg: '#F4F0EA',
+  presetName: 'Obsidian Vermilion Alabaster',
+  updatedAt: '2026-11-05T02:00:00Z',
 };
 
 export const INITIAL_MENTORSHIP_SESSIONS: MentorshipSessionItem[] = [];
@@ -1122,10 +1116,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 12 JEE Advanced & Mains Mastery Hub',
     subheadline:
       'High-weightage Electrostatics, Calculus, Electrochemistry & 11th Revision Sprints tailored for Class 12 Board + JEE rankers.',
-    gradientClass: 'from-indigo-600 via-violet-600 to-blue-600',
-    accentBorderClass: 'border-indigo-200',
-    pillBgClass: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+    gradientClass: 'from-[#121316] via-[#1C1E24] to-[#27201C]',
+    accentBorderClass: 'border-[#18181B]',
+    pillBgClass: 'bg-[#FFF1EC] text-[#D9380E] border-[#FFD5C7]',
     focusPills: ['Electrostatics & Current', 'Definite Calculus', 'Aldol & Carbonyls', 'Board + JEE PYQs'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#FF4D1C',
   },
   'JEE|Class 11': {
     key: 'JEE|Class 11',
@@ -1134,10 +1130,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 11 Mechanics, Conics & GOC Launchpad',
     subheadline:
       'Build rock-solid intuition in Rotational Dynamics, Thermodynamics, Coordinate Geometry & General Organic Chemistry from Day 1.',
-    gradientClass: 'from-blue-600 via-indigo-600 to-cyan-600',
-    accentBorderClass: 'border-blue-200',
-    pillBgClass: 'bg-blue-50 text-blue-700 border-blue-200',
+    gradientClass: 'from-[#121316] via-[#182226] to-[#132A23]',
+    accentBorderClass: 'border-[#18181B]',
+    pillBgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     focusPills: ['Rotational Mechanics', 'Conic Sections', 'GOC & Isomerism', 'Thermodynamics'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'JEE|Dropper': {
     key: 'JEE|Dropper',
@@ -1146,10 +1144,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Dropper Intensive Rank Booster & Full-Syllabus Sprint',
     subheadline:
       'Zero-fluff high-yield PYQ drills, rapid Class 11+12 backlog elimination, and daily timed NTA CBT simulations.',
-    gradientClass: 'from-violet-700 via-purple-600 to-fuchsia-600',
-    accentBorderClass: 'border-violet-200',
-    pillBgClass: 'bg-violet-50 text-violet-700 border-violet-200',
+    gradientClass: 'from-[#121316] via-[#231815] to-[#3B1D12]',
+    accentBorderClass: 'border-[#18181B]',
+    pillBgClass: 'bg-[#FFF1EC] text-[#D9380E] border-[#FFD5C7]',
     focusPills: ['11th + 12th Combined', 'Daily NTA Full Mock', 'High-Weightage 40 Chapters', 'Speed & Accuracy'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#FF4D1C',
   },
   'NEET|Class 12': {
     key: 'NEET|Class 12',
@@ -1158,10 +1158,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 12 NEET Medical & NCERT Line-by-Line Hub',
     subheadline:
       'Master Molecular Genetics, Biotech, Modern Physics, and Organic Name Reactions with 100% NCERT statement accuracy.',
-    gradientClass: 'from-emerald-600 via-teal-600 to-cyan-600',
-    accentBorderClass: 'border-emerald-200',
-    pillBgClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+    gradientClass: 'from-[#0F1E19] via-[#132A22] to-[#1A382E]',
+    accentBorderClass: 'border-emerald-900',
+    pillBgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     focusPills: ['Molecular Genetics', 'Reproduction & Ecology', 'Electrochemistry', 'Modern Physics'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'NEET|Class 11': {
     key: 'NEET|Class 11',
@@ -1170,10 +1172,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 11 Human & Plant Physiology + Mechanics Hub',
     subheadline:
       'Deep NCERT diagrams, Human Physiology cycles, Cell Biology, Chemical Bonding, and NLM problem-solving for Class 11.',
-    gradientClass: 'from-teal-600 via-emerald-600 to-green-600',
-    accentBorderClass: 'border-teal-200',
-    pillBgClass: 'bg-teal-50 text-teal-700 border-teal-200',
+    gradientClass: 'from-[#11221D] via-[#162E27] to-[#1D3B32]',
+    accentBorderClass: 'border-teal-900',
+    pillBgClass: 'bg-teal-50 text-teal-800 border-teal-200',
     focusPills: ['Human Physiology', 'Plant Kingdom & Cell', 'Chemical Bonding', 'Kinematics & NLM'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'NEET|Dropper': {
     key: 'NEET|Dropper',
@@ -1182,10 +1186,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'NEET Dropper 700+ Score Accelerator & NCERT Drill',
     subheadline:
       'Complete 38-chapter Biology rapid revision, Assertion-Reason traps, and Physics/Chemistry numerical speed builders.',
-    gradientClass: 'from-rose-600 via-pink-600 to-orange-500',
-    accentBorderClass: 'border-rose-200',
-    pillBgClass: 'bg-rose-50 text-rose-700 border-rose-200',
+    gradientClass: 'from-[#121316] via-[#2B1714] to-[#421E16]',
+    accentBorderClass: 'border-orange-900',
+    pillBgClass: 'bg-orange-50 text-orange-800 border-orange-200',
     focusPills: ['NCERT 38-Chapter Bio', 'Assertion-Reason Drills', '180-Q Speed Sprint', 'Error Log Revision'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#FF4D1C',
   },
   'JEE|Class 10': {
     key: 'JEE|Class 10',
@@ -1194,10 +1200,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 10 Board Excellence & Early JEE/NEET Bridge',
     subheadline:
       'Ace Class 10 Science & Mathematics while building early Olympiad concepts in Light, Electricity, Quadratic Equations, and Carbon.',
-    gradientClass: 'from-amber-500 via-orange-500 to-rose-500',
-    accentBorderClass: 'border-amber-200',
+    gradientClass: 'from-[#121316] via-[#292014] to-[#3D2D16]',
+    accentBorderClass: 'border-amber-900',
     pillBgClass: 'bg-amber-50 text-amber-800 border-amber-200',
     focusPills: ['Ray Optics & Electricity', 'Carbon & Compounds', 'Trigonometry & Quadratics', 'Life Processes'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#D97706',
   },
   'JEE|Class 10 Foundation': {
     key: 'JEE|Class 10 Foundation',
@@ -1206,10 +1214,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 10 Foundation Bridge to Top 100 AIR',
     subheadline:
       'Dedicated Foundation curriculum bridging Class 10 Board Science/Math with JEE/NEET Vectors, Mole Concept, Quadratic Locus, and Cell Energetics.',
-    gradientClass: 'from-orange-600 via-amber-600 to-yellow-500',
-    accentBorderClass: 'border-orange-300',
+    gradientClass: 'from-[#121316] via-[#2A1D13] to-[#402814]',
+    accentBorderClass: 'border-orange-900',
     pillBgClass: 'bg-orange-50 text-orange-800 border-orange-200',
     focusPills: ['NTSE & IJSO Sprint', 'Early Mole & Atomic', 'Optics + Circuit Bridge', 'Olympiad Number Theory'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#FF4D1C',
   },
   'JEE|Class 11 Foundation': {
     key: 'JEE|Class 11 Foundation',
@@ -1218,10 +1228,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 11 Foundation: Mathematical Tools, NLM & Atomic Structure',
     subheadline:
       'Step-by-step concept builder for students transitioning from Class 10 to 11 — master Basic Calculus, Vectors, Mole Stoichiometry, and NCERT Foundations without overwhelm.',
-    gradientClass: 'from-cyan-600 via-sky-600 to-indigo-600',
-    accentBorderClass: 'border-cyan-200',
-    pillBgClass: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    gradientClass: 'from-[#121316] via-[#162329] to-[#193038]',
+    accentBorderClass: 'border-slate-900',
+    pillBgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     focusPills: ['Calculus & Vector Tools', 'Units, Kinematics & NLM', 'Mole & Atomic Foundation', 'Daily Concept Drills'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'NEET|Class 10 Foundation': {
     key: 'NEET|Class 10 Foundation',
@@ -1230,10 +1242,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 10 Medical Foundation & NCERT Science Booster',
     subheadline:
       'Early NEET UG & Biology Olympiad preparation covering Life Processes, Heredity, Chemical Reactions, and Ray Optics.',
-    gradientClass: 'from-emerald-500 via-green-600 to-teal-600',
-    accentBorderClass: 'border-emerald-200',
+    gradientClass: 'from-[#0E1E18] via-[#132A22] to-[#1A3B2F]',
+    accentBorderClass: 'border-emerald-900',
     pillBgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
     focusPills: ['Life Processes & Control', 'Heredity & Evolution', 'Acids, Bases & Carbon', 'Light & Current'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'NEET|Class 11 Foundation': {
     key: 'NEET|Class 11 Foundation',
@@ -1242,10 +1256,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 11 Medical Foundation: Cell, Biomolecules & Basic Physics',
     subheadline:
       'Build effortless speed in Basic Mathematics for Physics, Stoichiometry, Cell Biology, and Biomolecules from the ground up.',
-    gradientClass: 'from-teal-500 via-cyan-600 to-emerald-600',
-    accentBorderClass: 'border-teal-200',
+    gradientClass: 'from-[#10211C] via-[#152E27] to-[#1B3D34]',
+    accentBorderClass: 'border-teal-900',
     pillBgClass: 'bg-teal-50 text-teal-800 border-teal-200',
     focusPills: ['Basic Math for NEET Physics', 'Cell & Biomolecules', 'Mole & Redox Basics', 'NCERT Diagram Drills'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#00A86B',
   },
   'JEE|Class 9': {
     key: 'JEE|Class 9',
@@ -1254,10 +1270,12 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     headline: 'Class 9 Concept Builder & Junior Olympiad Workspace',
     subheadline:
       'Visual interactive modules for Laws of Motion, Work & Energy, Atoms & Molecules, Number Systems, and Fundamental Unit of Life.',
-    gradientClass: 'from-sky-500 via-blue-600 to-indigo-600',
-    accentBorderClass: 'border-sky-200',
-    pillBgClass: 'bg-sky-50 text-sky-800 border-sky-200',
+    gradientClass: 'from-[#121316] via-[#1D222B] to-[#262E3B]',
+    accentBorderClass: 'border-slate-900',
+    pillBgClass: 'bg-amber-50 text-amber-800 border-amber-200',
     focusPills: ['Motion & Force', 'Atoms & Mole Concept', 'Polynomials & Geometry', 'Cell Biology'],
+    surfaceTint: '#F4F0EA',
+    accentHex: '#FF4D1C',
   },
 };
 

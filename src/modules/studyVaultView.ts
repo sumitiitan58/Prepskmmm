@@ -436,84 +436,105 @@ export class StudyVaultModule {
               </div>
             `
                 : `
-              <div class="divide-y divide-slate-100">
-                ${filteredMaterials
-                  .map((mat, idx) => {
-                    const clsObj = classes.find((c) => c.id === mat.classId);
-                    const subObj = subjects.find((s) => s.id === mat.subjectId);
-                    const st = this.getSectionStyle(mat.section, idx);
-                    const subName = subObj?.name ?? 'Physics';
-                    const cohortLabel = mat.cohortTag || clsObj?.name || 'JEE';
+              <div class="rounded-xl border border-[#E2E8F0] overflow-hidden">
+                <!-- Structured Row & Column Header Bar -->
+                <div class="hidden sm:grid sm:grid-cols-12 gap-3 px-4 py-2.5 bg-slate-900 text-white text-[10px] font-mono-tabular uppercase tracking-wider font-extrabold">
+                  <div class="col-span-1">#</div>
+                  <div class="col-span-5">PDF Document Title</div>
+                  <div class="col-span-2">Section &amp; Subject</div>
+                  <div class="col-span-2">Cohort &amp; Pages</div>
+                  <div class="col-span-2 text-right">Actions</div>
+                </div>
+                <div class="divide-y divide-slate-100 bg-white">
+                  ${filteredMaterials
+                    .map((mat, idx) => {
+                      const clsObj = classes.find((c) => c.id === mat.classId);
+                      const subObj = subjects.find((s) => s.id === mat.subjectId);
+                      const st = this.getSectionStyle(mat.section, idx);
+                      const subName = subObj?.name ?? 'Physics';
+                      const cohortLabel = mat.cohortTag || clsObj?.name || 'JEE';
 
-                    return `
-                      <article
-                        data-testid="compact-pdf-row"
-                        class="py-2.5 px-2.5 sm:px-3.5 hover:bg-gradient-to-r hover:from-indigo-50/40 hover:to-emerald-50/30 rounded-xl transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                      >
-                        <div class="flex items-center gap-3 min-w-0 flex-1">
-                          <div class="w-9 h-9 rounded-xl ${st.badge} flex items-center justify-center text-[10px] font-mono-tabular font-extrabold shrink-0 shadow-2xs">
-                            PDF
+                      return `
+                        <article
+                          data-testid="compact-pdf-row"
+                          class="py-3 px-3 sm:px-4 hover:bg-gradient-to-r hover:from-indigo-50/40 hover:to-emerald-50/30 transition-colors grid grid-cols-1 sm:grid-cols-12 sm:items-center gap-2.5"
+                        >
+                          <div class="hidden sm:flex sm:col-span-1 items-center">
+                            <span class="w-7 h-7 rounded-lg bg-slate-100 text-slate-700 font-mono-tabular text-xs font-extrabold flex items-center justify-center">
+                              ${String(idx + 1).padStart(2, '0')}
+                            </span>
                           </div>
-                          <div class="min-w-0 flex-1">
-                            <div class="flex items-center gap-2 flex-wrap">
+
+                          <div class="sm:col-span-5 flex items-center gap-3 min-w-0">
+                            <div class="w-9 h-9 rounded-xl ${st.badge} flex items-center justify-center text-[10px] font-mono-tabular font-extrabold shrink-0 shadow-2xs">
+                              PDF
+                            </div>
+                            <div class="min-w-0 flex-1">
                               <h3 class="text-xs sm:text-sm font-extrabold text-slate-900 truncate">
                                 ${this.escapeHtml(mat.title)}
                               </h3>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-1.5 mt-0.5 text-[10px] sm:text-[11px]">
-                              <span class="px-1.5 py-0.2 rounded font-bold bg-indigo-50 text-[#4F46E5]">
-                                ${this.escapeHtml(mat.section)}
-                              </span>
-                              <span class="px-1.5 py-0.2 rounded font-bold bg-emerald-50 text-[#10B981]">
-                                ${this.escapeHtml(subName)}
-                              </span>
-                              <span class="px-1.5 py-0.2 rounded font-semibold bg-amber-50 text-amber-800">
-                                ${this.escapeHtml(cohortLabel)}
-                              </span>
-                              <span class="text-slate-400 font-mono-tabular">
-                                · ${mat.pagesCount}p · ${mat.downloads} dl
-                              </span>
+                              <p class="text-[11px] text-slate-500 truncate sm:hidden mt-0.5">
+                                ${this.escapeHtml(mat.section)} · ${this.escapeHtml(subName)} · ${mat.pagesCount}p
+                              </p>
                             </div>
                           </div>
-                        </div>
 
-                        <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                          <button
-                            type="button"
-                            data-action="preview-material"
-                            data-material-id="${mat.id}"
-                            class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
-                          >
-                            Preview
-                          </button>
-                          ${
-                            isAdmin
-                              ? `
+                          <div class="hidden sm:flex sm:col-span-2 flex-wrap items-center gap-1.5 text-[11px]">
+                            <span class="px-2 py-0.5 rounded-md font-bold bg-indigo-50 text-[#4F46E5]">
+                              ${this.escapeHtml(mat.section)}
+                            </span>
+                            <span class="px-2 py-0.5 rounded-md font-bold bg-emerald-50 text-[#10B981]">
+                              ${this.escapeHtml(subName)}
+                            </span>
+                          </div>
+
+                          <div class="hidden sm:flex sm:col-span-2 flex-col text-[11px]">
+                            <span class="font-bold text-amber-800">
+                              ${this.escapeHtml(cohortLabel)}
+                            </span>
+                            <span class="text-slate-400 font-mono-tabular text-[10px]">
+                              ${mat.pagesCount} pages · ${mat.downloads} dl
+                            </span>
+                          </div>
+
+                          <div class="sm:col-span-2 flex items-center justify-end gap-2 shrink-0">
                             <button
                               type="button"
-                              data-action="open-edit-material"
+                              data-action="preview-material"
                               data-material-id="${mat.id}"
-                              data-testid="edit-pdf-material-btn"
-                              class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                              class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
                             >
-                              ✏️ Edit PDF
+                              Preview
                             </button>
-                          `
-                              : ''
-                          }
-                          <button
-                            type="button"
-                            data-action="download-material"
-                            data-material-id="${mat.id}"
-                            class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors cursor-pointer"
-                          >
-                            ⬇ PDF
-                          </button>
-                        </div>
-                      </article>
-                    `;
-                  })
-                  .join('')}
+                            ${
+                              isAdmin
+                                ? `
+                              <button
+                                type="button"
+                                data-action="open-edit-material"
+                                data-material-id="${mat.id}"
+                                data-testid="edit-pdf-material-btn"
+                                class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                              >
+                                ✏️ Edit PDF
+                              </button>
+                            `
+                                : ''
+                            }
+                            <button
+                              type="button"
+                              data-action="download-material"
+                              data-material-id="${mat.id}"
+                              class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors cursor-pointer"
+                            >
+                              ⬇ PDF
+                            </button>
+                          </div>
+                        </article>
+                      `;
+                    })
+                    .join('')}
+                </div>
               </div>
             `
             }
@@ -523,8 +544,8 @@ export class StudyVaultModule {
 
         <!-- In-App Secure PDF Viewer Modal -->
         ${this.renderSecurePdfModal()}
-        <!-- Edit PDF Study Material Modal -->
-        ${this.renderEditMaterialModal()}
+        <!-- Edit PDF Study Material Modal (Master Admin Only) -->
+        ${isAdmin ? this.renderEditMaterialModal() : ''}
         <!-- Explicit User Confirmation Modal for Mutating Google Calendar & Tasks Sync -->
         ${this.renderWorkspaceSyncConfirmModal()}
       </div>
@@ -1046,6 +1067,9 @@ export class StudyVaultModule {
                 </button>
               </div>
 
+              ${
+                dataStore.isMasterAdmin()
+                  ? `
               <button
                 type="button"
                 data-action="open-edit-material"
@@ -1054,6 +1078,9 @@ export class StudyVaultModule {
               >
                 ✏️ Edit PDF
               </button>
+              `
+                  : ''
+              }
 
               <button
                 type="button"
@@ -1368,6 +1395,7 @@ export class StudyVaultModule {
             break;
           }
           case 'open-edit-material': {
+            if (!dataStore.isMasterAdmin()) break;
             const id = el.dataset.materialId;
             const found = dataStore.getMaterials().find((m) => m.id === id);
             if (found) {

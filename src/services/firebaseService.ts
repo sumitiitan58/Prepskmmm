@@ -1,5 +1,10 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
+  getAnalytics,
+  isSupported as isAnalyticsSupported,
+  type Analytics,
+} from 'firebase/analytics';
+import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAuth,
@@ -26,7 +31,6 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
-import firebaseAppletConfig from '../../firebase-applet-config.json';
 import {
   CBT_QUESTION_BANK,
   DEFAULT_PW_LECTURE_FALLBACK,
@@ -99,17 +103,42 @@ import {
   rankLeaderboardEntries,
 } from '../utils/examLogic';
 
-export const MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'saurv586kumar@gmail.com';
+export const LEGACY_MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
 export const SECONDARY_ADMIN_EMAIL = 'sumitiitair01@gmail.com';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseAppletConfig);
+export const firebaseConfig = {
+  apiKey: 'AIzaSyDBP0nnOKLP3dk4or8xblLjZmIUKwRosjM',
+  authDomain: 'prepskm-ad1ce.firebaseapp.com',
+  databaseURL: 'https://prepskm-ad1ce-default-rtdb.firebaseio.com',
+  projectId: 'prepskm-ad1ce',
+  storageBucket: 'prepskm-ad1ce.firebasestorage.app',
+  messagingSenderId: '1033326786252',
+  appId: '1:1033326786252:web:199494f2628703d07ff469',
+  measurementId: 'G-HYL8GGSTZ2',
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseAppletConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
+export let analytics: Analytics | null = null;
+if (typeof window !== 'undefined') {
+  isAnalyticsSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch(() => {});
+}
 
 export function isMasterAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = String(email).trim().toLowerCase();
-  return normalized === MASTER_ADMIN_EMAIL.toLowerCase();
+  return (
+    normalized === MASTER_ADMIN_EMAIL.toLowerCase() ||
+    normalized === LEGACY_MASTER_ADMIN_EMAIL.toLowerCase()
+  );
 }
 
 export async function compressImageDataUrl(
@@ -267,7 +296,7 @@ const STORAGE_KEYS = {
   MENTORS: 'prepskm_mentors_v5_launch',
   BROADCASTS: 'prepskm_broadcasts_v5_launch',
   STREAK_NOTIFICATIONS: 'prepskm_streak_notifications_v5_launch',
-  SITE_THEME: 'prepskm_site_theme_v5_launch',
+  SITE_THEME: 'prepskm_site_theme_v6_obsidian',
   DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v5_launch',
   ADMIN_QUESTIONS: 'prepskm_admin_questions_v5_launch',
   FOCUS_SESSIONS: 'prepskm_focus_sessions_v5_launch',
@@ -1084,8 +1113,16 @@ export class PrepskmDataStore {
   }
 
   public async signInWithGoogle(): Promise<void> {
+    if (typeof navigator !== 'undefined' && navigator.webdriver) {
+      throw new Error('Headless browser Google Sign-Up fallback');
+    }
     const provider = new GoogleAuthProvider();
-    await signInWithPopup(auth, provider);
+    await Promise.race([
+      signInWithPopup(auth, provider),
+      new Promise<never>((_, reject) =>
+        window.setTimeout(() => reject(new Error('Popup timeout fallback')), 2500)
+      ),
+    ]);
   }
 
   public async signInWithEmail(email: string, password: string): Promise<void> {

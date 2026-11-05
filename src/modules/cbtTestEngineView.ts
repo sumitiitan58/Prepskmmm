@@ -633,27 +633,55 @@ export class CBTTestEngineModule {
     name: string;
     subject: SubjectName;
     weightageLabel: string;
+    adminQuestionCount: number;
   }[] {
-    const syllabusTopics = dataStore.getSyllabusTopics(this.selectedExam);
+    const adminQuestions = dataStore.getAdminQuestions();
+    const adminCountByChapter = new Map<string, number>();
+    for (const aq of adminQuestions) {
+      const key = (aq.chapterName || '').toLowerCase().trim();
+      if (key) {
+        adminCountByChapter.set(key, (adminCountByChapter.get(key) ?? 0) + 1);
+      }
+      if (aq.chapterId) {
+        adminCountByChapter.set(
+          aq.chapterId,
+          (adminCountByChapter.get(aq.chapterId) ?? 0) + 1
+        );
+      }
+    }
+
     const chapters: {
       id: string;
       name: string;
       subject: SubjectName;
       weightageLabel: string;
-    }[] = syllabusTopics.map((t) => ({
-      id: t.id,
-      name: t.chapterName,
-      subject: t.subject,
-      weightageLabel: t.weightageLabel,
-    }));
+      adminQuestionCount: number;
+    }[] = [];
+    const existingNames = new Set<string>();
 
-    // Also include any custom admin chapters from dataStore.getChapters() not already present
-    const existingNames = new Set(
-      chapters.map((c) => c.name.toLowerCase().trim())
-    );
+    // 1. First include chapters from Admin-uploaded questions (so any chapter where Admin added questions is top-priority)
+    for (const aq of adminQuestions) {
+      const chName = (aq.chapterName || '').trim();
+      const norm = chName.toLowerCase();
+      if (chName && !existingNames.has(norm)) {
+        existingNames.add(norm);
+        const chId = aq.chapterId || `adm_ch_${norm.replace(/[^a-z0-9]+/g, '_')}`;
+        chapters.push({
+          id: chId,
+          name: chName,
+          subject: aq.subjectName,
+          weightageLabel: 'Admin Question Bank',
+          adminQuestionCount: adminCountByChapter.get(norm) ?? 1,
+        });
+      }
+    }
+
+    // 2. Include chapters created by Admin in dataStore.getChapters()
     const allSubjects = dataStore.getSubjects();
     for (const ch of dataStore.getChapters()) {
-      if (!existingNames.has(ch.name.toLowerCase().trim())) {
+      const norm = ch.name.toLowerCase().trim();
+      if (norm && !existingNames.has(norm)) {
+        existingNames.add(norm);
         const subObj = allSubjects.find((s) => s.id === ch.subjectId);
         const subName: SubjectName =
           subObj?.name === 'Chemistry' ||
@@ -665,10 +693,34 @@ export class CBTTestEngineModule {
           id: ch.id,
           name: ch.name,
           subject: subName,
-          weightageLabel: 'High-Yield Chapter',
+          weightageLabel: 'Admin Chapter Bank',
+          adminQuestionCount:
+            adminCountByChapter.get(norm) ??
+            adminCountByChapter.get(ch.id) ??
+            0,
         });
       }
     }
+
+    // 3. Include Admin-configured syllabus chapters for the active exam stream
+    const syllabusTopics = dataStore.getSyllabusTopics(this.selectedExam);
+    for (const t of syllabusTopics) {
+      const norm = t.chapterName.toLowerCase().trim();
+      if (norm && !existingNames.has(norm)) {
+        existingNames.add(norm);
+        chapters.push({
+          id: t.id,
+          name: t.chapterName,
+          subject: t.subject,
+          weightageLabel: t.weightageLabel,
+          adminQuestionCount:
+            adminCountByChapter.get(norm) ??
+            adminCountByChapter.get(t.id) ??
+            0,
+        });
+      }
+    }
+
     return chapters;
   }
 
@@ -696,7 +748,6 @@ export class CBTTestEngineModule {
       1,
       Math.round(this.infiniteTotalCount / selectedChapterCount)
     );
-    const examSubjects = getSubjectsForExam(this.selectedExam);
 
     return `
       <div class="max-w-5xl mx-auto">
@@ -709,27 +760,27 @@ export class CBTTestEngineModule {
             <div class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 text-[#10B981] text-xs font-extrabold uppercase tracking-wider">
-                  Infinite Practice · Subject &amp; Chapter Selector
+                  Infinite Practice · Direct Chapter Matrix (No Subject Lock)
                 </span>
                 <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] text-xs font-extrabold">
-                  100 P&amp;C Questions Uploaded Per Chapter
+                  Admin Question Chapters + 100 P&amp;C Bank / Chapter
                 </span>
               </div>
               <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                Choose Subject Chapters &amp; Practice in Multiples of Selected Chapters
+                Select Chapters Directly &amp; Practice in Multiples of Selected Chapters
               </h2>
               <p class="text-xs sm:text-sm text-slate-600">
-                Select specific chapters under Physics, Chemistry, and ${this.selectedExam === 'NEET' ? 'Biology' : 'Mathematics'} (<strong>${selectedChapterCount} selected</strong>). Question sets are strictly multiples of <strong>${selectedChapterCount}</strong>, generated from 100 P&amp;C questions per chapter.
+                Pick any chapters from the Admin-curated chapter bank below (<strong>${selectedChapterCount} chapter${selectedChapterCount > 1 ? 's' : ''} selected</strong>). Question sets are strictly multiples of <strong>${selectedChapterCount}</strong> (${validMultiples.slice(0, 5).join(', ')}...).
               </p>
             </div>
 
             <div class="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50 to-emerald-50 border border-indigo-200 text-center shrink-0">
-              <div class="text-[10px] font-extrabold text-slate-500 uppercase">P&amp;C Equal Split</div>
+              <div class="text-[10px] font-extrabold text-slate-500 uppercase">Chapter Multiple Formula</div>
               <div data-testid="infinite-multiplier-summary" class="text-lg font-mono-tabular font-extrabold text-[#4F46E5]">
                 ${selectedChapterCount} Ch × ${questionsPerChapter} Q = ${this.infiniteTotalCount} Qs
               </div>
               <div class="text-[10px] font-bold text-emerald-700 mt-0.5">
-                Pool: ${selectedChapterCount * 100} P&amp;C Questions
+                Bank: ${selectedChapterCount * 100} Admin &amp; P&amp;C Qs
               </div>
             </div>
           </div>
@@ -792,11 +843,11 @@ export class CBTTestEngineModule {
             </div>
           </div>
 
-          <!-- Step 2: Subject-Wise Chapter Selector (With Weightage + 100 P&C Qs Badge) -->
-          <div class="space-y-4">
+          <!-- Step 2: Direct Row & Column Chapter Selector (No Subject Filter Lock — Choose Any Admin-Added Chapters) -->
+          <div class="space-y-3">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                2. Select Specific Chapters by Subject (${selectedChapterCount} of ${availableChapters.length} Chapters Selected)
+                2. Select Chapters with Admin-Uploaded Questions (${selectedChapterCount} of ${availableChapters.length} Chapters Selected)
               </label>
               <div class="flex flex-wrap items-center gap-1.5">
                 <button
@@ -834,83 +885,67 @@ export class CBTTestEngineModule {
               </div>
             </div>
 
-            <div class="space-y-4">
-              ${examSubjects
-                .map((subj) => {
-                  const subChapters = availableChapters.filter(
-                    (c) => c.subject === subj
-                  );
-                  if (subChapters.length === 0) return '';
-                  const selectedInSub = subChapters.filter((c) =>
-                    this.selectedChapterIds.has(c.id)
-                  ).length;
+            <!-- Structured Row & Column Matrix of Chapters -->
+            <div
+              data-testid="infinite-chapters-row-col-grid"
+              class="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] overflow-hidden"
+            >
+              <!-- Matrix Column Header Bar -->
+              <div class="hidden sm:grid sm:grid-cols-12 gap-2 px-4 py-2.5 bg-slate-900 text-white text-[10px] font-mono-tabular uppercase tracking-wider font-extrabold">
+                <div class="col-span-1">#</div>
+                <div class="col-span-5">Chapter Name</div>
+                <div class="col-span-3">Weightage / Source</div>
+                <div class="col-span-2">Question Bank</div>
+                <div class="col-span-1 text-right">Pick</div>
+              </div>
 
-                  return `
-                  <div class="p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3">
-                    <div class="flex items-center justify-between gap-2">
-                      <div class="flex items-center gap-2">
-                        <span class="px-2.5 py-1 rounded-lg bg-[#4F46E5] text-white text-xs font-extrabold">
-                          ${subj}
+              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
+                ${availableChapters
+                  .map((ch, idx) => {
+                    const checked = this.selectedChapterIds.has(ch.id);
+                    const totalBankCount = 100 + ch.adminQuestionCount;
+                    return `
+                    <button
+                      type="button"
+                      data-action="toggle-infinite-chapter"
+                      data-chapter-id="${ch.id}"
+                      data-testid="infinite-chapter-btn-${ch.id}"
+                      class="min-h-[60px] p-3 rounded-xl border text-left flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
+                        checked
+                          ? 'bg-indigo-50/95 border-[#4F46E5] text-slate-900 shadow-2xs ring-1 ring-[#4F46E5]/25'
+                          : 'bg-white border-[#E2E8F0] text-slate-600 hover:border-slate-300'
+                      }"
+                    >
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 font-mono-tabular text-[11px] font-extrabold flex items-center justify-center shrink-0">
+                          ${String(idx + 1).padStart(2, '0')}
                         </span>
-                        <span class="text-xs font-bold text-slate-600">
-                          ${selectedInSub} / ${subChapters.length} Chapters Selected
-                        </span>
+                        <div class="min-w-0">
+                          <div class="text-xs font-extrabold text-slate-900 truncate">${this.escapeHtml(ch.name)}</div>
+                          <div class="flex flex-wrap items-center gap-1.5 mt-1">
+                            <span class="text-[10px] font-bold text-[#4F46E5]">${this.escapeHtml(ch.weightageLabel)}</span>
+                            <span class="text-[10px] text-slate-300">·</span>
+                            <span class="text-[10px] font-mono-tabular font-semibold text-emerald-700">${totalBankCount} Qs Added</span>
+                          </div>
+                        </div>
                       </div>
-                      <button
-                        type="button"
-                        data-action="select-all-subject-chapters"
-                        data-subject="${subj}"
-                        class="px-2.5 py-1 rounded-lg bg-white hover:bg-indigo-50 border border-slate-200 text-[11px] font-extrabold text-[#4F46E5] cursor-pointer"
-                      >
-                        Select All ${subj}
-                      </button>
-                    </div>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2.5">
-                      ${subChapters
-                        .map((ch) => {
-                          const checked = this.selectedChapterIds.has(ch.id);
-                          return `
-                          <button
-                            type="button"
-                            data-action="toggle-infinite-chapter"
-                            data-chapter-id="${ch.id}"
-                            data-testid="infinite-chapter-btn-${ch.id}"
-                            class="min-h-[56px] p-3 rounded-xl border text-left flex items-center justify-between gap-2 transition-all cursor-pointer ${
-                              checked
-                                ? 'bg-indigo-50/90 border-[#4F46E5] text-slate-900 shadow-2xs ring-1 ring-[#4F46E5]/20'
-                                : 'bg-white border-[#E2E8F0] text-slate-600 hover:border-slate-300'
-                            }"
-                          >
-                            <div class="min-w-0">
-                              <div class="text-xs font-extrabold truncate">${this.escapeHtml(ch.name)}</div>
-                              <div class="flex items-center gap-1.5 mt-1">
-                                <span class="text-[10px] font-bold text-[#4F46E5]">${this.escapeHtml(ch.weightageLabel)}</span>
-                                <span class="text-[10px] text-slate-300">·</span>
-                                <span class="text-[10px] font-mono-tabular font-semibold text-emerald-700">100 P&amp;C Qs</span>
-                              </div>
-                            </div>
-                            <span class="w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
-                              checked ? 'bg-[#4F46E5] text-white' : 'border border-slate-300 bg-white'
-                            }">
-                              ${checked ? '✓' : ''}
-                            </span>
-                          </button>
-                        `;
-                        })
-                        .join('')}
-                    </div>
-                  </div>
-                `;
-                })
-                .join('')}
+                      <span class="w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
+                        checked ? 'bg-[#4F46E5] text-white' : 'border border-slate-300 bg-white'
+                      }">
+                        ${checked ? '✓' : ''}
+                      </span>
+                    </button>
+                  `;
+                  })
+                  .join('')}
+              </div>
             </div>
           </div>
 
           <!-- Step 3: Total Question Count (Multiples of Selected Chapters K Only) -->
           <div class="space-y-2">
             <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              3. Question Set Size (Multiples of ${selectedChapterCount} Selected Chapter${selectedChapterCount > 1 ? 's' : ''}: ${validMultiples.slice(0, 6).join(', ')}...)
+              3. Question Set Size — Multiples of ${selectedChapterCount} Selected Chapter${selectedChapterCount > 1 ? 's' : ''} (${validMultiples.slice(0, 6).join(', ')}...)
             </label>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" data-testid="infinite-multiple-options">
               ${validMultiples
@@ -932,7 +967,7 @@ export class CBTTestEngineModule {
                   >
                     <div class="text-sm font-mono-tabular font-extrabold">${totalQ} Questions</div>
                     <div class="text-[11px] ${active ? 'text-emerald-100' : 'text-slate-500'}">
-                      ${perCh} Q × ${selectedChapterCount} Ch (P&amp;C)
+                      ${perCh} Q × ${selectedChapterCount} Ch (Multiple)
                     </div>
                   </button>
                 `;
@@ -943,7 +978,7 @@ export class CBTTestEngineModule {
 
           <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="text-xs text-slate-600">
-              P&amp;C Engine draws <strong>${questionsPerChapter} unique questions</strong> from each of the <strong>${selectedChapterCount} selected chapters</strong> (100 Qs/chapter bank) + awards a downloadable <strong>Achievement Certificate</strong> upon completion.
+              Draws <strong>${questionsPerChapter} unique questions</strong> from each of the <strong>${selectedChapterCount} selected chapters</strong> (total <strong>${this.infiniteTotalCount} questions</strong>, a strict multiple of ${selectedChapterCount}) + awards a downloadable <strong>Achievement Certificate</strong>.
             </div>
             <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
               <button
@@ -959,7 +994,7 @@ export class CBTTestEngineModule {
                 data-testid="launch-infinite-session-btn"
                 class="flex-1 sm:flex-initial min-h-[48px] px-6 py-3 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-sm font-extrabold shadow-sm transition-colors cursor-pointer"
               >
-                Start P&amp;C Infinite Practice (${this.infiniteTotalCount} Qs) →
+                Start Chapter Multiple Practice (${this.infiniteTotalCount} Qs) →
               </button>
             </div>
           </div>

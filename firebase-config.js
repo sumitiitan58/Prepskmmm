@@ -4,6 +4,7 @@
  * Master Admin: Sumit586kumar@gmail.com
  */
 import { initializeApp, getApps, getApp } from 'firebase/app';
+import { getAnalytics, isSupported as isAnalyticsSupported } from 'firebase/analytics';
 import {
   getAuth,
   GoogleAuthProvider,
@@ -35,25 +36,47 @@ import {
   uploadBytes,
   getDownloadURL,
 } from 'firebase/storage';
-import firebaseAppletConfig from './firebase-applet-config.json';
 
-export const MASTER_ADMIN_EMAIL = 'Sumit586kumar@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'saurv586kumar@gmail.com';
+export const LEGACY_MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
 export const SECONDARY_ADMIN_EMAIL = 'sumitiitair01@gmail.com';
 
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseAppletConfig);
+export const firebaseConfig = {
+  apiKey: 'AIzaSyDBP0nnOKLP3dk4or8xblLjZmIUKwRosjM',
+  authDomain: 'prepskm-ad1ce.firebaseapp.com',
+  databaseURL: 'https://prepskm-ad1ce-default-rtdb.firebaseio.com',
+  projectId: 'prepskm-ad1ce',
+  storageBucket: 'prepskm-ad1ce.firebasestorage.app',
+  messagingSenderId: '1033326786252',
+  appId: '1:1033326786252:web:199494f2628703d07ff469',
+  measurementId: 'G-HYL8GGSTZ2',
+};
+
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app, firebaseAppletConfig.firestoreDatabaseId);
+export const db = getFirestore(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
+export let analytics = null;
+if (typeof window !== 'undefined') {
+  isAnalyticsSupported()
+    .then((supported) => {
+      if (supported) {
+        analytics = getAnalytics(app);
+      }
+    })
+    .catch(() => {});
+}
 
 /**
- * Checks whether an email address belongs to the Master Admin (Sumit586kumar@gmail.com)
+ * Checks whether an email address belongs to the Master Admin (saurv586kumar@gmail.com)
  */
 export function isMasterAdminEmail(email) {
   if (!email) return false;
   const normalized = String(email).trim().toLowerCase();
   return (
     normalized === MASTER_ADMIN_EMAIL.toLowerCase() ||
+    normalized === LEGACY_MASTER_ADMIN_EMAIL.toLowerCase() ||
     normalized === SECONDARY_ADMIN_EMAIL.toLowerCase()
   );
 }
