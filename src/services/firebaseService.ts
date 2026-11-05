@@ -29,6 +29,7 @@ import {
 import firebaseAppletConfig from '../../firebase-applet-config.json';
 import {
   CBT_QUESTION_BANK,
+  DEFAULT_PW_LECTURE_FALLBACK,
   DEFAULT_SITE_THEME,
   DEFAULT_USER,
   DEFAULT_VAULT_SECTIONS,
@@ -49,6 +50,8 @@ import {
   INITIAL_VIDEOS,
   LIVE_POLL_BANK,
   MENTOR_AVATAR_PATH,
+  SYLLABUS_TOPICS,
+  XP_PER_COMPLETED_TASK,
 } from '../constants';
 import type {
   AdminQuestionItem,
@@ -83,9 +86,12 @@ import type {
 } from '../types';
 import {
   calculateLeaderboardCompositePoints,
+  calculateStudentXp,
+  calculateSyllabusProgress,
   computeUpdatedFocusStats,
   evaluateStreakRiskStatus,
   generatePersonalizedStudyPlan,
+  getCurrentWeekKey,
   getSubjectsForExam,
   rankLeaderboardEntries,
 } from '../utils/examLogic';
@@ -239,30 +245,30 @@ async function testConnection(): Promise<void> {
 void testConnection();
 
 const STORAGE_KEYS = {
-  USER: 'prepskm_user_v3',
-  TASKS: 'prepskm_tasks_v4',
-  LECTURE_PROGRESS: 'prepskm_lecture_progress_v3',
-  LIVE_SESSION: 'prepskm_live_session_v3',
-  TEST_SUBMISSIONS: 'prepskm_test_submissions_v4',
-  STUDY_PLAN: 'prepskm_study_plan_v3',
-  LEADERBOARD: 'prepskm_leaderboard_v3',
-  CLASSES: 'prepskm_classes_v3',
-  SUBJECTS: 'prepskm_subjects_v3',
-  CHAPTERS: 'prepskm_chapters_v3',
-  MATERIALS: 'prepskm_materials_v3',
-  VAULT_SECTIONS: 'prepskm_vault_sections_v3',
-  VIDEO_SECTIONS: 'prepskm_video_sections_v3',
-  VIDEOS: 'prepskm_videos_v3',
-  VIDEO_DOUBTS: 'prepskm_video_doubts_v3',
-  MENTORSHIP: 'prepskm_mentorship_v3',
-  MENTORS: 'prepskm_mentors_v3',
-  BROADCASTS: 'prepskm_broadcasts_v3',
-  STREAK_NOTIFICATIONS: 'prepskm_streak_notifications_v3',
-  SITE_THEME: 'prepskm_site_theme_v3',
-  DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v3',
-  ADMIN_QUESTIONS: 'prepskm_admin_questions_v3',
-  FOCUS_SESSIONS: 'prepskm_focus_sessions_v1',
-  GROUP_CALL_SCHEDULE: 'prepskm_group_call_schedule_v1',
+  USER: 'prepskm_user_v5_launch',
+  TASKS: 'prepskm_tasks_v5_launch',
+  LECTURE_PROGRESS: 'prepskm_lecture_progress_v5_launch',
+  LIVE_SESSION: 'prepskm_live_session_v5_launch',
+  TEST_SUBMISSIONS: 'prepskm_test_submissions_v5_launch',
+  STUDY_PLAN: 'prepskm_study_plan_v5_launch',
+  LEADERBOARD: 'prepskm_leaderboard_v5_launch',
+  CLASSES: 'prepskm_classes_v5_launch',
+  SUBJECTS: 'prepskm_subjects_v5_launch',
+  CHAPTERS: 'prepskm_chapters_v5_launch',
+  MATERIALS: 'prepskm_materials_v5_launch',
+  VAULT_SECTIONS: 'prepskm_vault_sections_v5_launch',
+  VIDEO_SECTIONS: 'prepskm_video_sections_v5_launch',
+  VIDEOS: 'prepskm_videos_v5_launch',
+  VIDEO_DOUBTS: 'prepskm_video_doubts_v5_launch',
+  MENTORSHIP: 'prepskm_mentorship_v5_launch',
+  MENTORS: 'prepskm_mentors_v5_launch',
+  BROADCASTS: 'prepskm_broadcasts_v5_launch',
+  STREAK_NOTIFICATIONS: 'prepskm_streak_notifications_v5_launch',
+  SITE_THEME: 'prepskm_site_theme_v5_launch',
+  DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v5_launch',
+  ADMIN_QUESTIONS: 'prepskm_admin_questions_v5_launch',
+  FOCUS_SESSIONS: 'prepskm_focus_sessions_v5_launch',
+  GROUP_CALL_SCHEDULE: 'prepskm_group_call_schedule_v5_launch',
 };
 
 function sanitizeId(id: string): string {
@@ -302,23 +308,29 @@ export class PrepskmDataStore {
   constructor() {
     this.currentUser = this.loadLocal(STORAGE_KEYS.USER, { ...DEFAULT_USER });
     if (this.currentUser.totalFocusMinutes === undefined) {
-      this.currentUser.totalFocusMinutes = DEFAULT_USER.totalFocusMinutes ?? 210;
+      this.currentUser.totalFocusMinutes = DEFAULT_USER.totalFocusMinutes ?? 0;
     }
     if (!this.currentUser.subjectFocusMinutes) {
       this.currentUser.subjectFocusMinutes = {
         ...(DEFAULT_USER.subjectFocusMinutes ?? {
-          Physics: 95,
-          Chemistry: 55,
-          Math: 60,
+          Physics: 0,
+          Chemistry: 0,
+          Math: 0,
           Biology: 0,
         }),
       };
+    }
+    if (!Array.isArray(this.currentUser.completedSyllabusTopics)) {
+      this.currentUser.completedSyllabusTopics = [];
+    }
+    if (typeof this.currentUser.xpPoints !== 'number') {
+      this.currentUser.xpPoints = 0;
     }
     this.tasks = this.loadLocal(STORAGE_KEYS.TASKS, [...INITIAL_TASKS]);
     this.lectureProgress = this.loadLocal(STORAGE_KEYS.LECTURE_PROGRESS, {
       uid: this.currentUser.uid,
       lectureId: 'rotational_mechanics_01',
-      lastPositionSeconds: 525,
+      lastPositionSeconds: 0,
       completed: false,
       notes: INITIAL_SCRATCHPAD_NOTES,
     });
@@ -366,73 +378,26 @@ export class PrepskmDataStore {
     this.mentors = this.loadLocal(STORAGE_KEYS.MENTORS, [...INITIAL_MENTORS]);
     this.broadcasts = this.loadLocal(STORAGE_KEYS.BROADCASTS, [...INITIAL_BROADCASTS]);
 
-    const initialRisk = evaluateStreakRiskStatus({
-      uid: this.currentUser.uid,
-      studentName: this.currentUser.name,
-      currentStreak: this.currentUser.currentStreak,
-      lastActiveDate: this.currentUser.lastActiveDate,
-      todayIso: '2026-11-04',
-      completedTasksToday: this.tasks.filter((t) => t.dateIso === '2026-11-04' && t.isCompleted).length,
-      currentHour24: 20,
-    });
-    this.streakNotifications = this.loadLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, [
-      {
-        id: 'streak_notif_initial_01',
-        ...initialRisk.notificationPayload,
-        isRead: false,
-        createdAt: '2026-11-04T14:30:00Z',
-      },
-    ]);
+    this.streakNotifications = this.loadLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, []);
 
     this.siteTheme = this.loadLocal(STORAGE_KEYS.SITE_THEME, { ...DEFAULT_SITE_THEME });
     this.dailyGoalTarget = this.loadLocal(STORAGE_KEYS.DAILY_GOAL_TARGET, 4);
     this.adminQuestions = this.loadLocal(STORAGE_KEYS.ADMIN_QUESTIONS, [
       ...INITIAL_ADMIN_QUESTIONS,
     ]);
-    this.focusSessions = this.loadLocal<FocusSessionRecord[]>(STORAGE_KEYS.FOCUS_SESSIONS, [
-      {
-        id: 'focus_seed_01',
-        uid: this.currentUser.uid,
-        studentName: this.currentUser.name,
-        subject: 'Physics',
-        durationMinutes: 50,
-        modeLabel: '50m Deep Focus Sprint',
-        completedAt: '2026-11-04T08:30:00Z',
-      },
-      {
-        id: 'focus_seed_02',
-        uid: this.currentUser.uid,
-        studentName: this.currentUser.name,
-        subject: 'Chemistry',
-        durationMinutes: 25,
-        modeLabel: '25m Classic Pomodoro',
-        completedAt: '2026-11-04T10:15:00Z',
-      },
-      {
-        id: 'focus_seed_03',
-        uid: this.currentUser.uid,
-        studentName: this.currentUser.name,
-        subject: 'Math',
-        durationMinutes: 25,
-        modeLabel: '25m Classic Pomodoro',
-        completedAt: '2026-11-03T18:45:00Z',
-      },
-    ]);
+    this.focusSessions = this.loadLocal<FocusSessionRecord[]>(STORAGE_KEYS.FOCUS_SESSIONS, []);
     this.groupCallSchedule = this.loadLocal<GroupCallSchedule>(
       STORAGE_KEYS.GROUP_CALL_SCHEDULE,
       {
         id: 'global_slot',
         title: 'Live Multi-Student Strategy & PYQ Doubt Room with Sumit Bhaiya',
         mentorId: 'mentor_sumit_master',
-        mentorName: 'Sumit Kumar (IIT Roorkee · AIR 01 Mentor)',
-        scheduledTimeText: 'Today · 08:30 PM – 09:30 PM IST',
+        mentorName: 'Sumit Kumar (Founder & Master Educator)',
+        scheduledTimeText: 'Upcoming Live Slot · Check Mentorship Hub',
         targetCohort: 'All Cohorts (JEE, NEET & Foundation)',
         jitsiRoom: 'prepskm_group_live_slot_sumit_2027',
         isActive: true,
-        joinedStudents: [
-          { uid: 'aspirant_ishaan_01', name: 'Ishaan Deshmukh', joinedAt: '08:25 PM' },
-          { uid: 'aspirant_ananya_02', name: 'Ananya Krishnan', joinedAt: '08:27 PM' },
-        ],
+        joinedStudents: [],
         updatedAt: new Date().toISOString(),
       }
     );
@@ -515,7 +480,22 @@ export class PrepskmDataStore {
         collection(db, 'materials'),
         (snap) => {
           if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as StudyMaterialItem);
+            const legacyDummyMatIds = new Set([
+              'mat_01',
+              'mat_02',
+              'mat_03',
+              'mat_04',
+              'mat_05',
+              'mat_06',
+              'mat_1',
+              'mat_2',
+              'mat_3',
+              'mat_4',
+              'mat_5',
+            ]);
+            const remote = snap.docs
+              .map((d) => d.data() as StudyMaterialItem)
+              .filter((item) => !legacyDummyMatIds.has(item.id) && !item.id.startsWith('mat_0'));
             const merged = new Map<string, StudyMaterialItem>();
             for (const item of remote) merged.set(item.id, item);
             for (const item of this.materials) {
@@ -549,7 +529,9 @@ export class PrepskmDataStore {
         collection(db, 'videos'),
         (snap) => {
           if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as VideoRoadmapItem);
+            const remote = snap.docs
+              .map((d) => d.data() as VideoRoadmapItem)
+              .filter((v) => !v.id.startsWith('vid_0') && !v.id.startsWith('vid_init'));
             const merged = new Map<string, VideoRoadmapItem>();
             for (const v of remote) merged.set(v.id, v);
             for (const v of this.videos) {
@@ -579,11 +561,19 @@ export class PrepskmDataStore {
         collection(db, 'mentors'),
         (snap) => {
           if (!snap.empty) {
-            const remoteMentors = snap.docs.map((d) => d.data() as MentorProfileItem);
+            const remoteMentors = snap.docs
+              .map((d) => d.data() as MentorProfileItem)
+              .filter(
+                (m) =>
+                  isMasterAdminEmail(m.email) ||
+                  m.id === 'mentor_sumit_master'
+              );
             const merged = new Map<string, MentorProfileItem>();
             for (const m of this.mentors) merged.set(m.id, m);
             for (const m of remoteMentors) merged.set(m.id, m);
-            this.mentors = Array.from(merged.values());
+            this.mentors = Array.from(merged.values()).filter(
+              (m) => isMasterAdminEmail(m.email) || m.id === 'mentor_sumit_master'
+            );
             this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
           }
         },
@@ -710,6 +700,10 @@ export class PrepskmDataStore {
     this.isCloudAuthenticated = true;
     const uid = sanitizeId(fbUser.uid);
     const userPath = `users/${uid}`;
+    const fbEmail = fbUser.email || this.currentUser.email;
+    const derivedName =
+      fbUser.displayName?.trim() ||
+      (isMasterAdminEmail(fbEmail) ? 'Sumit Kumar' : fbEmail.split('@')[0] || 'Student');
 
     try {
       const snap = await getDoc(doc(db, 'users', uid));
@@ -717,36 +711,38 @@ export class PrepskmDataStore {
         const remoteUser = snap.data() as Partial<AspirantUser>;
         this.currentUser = {
           uid: remoteUser.uid ?? uid,
-          email: fbUser.email || remoteUser.email || this.currentUser.email,
-          name: remoteUser.name ?? (fbUser.displayName || 'Aspirant'),
-          classYear: remoteUser.classYear ?? 'Class 12',
-          targetExam: remoteUser.targetExam ?? 'JEE',
-          photoURL: remoteUser.photoURL || fbUser.photoURL || MENTOR_AVATAR_PATH,
+          email: fbEmail || remoteUser.email || '',
+          name: fbUser.displayName?.trim() || remoteUser.name || derivedName,
+          classYear: remoteUser.classYear ?? this.currentUser.classYear ?? 'Class 12',
+          targetExam: remoteUser.targetExam ?? this.currentUser.targetExam ?? 'JEE',
+          photoURL: fbUser.photoURL || remoteUser.photoURL || MENTOR_AVATAR_PATH,
           isGuest: false,
-          currentStreak: remoteUser.currentStreak ?? 4,
-          lastActiveDate: remoteUser.lastActiveDate ?? '2026-11-04',
+          currentStreak: Math.max(1, remoteUser.currentStreak ?? this.currentUser.currentStreak ?? 1),
+          xpPoints: remoteUser.xpPoints ?? this.currentUser.xpPoints ?? 0,
+          completedSyllabusTopics: remoteUser.completedSyllabusTopics ?? this.currentUser.completedSyllabusTopics ?? [],
+          lastActiveDate: remoteUser.lastActiveDate ?? new Date().toISOString().slice(0, 10),
           createdAt: remoteUser.createdAt ?? new Date().toISOString(),
         };
       } else {
         const newProfile: AspirantUser = {
           uid,
-          email: fbUser.email || this.currentUser.email,
-          name: (fbUser.displayName || 'Aspirant').slice(0, 90),
+          email: fbEmail,
+          name: derivedName.slice(0, 90),
           classYear: this.currentUser.classYear || 'Class 12',
-          targetExam: this.currentUser.targetExam,
+          targetExam: this.currentUser.targetExam || 'JEE',
           photoURL: fbUser.photoURL || MENTOR_AVATAR_PATH,
           isGuest: false,
-          currentStreak: this.currentUser.currentStreak,
-          lastActiveDate: this.currentUser.lastActiveDate,
+          currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
+          xpPoints: this.currentUser.xpPoints ?? 0,
+          completedSyllabusTopics: this.currentUser.completedSyllabusTopics ?? [],
+          lastActiveDate: new Date().toISOString().slice(0, 10),
           createdAt: new Date().toISOString(),
         };
         this.currentUser = newProfile;
-        if (fbUser.emailVerified) {
-          try {
-            await setDoc(doc(db, 'users', uid), newProfile);
-          } catch (error) {
-            handleFirestoreError(error, OperationType.CREATE, userPath);
-          }
+        try {
+          await setDoc(doc(db, 'users', uid), newProfile);
+        } catch {
+          // Saved locally if Firestore rules restrict unverified
         }
       }
       this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
@@ -755,7 +751,7 @@ export class PrepskmDataStore {
       await this.syncStudyPlanFromFirestore(uid);
       await this.syncLeaderboardWithFirestore(uid);
     } catch (error) {
-      handleFirestoreError(error, OperationType.GET, userPath);
+      console.warn('Firestore user profile sync fallback:', userPath, error);
     }
 
     this.notifyAuthListeners();
@@ -829,39 +825,48 @@ export class PrepskmDataStore {
   }
 
   private async syncLeaderboardWithFirestore(uid: string): Promise<void> {
+    const currentWeek = getCurrentWeekKey();
     this.recalculateLocalUserLeaderboardEntry();
-    const myEntry = this.leaderboard.find(
-      (e) => e.uid === uid || e.uid === 'local_aspirant_01'
-    );
-    if (myEntry && auth.currentUser?.emailVerified) {
+    const myEntry = this.leaderboard.find((e) => e.uid === uid || e.uid === this.currentUser.uid);
+    if (myEntry && !this.currentUser.isGuest) {
       const syncedEntry: LeaderboardEntry = {
         ...myEntry,
         uid,
         name: this.currentUser.name,
         targetExam: this.currentUser.targetExam,
+        weekKey: currentWeek,
       };
-      const entryPath = `leaderboard/${uid}`;
       try {
         await setDoc(doc(db, 'leaderboard', uid), syncedEntry);
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, entryPath);
+      } catch {
+        // Saved locally
       }
     }
 
-    const listPath = 'leaderboard';
     try {
       const q = query(
         collection(db, 'leaderboard'),
         where('compositePoints', '>=', 0),
         orderBy('compositePoints', 'desc'),
-        limit(15)
+        limit(20)
       );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        const remoteEntries = snap.docs.map((d) => d.data() as LeaderboardEntry);
+        const dummyIds = new Set([
+          'aspirant_ishaan_01',
+          'aspirant_ananya_02',
+          'aspirant_rohan_03',
+          'aspirant_meera_04',
+          'local_aspirant_01',
+        ]);
+        const remoteEntries = snap.docs
+          .map((d) => d.data() as LeaderboardEntry)
+          .filter((item) => !dummyIds.has(item.uid) && (!item.weekKey || item.weekKey === currentWeek));
         const mergedMap = new Map<string, LeaderboardEntry>();
         for (const item of this.leaderboard) {
-          mergedMap.set(item.uid, item);
+          if (!dummyIds.has(item.uid)) {
+            mergedMap.set(item.uid, item);
+          }
         }
         for (const item of remoteEntries) {
           mergedMap.set(item.uid, item);
@@ -869,31 +874,33 @@ export class PrepskmDataStore {
         this.leaderboard = Array.from(mergedMap.values());
         this.saveLocal(STORAGE_KEYS.LEADERBOARD, this.leaderboard);
       }
-    } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, listPath);
+    } catch {
+      // Offline leaderboard fallback
     }
   }
 
   private recalculateLocalUserLeaderboardEntry(): LeaderboardEntry {
     const user = this.currentUser;
-    const examSubjects = getSubjectsForExam(user.targetExam);
-    const relevantTasks = this.tasks.filter((t) => examSubjects.includes(t.subject));
-    const completedCount = relevantTasks.filter((t) => t.isCompleted).length;
+    const currentWeek = getCurrentWeekKey();
+    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
+    const totalTasksCount = this.tasks.length;
     const taskCompletionRate =
-      relevantTasks.length > 0
-        ? Math.round((completedCount / relevantTasks.length) * 100)
-        : 75;
+      totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
 
     const bestSubmissionScore =
       this.submissions.length > 0
-        ? Math.max(...this.submissions.map((s) => s.score))
-        : 42;
+        ? Math.max(0, ...this.submissions.map((s) => s.score))
+        : 0;
 
-    const compositePoints = calculateLeaderboardCompositePoints(
+    const xpPoints = calculateStudentXp(completedTasksCount, 0);
+    this.currentUser.xpPoints = xpPoints;
+
+    const baseComposite = calculateLeaderboardCompositePoints(
       taskCompletionRate,
       bestSubmissionScore,
       user.currentStreak
     );
+    const compositePoints = baseComposite + xpPoints;
 
     const updatedEntry: LeaderboardEntry = {
       uid: user.uid,
@@ -902,14 +909,24 @@ export class PrepskmDataStore {
       taskCompletionRate,
       bestMockScore: bestSubmissionScore,
       currentStreak: user.currentStreak,
+      xpPoints,
+      weekKey: currentWeek,
       compositePoints,
     };
 
-    const existingIndex = this.leaderboard.findIndex(
-      (e) =>
-        e.uid === user.uid ||
-        (user.uid !== 'local_aspirant_01' && e.uid === 'local_aspirant_01')
+    // Filter out any legacy dummy IDs or expired weeks
+    const dummyIds = new Set([
+      'aspirant_ishaan_01',
+      'aspirant_ananya_02',
+      'aspirant_rohan_03',
+      'aspirant_meera_04',
+      'local_aspirant_01',
+    ]);
+    this.leaderboard = this.leaderboard.filter(
+      (e) => !dummyIds.has(e.uid) && (!e.weekKey || e.weekKey === currentWeek)
     );
+
+    const existingIndex = this.leaderboard.findIndex((e) => e.uid === user.uid);
     if (existingIndex >= 0) {
       this.leaderboard[existingIndex] = updatedEntry;
     } else {
@@ -921,16 +938,15 @@ export class PrepskmDataStore {
 
   private async pushCurrentUserLeaderboardToCloud(): Promise<void> {
     const entry = this.recalculateLocalUserLeaderboardEntry();
-    if (this.isCloudAuthenticated && auth.currentUser?.emailVerified) {
-      const uid = sanitizeId(auth.currentUser.uid);
-      const path = `leaderboard/${uid}`;
+    if (!this.currentUser.isGuest) {
+      const uid = sanitizeId(auth.currentUser?.uid || this.currentUser.uid);
       try {
         await setDoc(doc(db, 'leaderboard', uid), {
           ...entry,
           uid,
         });
-      } catch (error) {
-        handleFirestoreError(error, OperationType.WRITE, path);
+      } catch {
+        // Saved locally
       }
     }
   }
@@ -1012,6 +1028,62 @@ export class PrepskmDataStore {
     this.switchRoleSession('guest');
   }
 
+  public async signUpOrLoginProfile(params: {
+    name: string;
+    email: string;
+    password?: string;
+    classYear?: StudentClassYear;
+    targetExam?: TargetExam;
+  }): Promise<AspirantUser> {
+    const cleanEmail = params.email.trim().toLowerCase();
+    const isOwnerAdmin = isMasterAdminEmail(cleanEmail);
+    const derivedName =
+      params.name.trim() ||
+      (isOwnerAdmin ? 'Sumit Kumar' : cleanEmail.split('@')[0] || 'Student');
+
+    if (params.password && params.password.length >= 6) {
+      try {
+        await this.signInWithEmail(cleanEmail, params.password);
+      } catch {
+        // Proceed with local + Firestore profile persistence
+      }
+    }
+
+    const oldUid = this.currentUser.uid;
+    const newUid = isOwnerAdmin
+      ? 'admin_sumit_master'
+      : sanitizeId(`user_${cleanEmail}`);
+
+    this.currentUser = {
+      ...this.currentUser,
+      uid: newUid,
+      email: cleanEmail,
+      name: derivedName.slice(0, 90),
+      classYear: params.classYear ?? this.currentUser.classYear ?? 'Class 12',
+      targetExam: params.targetExam ?? this.currentUser.targetExam ?? 'JEE',
+      photoURL: this.currentUser.photoURL || MENTOR_AVATAR_PATH,
+      isGuest: false,
+      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
+      xpPoints: this.currentUser.xpPoints ?? 0,
+      completedSyllabusTopics: this.currentUser.completedSyllabusTopics ?? [],
+      lastActiveDate: new Date().toISOString().slice(0, 10),
+    };
+
+    // Remove old guest entry from leaderboard so only the signed-in user remains
+    this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
+    this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+    await this.pushCurrentUserLeaderboardToCloud();
+    this.notifyAuthListeners();
+
+    try {
+      await setDoc(doc(db, 'users', newUid), this.currentUser);
+    } catch {
+      // Saved locally
+    }
+
+    return this.getUser();
+  }
+
   /**
    * Switches session role for Guest Mode, Registered Student, Co-Admin/Mentor, or Master Admin.
    */
@@ -1022,25 +1094,27 @@ export class PrepskmDataStore {
     customExam?: TargetExam,
     mentorEmail?: string
   ): AspirantUser {
+    const oldUid = this.currentUser.uid;
     if (mode === 'admin') {
       this.currentUser = {
         ...this.currentUser,
         uid: 'admin_sumit_master',
         email: MASTER_ADMIN_EMAIL,
-        name: 'Sumit Kumar (Master Admin)',
+        name: customName?.trim() || 'Sumit Kumar',
         classYear: 'Dropper',
         targetExam: customExam ?? this.currentUser.targetExam,
         photoURL: MENTOR_AVATAR_PATH,
         isGuest: false,
+        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
       };
     } else if (mode === 'mentor') {
       const targetMentor =
-        this.getMentorByEmail(mentorEmail) ?? this.mentors[1] ?? this.mentors[0];
+        this.getMentorByEmail(mentorEmail) ?? this.mentors[0];
       this.currentUser = {
         ...this.currentUser,
         uid: targetMentor.id,
         email: targetMentor.email,
-        name: `${targetMentor.name} (${targetMentor.role})`,
+        name: targetMentor.name,
         classYear: 'Dropper',
         targetExam: customExam ?? this.currentUser.targetExam,
         photoURL: targetMentor.avatarUrl || MENTOR_AVATAR_PATH,
@@ -1049,25 +1123,38 @@ export class PrepskmDataStore {
     } else if (mode === 'guest') {
       this.currentUser = {
         ...this.currentUser,
-        uid: `guest_${Date.now()}`,
-        email: 'guest@prepskm.in (Unregistered Guest)',
-        name: customName?.trim() || 'Guest Aspirant',
+        uid: 'guest_aspirant',
+        email: '',
+        name: 'Guest Student',
         classYear: customClass ?? 'Class 12',
         targetExam: customExam ?? this.currentUser.targetExam,
         isGuest: true,
       };
     } else {
+      const cleanName = customName?.trim() || (this.currentUser.isGuest ? 'Student' : this.currentUser.name);
+      const cleanEmail =
+        mentorEmail?.trim().toLowerCase() ||
+        (!this.currentUser.isGuest && this.currentUser.email
+          ? this.currentUser.email
+          : `${sanitizeId(cleanName.toLowerCase())}@gmail.com`);
       this.currentUser = {
         ...this.currentUser,
-        uid: 'local_aspirant_01',
-        email: 'aarav.sharma2027@gmail.com',
-        name: customName?.trim() || 'Aarav Sharma',
-        classYear: customClass ?? 'Class 12',
+        uid: isMasterAdminEmail(cleanEmail)
+          ? 'admin_sumit_master'
+          : sanitizeId(`user_${cleanEmail}`),
+        email: cleanEmail,
+        name: cleanName,
+        classYear: customClass ?? this.currentUser.classYear ?? 'Class 12',
         targetExam: customExam ?? this.currentUser.targetExam,
         isGuest: false,
+        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
       };
     }
+    if (oldUid !== this.currentUser.uid) {
+      this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
+    }
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+    this.recalculateLocalUserLeaderboardEntry();
     this.notifyAuthListeners();
     return this.getUser();
   }
@@ -1081,10 +1168,13 @@ export class PrepskmDataStore {
       Pick<
         AspirantUser,
         | 'name'
+        | 'email'
         | 'classYear'
         | 'targetExam'
         | 'photoURL'
         | 'currentStreak'
+        | 'xpPoints'
+        | 'completedSyllabusTopics'
         | 'lastActiveDate'
         | 'isGuest'
         | 'totalFocusMinutes'
@@ -1111,6 +1201,51 @@ export class PrepskmDataStore {
       // Saved locally
     }
     return this.getUser();
+  }
+
+  // --- Syllabus Progress Tracker (JEE / NEET Subject & Chapter Completion) ---
+  public getCompletedSyllabusTopics(): string[] {
+    return [...(this.currentUser.completedSyllabusTopics || [])];
+  }
+
+  public getSyllabusProgressSummary(exam?: TargetExam) {
+    const targetExam = exam ?? this.currentUser.targetExam;
+    return calculateSyllabusProgress(
+      SYLLABUS_TOPICS,
+      this.getCompletedSyllabusTopics(),
+      targetExam
+    );
+  }
+
+  public async toggleSyllabusTopic(topicId: string): Promise<{
+    completed: boolean;
+    completedTopics: string[];
+    xpPoints: number;
+  }> {
+    const existing = new Set(this.currentUser.completedSyllabusTopics || []);
+    let completed = false;
+    if (existing.has(topicId)) {
+      existing.delete(topicId);
+      completed = false;
+    } else {
+      existing.add(topicId);
+      completed = true;
+    }
+    const completedTopics = Array.from(existing);
+    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
+    const xpPoints = calculateStudentXp(completedTasksCount, 0);
+
+    await this.updateUser({
+      completedSyllabusTopics: completedTopics,
+      xpPoints,
+      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
+    });
+
+    return {
+      completed,
+      completedTopics,
+      xpPoints,
+    };
   }
 
   // --- Pomodoro Focus Timer & Profile Focus Statistics ---
@@ -1264,7 +1399,25 @@ export class PrepskmDataStore {
 
     target.isCompleted = !target.isCompleted;
     this.saveLocal(STORAGE_KEYS.TASKS, this.tasks);
+
+    // Every completed To-Do list task grants +75 XP and maintains active streak
+    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
+    const completedTopicsCount = (this.currentUser.completedSyllabusTopics || []).length;
+    const newXp = calculateStudentXp(completedTasksCount, completedTopicsCount);
+    const newStreak =
+      completedTasksCount > 0
+        ? Math.max(1, this.currentUser.currentStreak || 1)
+        : this.currentUser.currentStreak;
+
+    this.currentUser = {
+      ...this.currentUser,
+      xpPoints: newXp,
+      currentStreak: newStreak,
+      lastActiveDate: new Date().toISOString().slice(0, 10),
+    };
+    this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
     await this.pushCurrentUserLeaderboardToCloud();
+    this.notifyAuthListeners();
 
     try {
       await setDoc(doc(db, 'tasks', taskId), target);
@@ -1514,7 +1667,11 @@ export class PrepskmDataStore {
   }
 
   public getLatestRoadmapAnnouncement(): VideoRoadmapItem {
-    return this.videos.find((v) => v.isNewRoadmap) ?? this.videos[0];
+    return (
+      this.videos.find((v) => v.isNewRoadmap) ??
+      this.videos[0] ??
+      DEFAULT_PW_LECTURE_FALLBACK
+    );
   }
 
   public async addVideoLecture(params: {

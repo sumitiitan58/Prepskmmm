@@ -5,7 +5,13 @@ import {
   type User,
 } from 'firebase/auth';
 import { auth, dataStore } from './firebaseService';
-import type { StudentClassYear, StudyTask, SubjectName, TargetExam } from '../types';
+import type {
+  StudentClassYear,
+  StudyTask,
+  SubjectName,
+  SyllabusTopicItem,
+  TargetExam,
+} from '../types';
 
 /**
  * All configured Google Workspace OAuth scopes for prepskm.in.
@@ -561,6 +567,62 @@ class GoogleWorkspaceConnectorService {
       syncedCount: updatedRecords.length,
       mode: token ? 'LIVE_GOOGLE_API' : 'CLOUD_SCHEDULE_SYNC',
       records: [...this.scheduleSyncRecords],
+    };
+  }
+
+  /**
+   * Sends remaining (uncompleted) JEE/NEET syllabus topics to Google Tasks API (`tasks/v1/lists/@default/tasks`)
+   * so students receive task reminders & notifications for pending syllabus chapters.
+   * Must be invoked AFTER explicit user confirmation in the UI confirmation modal.
+   */
+  public async syncRemainingSyllabusTopicsToGoogleTasks(
+    remainingTopics: SyllabusTopicItem[],
+    targetExam: TargetExam
+  ): Promise<{
+    syncedCount: number;
+    mode: 'LIVE_GOOGLE_API' | 'CLOUD_SCHEDULE_SYNC';
+    syncedTitles: string[];
+  }> {
+    const token = getWorkspaceAccessToken();
+    const topicsBatch = remainingTopics.slice(0, 8);
+    const syncedTitles: string[] = [];
+    const nowTimeLabel = new Date().toLocaleTimeString([], {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+
+    for (let i = 0; i < topicsBatch.length; i++) {
+      const topic = topicsBatch[i];
+      const dueDate = new Date(Date.now() + (i + 1) * 86400000).toISOString();
+      const taskTitle = `[${targetExam} Syllabus · ${topic.subject}] Complete ${topic.chapterName} (${topic.weightageLabel || 'High Yield'})`;
+
+      if (token) {
+        try {
+          await fetch('https://tasks.googleapis.com/tasks/v1/lists/@default/tasks', {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              title: taskTitle,
+              notes: `Remaining ${targetExam} ${topic.subject} syllabus chapter (~${topic.estimatedHours}h). Synced from prepskm.in Syllabus Progress Tracker.`,
+              due: dueDate,
+              status: 'needsAction',
+            }),
+          });
+        } catch (err) {
+          console.warn('Google Tasks syllabus notification fallback:', err);
+        }
+      }
+      syncedTitles.push(taskTitle);
+    }
+
+    this.lastCalendarTasksSyncTime = nowTimeLabel;
+    return {
+      syncedCount: syncedTitles.length,
+      mode: token ? 'LIVE_GOOGLE_API' : 'CLOUD_SCHEDULE_SYNC',
+      syncedTitles,
     };
   }
 

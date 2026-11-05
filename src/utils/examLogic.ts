@@ -14,6 +14,8 @@ import type {
   StudyTask,
   SubjectName,
   SubjectScoreBreakdown,
+  SubjectSyllabusSummary,
+  SyllabusTopicItem,
   TargetExam,
 } from '../types';
 
@@ -1250,6 +1252,98 @@ export function canStudentInitiateMentorCall(params: {
     reason: helperText,
   };
 }
+
+/**
+ * Computes subject-wise and overall syllabus completion rates for JEE / NEET
+ * and returns remaining uncompleted topics for Google Tasks notification sync.
+ */
+export function calculateSyllabusProgress(
+  allTopics: SyllabusTopicItem[],
+  completedTopicIds: string[],
+  targetExam: TargetExam
+): {
+  targetExam: TargetExam;
+  overallTotal: number;
+  overallCompleted: number;
+  overallPercent: number;
+  remainingTopics: SyllabusTopicItem[];
+  subjects: SubjectSyllabusSummary[];
+} {
+  const completedSet = new Set(completedTopicIds || []);
+  const activeSubjects = getSubjectsForExam(targetExam);
+  const examTopics = allTopics.filter(
+    (t) => t.examTypes.includes(targetExam) && activeSubjects.includes(t.subject)
+  );
+
+  const subjects: SubjectSyllabusSummary[] = activeSubjects.map((subject) => {
+    const subTopics = examTopics.filter((t) => t.subject === subject);
+    const totalTopics = subTopics.length;
+    const completedTopics = subTopics.filter((t) => completedSet.has(t.id)).length;
+    const completionPercent =
+      totalTopics > 0 ? Math.round((completedTopics / totalTopics) * 100) : 0;
+    const remainingTopics = subTopics.filter((t) => !completedSet.has(t.id));
+    return {
+      subject,
+      totalTopics,
+      completedTopics,
+      completionPercent,
+      remainingTopics,
+      allTopics: subTopics.map((t) => ({
+        ...t,
+        completed: completedSet.has(t.id),
+      })),
+    };
+  });
+
+  const overallTotal = examTopics.length;
+  const overallCompleted = examTopics.filter((t) => completedSet.has(t.id)).length;
+  const overallPercent =
+    overallTotal > 0 ? Math.round((overallCompleted / overallTotal) * 100) : 0;
+  const remainingTopics = examTopics.filter((t) => !completedSet.has(t.id));
+
+  return {
+    targetExam,
+    overallTotal,
+    overallCompleted,
+    overallPercent,
+    remainingTopics,
+    subjects,
+  };
+}
+
+/**
+ * Calculates total XP/HP points for a student where each completed To-Do task awards +75 XP.
+ */
+export function calculateStudentXp(completedTasksCount: number, bonusXp = 0): number {
+  const safeCount = Math.max(0, Math.floor(completedTasksCount || 0));
+  const safeBonus = Math.max(0, Math.floor(bonusXp || 0));
+  return safeCount * 75 + safeBonus;
+}
+
+/**
+ * Computes an ISO week key (e.g., "2026-W45") that resets every Monday for the Weekly Leaderboard.
+ */
+export function getCurrentWeekKey(referenceDate: Date | string = new Date()): string {
+  const d =
+    typeof referenceDate === 'string'
+      ? new Date(`${referenceDate.slice(0, 10)}T00:00:00Z`)
+      : new Date(
+          Date.UTC(
+            referenceDate.getFullYear(),
+            referenceDate.getMonth(),
+            referenceDate.getDate()
+          )
+        );
+  if (Number.isNaN(d.getTime())) {
+    return '2026-W45';
+  }
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `${d.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
+}
+
 
 
 

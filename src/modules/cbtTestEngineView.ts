@@ -110,16 +110,37 @@ export class CBTTestEngineModule {
       this.selectedMockSeriesTitle = titleParam;
     }
 
+    const user = dataStore.getUser();
     if (tabParam === 'history') {
       this.stage = 'history';
-    } else if (sessionParam === 'mock' && this.activeQuestions.length === 0) {
-      this.engineMode = 'MOCK';
-      this.prepareExamPaper('MOCK');
-      this.stage = 'exam';
-    } else if (sessionParam === 'infinite' && this.activeQuestions.length === 0) {
-      this.engineMode = 'INFINITE_PRACTICE';
-      this.prepareExamPaper('INFINITE_PRACTICE');
-      this.stage = 'exam';
+    } else if (
+      (sessionParam === 'mock' || sessionParam === 'infinite') &&
+      this.activeQuestions.length === 0
+    ) {
+      if (user.isGuest) {
+        this.stage = 'hub';
+        setTimeout(() => {
+          this.callbacks.onShowToast(
+            'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests!'
+          );
+          window.dispatchEvent(
+            new CustomEvent('prepskm:open-auth-modal', {
+              detail: {
+                reason:
+                  'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and track your All-India Rank!',
+              },
+            })
+          );
+        }, 120);
+      } else if (sessionParam === 'mock') {
+        this.engineMode = 'MOCK';
+        this.prepareExamPaper('MOCK');
+        this.stage = 'exam';
+      } else {
+        this.engineMode = 'INFINITE_PRACTICE';
+        this.prepareExamPaper('INFINITE_PRACTICE');
+        this.stage = 'exam';
+      }
     } else if (this.stage !== 'exam' && this.stage !== 'submitted' && this.stage !== 'history') {
       // Never auto-open the exam paper underneath the hub cards on /test.html
       this.stage = 'hub';
@@ -215,10 +236,30 @@ export class CBTTestEngineModule {
         class="rounded-3xl bg-gradient-to-r from-[#4F46E5] via-indigo-600 to-violet-600 p-5 sm:p-6 text-white shadow-md"
       >
         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div class="space-y-1">
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-amber-200 text-[11px] font-extrabold uppercase tracking-wider">
-              ⚡ ${this.escapeHtml(cohortTheme.badgeText)} · CBT Examination Portal
-            </span>
+          <div class="space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-amber-200 text-[11px] font-extrabold uppercase tracking-wider">
+                ⚡ ${this.escapeHtml(cohortTheme.badgeText)} · CBT Examination Portal
+              </span>
+              ${
+                user.isGuest
+                  ? `
+                <button
+                  type="button"
+                  data-action="prompt-guest-signup"
+                  data-testid="cbt-guest-signup-pill"
+                  class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-extrabold shadow-xs cursor-pointer"
+                >
+                  🔒 Guest Mode — Sign Up Required to Start Mock Tests
+                </button>
+              `
+                  : `
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-400/20 border border-emerald-300/30 text-emerald-200 text-[11px] font-extrabold">
+                  ✓ Signed In as ${this.escapeHtml(user.name)}
+                </span>
+              `
+              }
+            </div>
             <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">
               Mock Test Hub, Infinite Practice & Test History
             </h1>
@@ -1623,6 +1664,22 @@ export class CBTTestEngineModule {
   }
 
   private startExam(): void {
+    const currentUser = dataStore.getUser();
+    if (currentUser.isGuest) {
+      this.callbacks.onShowToast(
+        'Sign Up Required: Please sign up with your Gmail before starting a Mock Test!'
+      );
+      window.dispatchEvent(
+        new CustomEvent('prepskm:open-auth-modal', {
+          detail: {
+            reason:
+              'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and save your All-India Rank!',
+          },
+        })
+      );
+      return;
+    }
+
     this.prepareExamPaper(this.engineMode);
     this.stage = 'exam';
 
@@ -1779,6 +1836,17 @@ export class CBTTestEngineModule {
           }
           case 'share-invite-test': {
             this.copyTestInviteLink(el.dataset.title);
+            break;
+          }
+          case 'prompt-guest-signup': {
+            window.dispatchEvent(
+              new CustomEvent('prepskm:open-auth-modal', {
+                detail: {
+                  reason:
+                    'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and save your All-India Rank!',
+                },
+              })
+            );
             break;
           }
           case 'launch-series-mock': {

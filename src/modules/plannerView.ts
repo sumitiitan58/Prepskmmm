@@ -1,4 +1,4 @@
-import { getCohortTheme, WEEK_DAYS } from '../constants';
+import { getCohortTheme, WEEK_DAYS, XP_PER_COMPLETED_TASK } from '../constants';
 import { dataStore } from '../services/firebaseService';
 import { workspaceConnector } from '../services/workspaceService';
 import type { PageId, SubjectName, TaskPriority } from '../types';
@@ -74,22 +74,26 @@ export class PlannerModule {
                 <span>⚡ Dedicated Workspace · ${this.escapeHtml(cohortTheme.label)}</span>
               </div>
               <h1 data-edit-key="planner-main-heading" class="text-xl sm:text-2xl font-extrabold tracking-tight">
-                Smart To-Do List & Backlog Killer Engine
+                ✨ Sweet Study Planner & Backlog Killer Engine
               </h1>
               <p class="text-xs sm:text-sm text-white/90 max-w-2xl">
-                Lightweight, zero-clutter task execution workspace synced in real time with Firebase Firestore, Google Calendar & Google Tasks.
+                Complete any task in your To-Do list to earn <strong>+${XP_PER_COMPLETED_TASK} XP</strong>, grow your daily streak, and sync remaining topics with Google Calendar & Google Tasks.
               </p>
             </div>
 
             <!-- Compact Stats Strip -->
-            <div class="grid grid-cols-3 gap-2 sm:gap-3 shrink-0">
+            <div class="grid grid-cols-4 gap-2 sm:gap-3 shrink-0">
+              <div class="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-center">
+                <div class="text-[10px] uppercase font-bold text-white/80">Streak</div>
+                <div class="text-base sm:text-lg font-mono-tabular font-extrabold">🔥 ${user.currentStreak}d</div>
+              </div>
+              <div class="px-3 py-2 rounded-xl bg-amber-400/20 backdrop-blur-xs border border-amber-300/40 text-center">
+                <div class="text-[10px] uppercase font-bold text-amber-100">Total XP</div>
+                <div class="text-base sm:text-lg font-mono-tabular font-extrabold text-amber-200">⚡ ${user.xpPoints ?? 0}</div>
+              </div>
               <div class="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-center">
                 <div class="text-[10px] uppercase font-bold text-white/80">Today Open</div>
                 <div class="text-base sm:text-lg font-mono-tabular font-extrabold">${todayPendingCount}</div>
-              </div>
-              <div class="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-center">
-                <div class="text-[10px] uppercase font-bold text-white/80">Backlogs</div>
-                <div class="text-base sm:text-lg font-mono-tabular font-extrabold">${backlogPendingCount}</div>
               </div>
               <div class="px-3 py-2 rounded-xl bg-white/15 backdrop-blur-xs border border-white/20 text-center">
                 <div class="text-[10px] uppercase font-bold text-white/80">Done</div>
@@ -324,6 +328,13 @@ export class PlannerModule {
                                     : 'bg-emerald-100/80 text-emerald-800'
                                 }">
                                   ${task.type}
+                                </span>
+                                <span class="px-2 py-0.5 rounded text-[10px] font-mono-tabular font-extrabold ${
+                                  task.isCompleted
+                                    ? 'bg-emerald-100 text-emerald-800'
+                                    : 'bg-amber-100 text-amber-800'
+                                }">
+                                  ${task.isCompleted ? `✓ +${XP_PER_COMPLETED_TASK} XP Earned` : `⚡ +${XP_PER_COMPLETED_TASK} XP`}
                                 </span>
                                 ${
                                   task.dailyQuotaHours
@@ -586,7 +597,7 @@ export class PlannerModule {
         }
       );
       if (titleInput) titleInput.value = '';
-      this.onShowToast('Task added and synced to Firebase Firestore!');
+      this.onShowToast(`Task added! Complete it to earn +${XP_PER_COMPLETED_TASK} XP.`);
       this.render();
     });
 
@@ -641,6 +652,7 @@ export class PlannerModule {
             const taskId = el.dataset.taskId;
             if (!taskId) return;
             const toggled = await dataStore.toggleTaskCompletion(taskId);
+            window.dispatchEvent(new CustomEvent('prepskm:user-updated'));
             if (toggled?.isCompleted) {
               const user = dataStore.getUser();
               const streakRes = computeUpdatedStreak(
@@ -653,8 +665,9 @@ export class PlannerModule {
                   currentStreak: streakRes.currentStreak,
                   lastActiveDate: streakRes.lastActiveDate,
                 });
+                window.dispatchEvent(new CustomEvent('prepskm:user-updated'));
               }
-              this.onShowToast(`Completed: ${toggled.title}`);
+              this.onShowToast(`🎉 Completed "${toggled.title}"! +${XP_PER_COMPLETED_TASK} XP earned!`);
             }
             this.render();
           });

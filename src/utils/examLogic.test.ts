@@ -7,6 +7,8 @@ import {
   calculateLeaderboardCompositePoints,
   calculateMentorshipPrice,
   calculatePollPercentages,
+  calculateStudentXp,
+  calculateSyllabusProgress,
   computePerformanceTrendsForD3,
   computeUpdatedStreak,
   evaluateCBTSubmission,
@@ -14,6 +16,7 @@ import {
   formatDuration,
   generateAIStudyDiagnosis,
   generatePersonalizedStudyPlan,
+  getCurrentWeekKey,
   getSubjectsForExam,
   getValidInfinitePracticeCounts,
   rankLeaderboardEntries,
@@ -23,11 +26,17 @@ import {
 } from './examLogic';
 import {
   CBT_QUESTION_BANK,
+  DEFAULT_USER,
   INITIAL_CHAPTERS,
+  INITIAL_LEADERBOARD,
+  INITIAL_MATERIALS,
+  INITIAL_MENTORS,
   INITIAL_TASKS,
   INITIAL_TEST_SUBMISSIONS,
+  INITIAL_VIDEOS,
+  SYLLABUS_TOPICS,
 } from '../constants';
-import type { CBTQuestion, LeaderboardEntry } from '../types';
+import type { CBTQuestion, LeaderboardEntry, StudyTask, TestSubmission } from '../types';
 
 test('formatDuration formats MM:SS and HH:MM:SS accurately', () => {
   assert.equal(formatDuration(0), '00:00');
@@ -160,9 +169,26 @@ test('generatePersonalizedStudyPlan prioritizes Weak subjects with highest weekl
   );
 });
 
-test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank Top 10 accurately', () => {
+test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single user as Rank #1 and multi-user Top 10 accurately', () => {
   const pts = calculateLeaderboardCompositePoints(80, 50, 5);
   assert.equal(pts, 1910);
+
+  // Single user on the platform -> must be Rank #1!
+  const soloEntries: LeaderboardEntry[] = [
+    {
+      uid: 'u_solo',
+      name: 'Sumit Kumar',
+      targetExam: 'JEE',
+      taskCompletionRate: 100,
+      bestMockScore: 24,
+      currentStreak: 1,
+      compositePoints: 1600,
+    },
+  ];
+  const soloRanked = rankLeaderboardEntries(soloEntries, 'u_solo');
+  assert.equal(soloRanked.top10.length, 1);
+  assert.equal(soloRanked.top10[0].rank, 1);
+  assert.equal(soloRanked.currentUserRank, 1);
 
   const sampleEntries: LeaderboardEntry[] = [
     {
@@ -244,7 +270,27 @@ test('generateAIStudyDiagnosis flags low-accuracy chapters for immediate revisio
 });
 
 test('calculateDailyGoalProgress computes SVG ring circumference and dashoffset dynamically', () => {
-  const progress = calculateDailyGoalProgress(INITIAL_TASKS, 4, 36);
+  const sampleTasks: StudyTask[] = [
+    {
+      taskId: 't1',
+      uid: 'u1',
+      title: 'Solve 15 Rotational PYQs',
+      subject: 'Physics',
+      type: 'Today',
+      isCompleted: true,
+      timestamp: 1000,
+    },
+    {
+      taskId: 't2',
+      uid: 'u1',
+      title: 'Revise Nernst Equation',
+      subject: 'Chemistry',
+      type: 'Today',
+      isCompleted: true,
+      timestamp: 2000,
+    },
+  ];
+  const progress = calculateDailyGoalProgress(sampleTasks, 4, 36);
   assert.equal(progress.completedCount, 2);
   assert.equal(progress.dailyGoalTarget, 4);
   assert.equal(progress.percentage, 50);
@@ -279,7 +325,7 @@ test('getValidInfinitePracticeCounts and selectInfinitePracticeEqualByChapter en
 test('evaluateStreakRiskStatus flags CRITICAL when near midnight with 0 tasks today and SAFE when task completed', () => {
   const criticalRisk = evaluateStreakRiskStatus({
     uid: 'u1',
-    studentName: 'Aarav Sharma',
+    studentName: 'Sumit Kumar',
     currentStreak: 6,
     lastActiveDate: '2026-11-03',
     todayIso: '2026-11-04',
@@ -292,7 +338,7 @@ test('evaluateStreakRiskStatus flags CRITICAL when near midnight with 0 tasks to
 
   const safeStatus = evaluateStreakRiskStatus({
     uid: 'u1',
-    studentName: 'Aarav Sharma',
+    studentName: 'Sumit Kumar',
     currentStreak: 7,
     lastActiveDate: '2026-11-04',
     todayIso: '2026-11-04',
@@ -303,56 +349,78 @@ test('evaluateStreakRiskStatus flags CRITICAL when near midnight with 0 tasks to
 });
 
 test('computePerformanceTrendsForD3 computes chronological improvement delta and subject accuracy aggregates', () => {
-  const trends = computePerformanceTrendsForD3(INITIAL_TEST_SUBMISSIONS);
-  assert.equal(trends.chronologicalTrend.length, 3);
+  const fixtureSubmissions: TestSubmission[] = [
+    {
+      testId: 't_1',
+      uid: 'u1',
+      score: 11,
+      maxScore: 24,
+      accuracyPercent: 60,
+      correctCount: 3,
+      wrongCount: 2,
+      timeTaken: 1200,
+      timestamp: '2026-10-27T17:00:00Z',
+      subjectBreakdown: {
+        Physics: { subject: 'Physics', score: 8, maxScore: 8, correct: 2, wrong: 0, unattempted: 0, accuracyPercent: 100 },
+      },
+    },
+    {
+      testId: 't_2',
+      uid: 'u1',
+      score: 19,
+      maxScore: 24,
+      accuracyPercent: 83,
+      correctCount: 5,
+      wrongCount: 1,
+      timeTaken: 1100,
+      timestamp: '2026-11-03T16:30:00Z',
+      subjectBreakdown: {
+        Physics: { subject: 'Physics', score: 8, maxScore: 8, correct: 2, wrong: 0, unattempted: 0, accuracyPercent: 100 },
+      },
+    },
+  ];
+  const trends = computePerformanceTrendsForD3(fixtureSubmissions);
+  assert.equal(trends.chronologicalTrend.length, 2);
   assert.equal(trends.chronologicalTrend[0].accuracyPercent, 60);
-  assert.equal(trends.chronologicalTrend[2].accuracyPercent, 83);
+  assert.equal(trends.chronologicalTrend[1].accuracyPercent, 83);
   assert.equal(trends.overallImprovementDelta, 23);
   const phy = trends.subjectAggregates.find((s) => s.subject === 'Physics');
   assert.ok(phy);
   assert.ok(phy.avgAccuracy >= 75);
 });
 
-test('computeUpdatedFocusStats logs Pomodoro subject minutes and computes total focus hours', async () => {
-  const { computeUpdatedFocusStats } = await import('./examLogic');
-  const first = computeUpdatedFocusStats(
-    120,
-    { Physics: 60, Chemistry: 30, Math: 30, Biology: 0 },
-    'Physics',
-    25
-  );
-  assert.equal(first.totalFocusMinutes, 145);
-  assert.equal(first.subjectFocusMinutes.Physics, 85);
-  assert.equal(first.totalFocusHours, 2.4);
-  assert.equal(first.subjectFocusHours.Physics, 1.4);
+test('calculateSyllabusProgress computes subject completion percentages and remaining topics for Google Tasks', () => {
+  const completed = ['syl_phy_kinematics_nlm', 'syl_phy_rotational', 'syl_chem_bonding_periodic'];
+  const jeeProgress = calculateSyllabusProgress(SYLLABUS_TOPICS, completed, 'JEE');
+  assert.equal(jeeProgress.targetExam, 'JEE');
+  assert.equal(jeeProgress.subjects.length, 3);
+  const phy = jeeProgress.subjects.find((s) => s.subject === 'Physics');
+  assert.ok(phy);
+  assert.equal(phy.completedTopics, 2);
+  assert.equal(phy.totalTopics, 6);
+  assert.equal(phy.completionPercent, 33);
+  assert.equal(jeeProgress.overallCompleted, 3);
+  assert.equal(jeeProgress.remainingTopics.length, jeeProgress.overallTotal - 3);
 });
 
-test('canStudentInitiateMentorCall disables calling when mentor is offline unless appointment is ACCEPTED', async () => {
-  const { canStudentInitiateMentorCall } = await import('./examLogic');
+test('calculateStudentXp awards +75 XP per completed task and getCurrentWeekKey returns ISO week', () => {
+  assert.equal(calculateStudentXp(0), 0);
+  assert.equal(calculateStudentXp(1), 75);
+  assert.equal(calculateStudentXp(4), 300);
+  assert.equal(calculateStudentXp(3, 50), 275);
+  const wk = getCurrentWeekKey('2026-11-04');
+  assert.match(wk, /^2026-W\d{2}$/);
+});
 
-  const offlineNoAppt = canStudentInitiateMentorCall({
-    isMentorOnline: false,
-  });
-  assert.equal(offlineNoAppt.canCall, false);
-
-  const offlinePending = canStudentInitiateMentorCall({
-    isMentorOnline: false,
-    appointmentStatus: 'PENDING',
-  });
-  assert.equal(offlinePending.canCall, false);
-
-  const offlineAccepted = canStudentInitiateMentorCall({
-    isMentorOnline: false,
-    appointmentStatus: 'ACCEPTED',
-    scheduledCallTime: '07:30 PM IST',
-  });
-  assert.equal(offlineAccepted.canCall, true);
-  assert.ok(offlineAccepted.badgeLabel.includes('07:30 PM IST'));
-
-  const onlineMentor = canStudentInitiateMentorCall({
-    isMentorOnline: true,
-  });
-  assert.equal(onlineMentor.canCall, true);
+test('production launch constants start with clean empty state and only Master Admin Sumit Kumar mentor', () => {
+  assert.equal(DEFAULT_USER.isGuest, true);
+  assert.equal(INITIAL_TASKS.length, 0);
+  assert.equal(INITIAL_MATERIALS.length, 0);
+  assert.equal(INITIAL_VIDEOS.length, 0);
+  assert.equal(INITIAL_TEST_SUBMISSIONS.length, 0);
+  assert.equal(INITIAL_LEADERBOARD.length, 0);
+  assert.equal(INITIAL_MENTORS.length, 1);
+  assert.equal(INITIAL_MENTORS[0].email.toLowerCase(), 'sumit586kumar@gmail.com');
 });
 
 

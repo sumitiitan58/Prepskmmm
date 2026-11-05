@@ -57,8 +57,28 @@ export interface AspirantUser {
   dailyGoalTasks?: number;
   totalFocusMinutes?: number;
   subjectFocusMinutes?: Record<SubjectName, number>;
+  xpPoints?: number;
+  completedSyllabusTopics?: string[];
   lastActiveDate: string;
   createdAt: string;
+}
+
+export interface SyllabusTopicItem {
+  id: string;
+  subject: SubjectName;
+  chapterName: string;
+  weightageLabel: string;
+  estimatedHours: number;
+  examTypes: TargetExam[];
+}
+
+export interface SubjectSyllabusSummary {
+  subject: SubjectName;
+  totalTopics: number;
+  completedTopics: number;
+  completionPercent: number;
+  remainingTopics: SyllabusTopicItem[];
+  allTopics: Array<SyllabusTopicItem & { completed: boolean }>;
 }
 
 export interface FocusSessionRecord {
@@ -231,6 +251,8 @@ export interface LeaderboardEntry {
   bestMockScore: number;
   currentStreak: number;
   compositePoints: number;
+  xpPoints?: number;
+  weekKey?: string;
 }
 
 export interface StudyTask {

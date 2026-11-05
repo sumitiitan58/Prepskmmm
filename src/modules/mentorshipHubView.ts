@@ -1,4 +1,8 @@
-import { LECTURE_COVER_PATH, MENTOR_AVATAR_PATH } from '../constants';
+import {
+  DEFAULT_PW_LECTURE_FALLBACK,
+  LECTURE_COVER_PATH,
+  MENTOR_AVATAR_PATH,
+} from '../constants';
 import { dataStore } from '../services/firebaseService';
 import type {
   MentorProfileItem,
@@ -16,11 +20,88 @@ export interface MentorshipHubCallbacks {
 
 const SPEED_OPTIONS = [0.75, 1.0, 1.25, 1.5, 2.0];
 
+/**
+ * PW (Physics Wallah) Style Structured Subject Batch & Chapter Lecture Catalog
+ * Organized by Subject Batch -> Chapter -> Lecture / Class Notes / DPP
+ */
+const PW_BATCH_LECTURES: VideoRoadmapItem[] = [
+  DEFAULT_PW_LECTURE_FALLBACK,
+  {
+    id: 'pw_phy_electro_01',
+    title: 'Ch-02: Electrostatics & Gauss Law — L1: Electric Flux & Cavity Problems',
+    description:
+      'Complete PW-style classroom derivation of Gauss Law, Conductors with Cavity, Earthing of Concentric Shells, and 15 solved JEE/NEET PYQs.',
+    duration: '48:15',
+    topicTag: 'Physics · Ch-02 Electrostatics · Lecture + Notes + DPP-01',
+    section: 'Physics Batch',
+    thumbnailUrl: LECTURE_COVER_PATH,
+    videoUrl: '',
+    isNewRoadmap: false,
+    createdAt: '2026-11-04T00:00:00.000Z',
+    mentorId: 'mentor_sumit_master',
+    mentorName: 'Sumit Kumar',
+    mentorRole: 'Founder & Lead Physics Educator',
+    mentorAvatar: MENTOR_AVATAR_PATH,
+  },
+  {
+    id: 'pw_chem_goc_01',
+    title: 'Ch-01: General Organic Chemistry (GOC) — L1: Resonance, Mesomeric & Hyperconjugation',
+    description:
+      'Structured PW classroom session on Carbocation stability order, SIR effect, Acidity/Basicity comparison, and Kota Class Notes.',
+    duration: '52:40',
+    topicTag: 'Chemistry · Ch-01 Organic GOC · Lecture + Notes + DPP-01',
+    section: 'Chemistry Batch',
+    thumbnailUrl: LECTURE_COVER_PATH,
+    videoUrl: '',
+    isNewRoadmap: false,
+    createdAt: '2026-11-04T00:00:00.000Z',
+    mentorId: 'mentor_sumit_master',
+    mentorName: 'Sumit Kumar',
+    mentorRole: 'Founder & Senior Educator',
+    mentorAvatar: MENTOR_AVATAR_PATH,
+  },
+  {
+    id: 'pw_math_calc_01',
+    title: 'Ch-01: Definite Integration & Area — L1: King Property, Leibniz Rule & Limit of Sum',
+    description:
+      'PW-style JEE classroom lecture covering King & Queen properties, Walli formula, Gamma function shortcuts, and DPP solutions.',
+    duration: '55:10',
+    topicTag: 'Mathematics · Ch-01 Calculus · Lecture + Notes + DPP-01',
+    section: 'Mathematics Batch',
+    thumbnailUrl: LECTURE_COVER_PATH,
+    videoUrl: '',
+    isNewRoadmap: false,
+    createdAt: '2026-11-04T00:00:00.000Z',
+    mentorId: 'mentor_sumit_master',
+    mentorName: 'Sumit Kumar',
+    mentorRole: 'Founder & Senior Educator',
+    mentorAvatar: MENTOR_AVATAR_PATH,
+  },
+  {
+    id: 'pw_bio_genetics_01',
+    title: 'Ch-01: Molecular Basis of Inheritance — L1: DNA Replication, Lac Operon & NCERT Line-by-Line',
+    description:
+      'NEET classroom batch session covering Meselson-Stahl experiment, Transcription, Genetic Code, and NCERT booster DPP.',
+    duration: '46:30',
+    topicTag: 'Biology · Ch-01 Genetics · Lecture + Notes + DPP-01',
+    section: 'Biology Batch',
+    thumbnailUrl: LECTURE_COVER_PATH,
+    videoUrl: '',
+    isNewRoadmap: false,
+    createdAt: '2026-11-04T00:00:00.000Z',
+    mentorId: 'mentor_sumit_master',
+    mentorName: 'Sumit Kumar',
+    mentorRole: 'Founder & Senior Educator',
+    mentorAvatar: MENTOR_AVATAR_PATH,
+  },
+];
+
 export class MentorshipHubModule {
   private containerEl: HTMLElement | null = null;
   private callbacks: MentorshipHubCallbacks;
   private activeVideo: VideoRoadmapItem;
   private selectedVideoSection = 'ALL';
+  private activePwResourceTab: 'LECTURES' | 'NOTES' | 'DPP' = 'LECTURES';
   private isPlaying = false;
   private currentTimeSec = 420;
   private totalDurationSec = 2060;
@@ -50,17 +131,30 @@ export class MentorshipHubModule {
 
   constructor(callbacks: MentorshipHubCallbacks) {
     this.callbacks = callbacks;
-    this.activeVideo = dataStore.getVideos()[0];
+    const allVids = this.getCombinedLecturesCatalog();
+    this.activeVideo = allVids[0] ?? DEFAULT_PW_LECTURE_FALLBACK;
     if (this.activeVideo?.mentorId) {
       this.activeMentorId = this.activeVideo.mentorId;
     }
   }
 
+  private getCombinedLecturesCatalog(): VideoRoadmapItem[] {
+    const customVids = dataStore.getVideos();
+    const seen = new Set(customVids.map((v) => v.id));
+    const merged = [...customVids];
+    for (const pwVid of PW_BATCH_LECTURES) {
+      if (!seen.has(pwVid.id)) {
+        merged.push(pwVid);
+      }
+    }
+    return merged;
+  }
+
   public mount(container: HTMLElement): void {
     this.containerEl = container;
-    const videos = dataStore.getVideos();
-    if (!videos.some((v) => v.id === this.activeVideo.id)) {
-      this.activeVideo = videos[0];
+    const videos = this.getCombinedLecturesCatalog();
+    if (!this.activeVideo || !videos.some((v) => v.id === this.activeVideo.id)) {
+      this.activeVideo = videos[0] ?? DEFAULT_PW_LECTURE_FALLBACK;
     }
     this.rerender();
     this.drawPrivacyStreamFrame();
@@ -92,16 +186,19 @@ export class MentorshipHubModule {
   public rerender(): void {
     if (!this.containerEl) return;
     const user = dataStore.getUser();
-    const allVideos = dataStore.getVideos();
+    const allVideos = this.getCombinedLecturesCatalog();
     const mentors = dataStore.getMentors();
     const activeMentor =
       mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
 
-    const videoSections = ['ALL', ...dataStore.getVideoSections()];
+    const uniqueSections = Array.from(
+      new Set(allVideos.map((v) => v.section || 'Physics Batch'))
+    );
+    const videoSections = ['ALL', ...uniqueSections];
 
     const filteredVideos = allVideos.filter((v) => {
       if (this.selectedVideoSection === 'ALL') return true;
-      return (v.section || 'Strategy Roadmaps') === this.selectedVideoSection;
+      return (v.section || 'Physics Batch') === this.selectedVideoSection;
     });
 
     const sessions = dataStore.getMentorshipSessions();
@@ -253,23 +350,29 @@ export class MentorshipHubModule {
               `
                   : ''
               }
-              <button
-                type="button"
-                data-action="toggle-mentor-online-status"
-                data-mentor-id="${activeMentor.id}"
-                data-testid="toggle-mentor-active-btn"
-                title="Admin/Mentor Presence Control: Toggle Active/Offline Status in Firebase"
-                class="min-h-[42px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-mono-tabular font-bold text-indigo-200"
-              >
-                ⚡ Admin: Set ${isMentorOnline ? 'Offline' : 'Active'}
-              </button>
+              ${
+                isAdminOrMentor
+                  ? `
+                <button
+                  type="button"
+                  data-action="toggle-mentor-online-status"
+                  data-mentor-id="${activeMentor.id}"
+                  data-testid="toggle-mentor-active-btn"
+                  title="Admin Presence Control: Toggle Online/Offline Status"
+                  class="min-h-[42px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-mono-tabular font-bold text-indigo-200"
+                >
+                  ⚡ Admin: Set ${isMentorOnline ? 'Offline' : 'Active'}
+                </button>
+              `
+                  : ''
+              }
             </div>
           </div>
 
-          <!-- Multi-Mentor Switcher Pills inside Top Bar -->
+          <!-- Mentor Switcher Pills inside Top Bar -->
           <div class="pt-3 border-t border-white/10 flex items-center gap-2 overflow-x-auto no-scrollbar" data-testid="top-mentor-switcher">
             <span class="text-[11px] font-bold text-indigo-200 uppercase tracking-wider shrink-0">
-              Available Mentors (${mentors.length}):
+              Lead Mentor:
             </span>
             ${mentors
               .map((m) => {
@@ -300,7 +403,7 @@ export class MentorshipHubModule {
           </div>
         </section>
 
-        <!-- ADMIN SCHEDULED MULTI-STUDENT GROUP CALL BANNER (Multiple Students Join Together at Admin's Set Time) -->
+        <!-- ADMIN SCHEDULED MULTI-STUDENT GROUP CALL BANNER -->
         ${
           groupSchedule
             ? `
@@ -312,7 +415,7 @@ export class MentorshipHubModule {
             <div class="space-y-1">
               <div class="flex flex-wrap items-center gap-2">
                 <span class="px-2.5 py-0.5 rounded-full bg-emerald-400/20 border border-emerald-400/40 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider">
-                  👥 Multi-Student Live Group Session · Firestore Synced
+                  👥 Multi-Student Live Group Session
                 </span>
                 <span class="px-2.5 py-0.5 rounded-full bg-amber-400 text-slate-950 font-mono-tabular text-[11px] font-extrabold" data-testid="group-call-scheduled-time">
                   ⏰ Scheduled Time: ${this.escapeHtml(groupSchedule.scheduledTime)}
@@ -325,8 +428,7 @@ export class MentorshipHubModule {
                 ${this.escapeHtml(groupSchedule.title)}
               </h2>
               <p class="text-xs text-emerald-100">
-                Multiple students can join this room simultaneously at the scheduled time. Currently joined (${(groupSchedule.participantNames || []).length}):
-                <strong>${(groupSchedule.participantNames || []).map((n) => this.escapeHtml(n)).join(', ')}</strong>
+                Multiple students can join this live session together at the scheduled time.
               </p>
             </div>
 
@@ -337,7 +439,7 @@ export class MentorshipHubModule {
                 data-testid="join-group-call-btn"
                 class="min-h-[42px] px-4 py-2 rounded-xl bg-[#10B981] hover:bg-emerald-500 text-slate-950 text-xs font-extrabold shadow-sm transition-colors"
               >
-                👥 Join Multi-Student Group Call (${(groupSchedule.participantNames || []).length} Joined) →
+                👥 Join Live Group Session →
               </button>
               ${
                 isAdminOrMentor
@@ -368,43 +470,48 @@ export class MentorshipHubModule {
             : ''
         }
 
-        <!-- VIDEO LECTURES SECTION DIRECTORY FOLDERS + THUMBNAIL CARDS (Clicking Any Video Opens Full-Screen Horizontal Player!) -->
+        <!-- PW (PHYSICS WALLAH) STYLE STRUCTURED CLASSROOM BATCHES: SUBJECT -> CHAPTER -> LECTURES / NOTES / DPP -->
         <section
-          aria-label="Video Lecture Sections Directory"
+          aria-label="PW Style Classroom Batch Lectures"
           data-testid="video-sections-directory"
-          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm space-y-4"
+          class="bg-white border border-[#E2E8F0] rounded-3xl p-4 sm:p-6 shadow-sm space-y-4"
         >
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                Structured Video Vault · Section Folders with Thumbnails
-              </span>
-              <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
-                1. Select a Video Section Folder (${videoSections.length - 1} Sections)
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-full bg-indigo-50 text-[#4F46E5] border border-indigo-200 text-[11px] font-extrabold uppercase tracking-wider">
+                  🎓 PW-Style Structured Batch Classroom
+                </span>
+                <span class="px-2.5 py-0.5 rounded-full bg-emerald-50 text-[#10B981] border border-emerald-200 text-[11px] font-extrabold">
+                  Subject Wise · Chapter Wise · HD Lectures + Notes + DPPs
+                </span>
+              </div>
+              <h2 class="text-base sm:text-xl font-extrabold text-slate-900 mt-1">
+                ${this.escapeHtml(user.targetExam)} (${this.escapeHtml(user.classYear)}) — Subject & Chapter Classroom
               </h2>
               <p class="text-xs text-slate-500">
-                Choose a section below to view all lectures in that section with thumbnails. Clicking any video opens it directly in <strong>Full-Screen Horizontal Mode</strong> (with a crop/vertical icon inside the player to view suggested videos below).
+                Select your Subject Batch below to access chapter-wise Lectures, Class Notes, and DPPs. Click any lecture to launch full-screen HD playback.
               </p>
             </div>
             <a
               href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}&mode=horizontal"
               data-testid="open-dedicated-player-link"
-              class="min-h-[38px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold inline-flex items-center gap-1.5 self-start sm:self-auto transition-colors"
+              class="min-h-[40px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold inline-flex items-center gap-1.5 self-start sm:self-auto transition-colors shadow-xs"
             >
-              <span>⛶ Open Full-Screen Horizontal Player</span>
+              <span>⛶ Open Full-Screen Lecture Player</span>
               <span>→</span>
             </a>
           </div>
 
-          <!-- Section Folder Cards -->
-          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+          <!-- PW-Style Subject Batch Selector Tabs -->
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2.5">
             ${videoSections
               .map((sec) => {
                 const count =
                   sec === 'ALL'
                     ? allVideos.length
                     : allVideos.filter(
-                        (v) => (v.section || 'Strategy Roadmaps') === sec
+                        (v) => (v.section || 'Physics Batch') === sec
                       ).length;
                 const active = this.selectedVideoSection === sec;
                 return `
@@ -412,20 +519,20 @@ export class MentorshipHubModule {
                     type="button"
                     data-action="filter-video-section"
                     data-section="${this.escapeHtml(sec)}"
-                    class="p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                    class="p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 cursor-pointer ${
                       active
                         ? 'bg-indigo-50/90 border-[#4F46E5] ring-2 ring-[#4F46E5]/15'
                         : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white'
                     }"
                   >
                     <div class="flex items-center justify-between gap-1">
-                      <span class="text-sm">${sec === 'ALL' ? '🎬' : '📁'}</span>
+                      <span class="text-sm">${sec === 'ALL' ? '🎓' : sec.includes('Physics') ? '⚛️' : sec.includes('Chemistry') ? '🧪' : sec.includes('Math') ? '📐' : '🧬'}</span>
                       <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono-tabular text-[10px] font-extrabold text-[#4F46E5]">
-                        ${count} Vids
+                        ${count} Lectures
                       </span>
                     </div>
                     <div class="text-xs font-extrabold text-slate-900 truncate">
-                      ${sec === 'ALL' ? 'All Video Sections' : this.escapeHtml(sec)}
+                      ${sec === 'ALL' ? 'All Subject Batches' : this.escapeHtml(sec)}
                     </div>
                   </button>
                 `;
@@ -433,14 +540,37 @@ export class MentorshipHubModule {
               .join('')}
           </div>
 
-          <!-- Videos in Selected Section with Thumbnails (Direct Full-Screen Horizontal Launch) -->
+          <!-- PW-Style Resource Sub-Tabs: Lectures | Class Notes | DPPs -->
           <div class="pt-3 border-t border-slate-100 space-y-3" data-testid="section-video-thumbnail-grid">
             <div class="flex flex-wrap items-center justify-between gap-2">
-              <h3 class="text-sm sm:text-base font-extrabold text-slate-900">
-                2. ${this.selectedVideoSection === 'ALL' ? 'All Section Videos' : `Videos in "${this.escapeHtml(this.selectedVideoSection)}"`} (${filteredVideos.length} Videos with Thumbnails)
-              </h3>
+              <div class="flex items-center gap-1.5 bg-[#F8FAFC] p-1 rounded-xl border border-[#E2E8F0]">
+                <button
+                  type="button"
+                  data-action="switch-pw-resource-tab"
+                  data-pw-tab="LECTURES"
+                  class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition-colors cursor-pointer ${
+                    this.activePwResourceTab === 'LECTURES'
+                      ? 'bg-[#4F46E5] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }"
+                >
+                  ▶️ Lectures (${filteredVideos.length})
+                </button>
+                <a
+                  href="/study.html?section=Hand-written%20Notes"
+                  class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold text-slate-600 hover:bg-white hover:text-[#4F46E5] transition-colors"
+                >
+                  📒 Class Notes PDF
+                </a>
+                <a
+                  href="/study.html?section=DPPs"
+                  class="px-3.5 py-1.5 rounded-lg text-xs font-extrabold text-slate-600 hover:bg-white hover:text-[#10B981] transition-colors"
+                >
+                  📝 Chapter DPPs
+                </a>
+              </div>
               <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-[#4F46E5] text-[11px] font-extrabold">
-                📲 Click any video thumbnail → Opens Full-Screen Horizontal Player
+                📲 Click any lecture card → Plays Full-Screen or Inline
               </span>
             </div>
 
@@ -1723,7 +1853,9 @@ export class MentorshipHubModule {
           }
           case 'select-video-inline': {
             const vidId = el.dataset.videoId;
-            const found = dataStore.getVideos().find((v) => v.id === vidId);
+            const found = this.getCombinedLecturesCatalog().find(
+              (v) => v.id === vidId
+            );
             if (found) {
               this.activeVideo = found;
               if (found.mentorId) {
@@ -1733,7 +1865,7 @@ export class MentorshipHubModule {
               this.isPlaying = true;
               this.lastTick = performance.now();
               this.startPlaybackLoop();
-              this.callbacks.onShowToast(`Previewing "${found.title}" inline`);
+              this.callbacks.onShowToast(`Playing "${found.title}" inline`);
               this.rerender();
               this.drawPrivacyStreamFrame();
             }

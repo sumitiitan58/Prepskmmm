@@ -1,4 +1,9 @@
-import { DEFAULT_BRAND_LOGO_SVG, getCohortTheme, MENTOR_AVATAR_PATH } from './constants';
+import {
+  DEFAULT_BRAND_LOGO_SVG,
+  getCohortTheme,
+  MENTOR_AVATAR_PATH,
+  XP_PER_COMPLETED_TASK,
+} from './constants';
 import { AdminCommandModule } from './modules/adminCommandView';
 import { CBTTestEngineModule } from './modules/cbtTestEngineView';
 import { HomePageModule } from './modules/homePageView';
@@ -11,6 +16,7 @@ import { TestHistoryModule } from './modules/testHistoryView';
 import {
   compressImageDataUrl,
   dataStore,
+  isMasterAdminEmail,
   MASTER_ADMIN_EMAIL,
 } from './services/firebaseService';
 import type { PageId, StudentClassYear, TargetExam } from './types';
@@ -21,17 +27,42 @@ const AVATAR_CHOICES = [
   'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=160&auto=format&fit=crop&q=80',
 ];
 
+interface PrepAiChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  timestamp: string;
+}
+
 class PrepskmPlatformApp {
   private rootEl: HTMLElement;
   private activePage: PageId;
   private isProfileModalOpen = false;
-  private isFacultyLoginExpanded = false;
+  private authModalReasonMessage = '';
   private isNotificationsOpen = false;
   private isMobile3DotMenuOpen = false;
   private isTabletRailExpanded = false;
-  private guestReminderTimer: number | null = null;
 
-  // Floating Admin Pencil Live Website Customizer State
+  // Floating Prep AI + Whiteboard Studio State
+  private isPrepAiModalOpen = false;
+  private prepAiActiveTab: 'ai' | 'whiteboard' = 'ai';
+  private prepAiMessages: PrepAiChatMessage[] = [
+    {
+      id: 'welcome_ai',
+      role: 'assistant',
+      text: 'Hi! I am Prep AI (powered by Gemini). Ask me any JEE Main, JEE Advanced, NEET, or Class 9–12 concept, formula shortcut, or study strategy—or switch to the Whiteboard tab to sketch diagrams and export your notes as a PDF!',
+      timestamp: 'Just now',
+    },
+  ];
+  private isPrepAiLoading = false;
+  private whiteboardNotesTitle = 'My Revision & Formula Notes';
+  private whiteboardNotesText = '';
+  private whiteboardPenColor = '#4F46E5';
+  private whiteboardPenSize = 3;
+  private whiteboardEraser = false;
+  private whiteboardDataUrl = '';
+
+  // Floating Admin Pencil Live Website Customizer State (Master Admin Only)
   private isPencilModalOpen = false;
   private isPencilPickMode = false;
   private selectedElementSelector = '.brand-title-target';
@@ -93,8 +124,20 @@ class PrepskmPlatformApp {
       onShowToast: (msg: string) => this.showToast(msg),
     });
 
+    window.addEventListener('prepskm:open-auth-modal', (ev: Event) => {
+      const customEv = ev as CustomEvent<{ reason?: string }>;
+      this.authModalReasonMessage =
+        customEv.detail?.reason ||
+        'Please Sign Up or Log In with your Gmail to unlock Mock Tests and save your progress!';
+      this.isProfileModalOpen = true;
+      this.renderShell();
+    });
+
+    window.addEventListener('prepskm:user-updated', () => {
+      this.renderShell();
+    });
+
     this.renderShell();
-    this.startGuestReminderInterval();
     this.setupGlobalPencilClickCatcher();
   }
 
@@ -117,19 +160,6 @@ class PrepskmPlatformApp {
     }
     if (bodyPage === 'admin' || path.includes('admin.html')) return 'admin';
     return 'home';
-  }
-
-  private startGuestReminderInterval(): void {
-    if (this.guestReminderTimer !== null) {
-      window.clearInterval(this.guestReminderTimer);
-    }
-    this.guestReminderTimer = window.setInterval(() => {
-      if (dataStore.getUser().isGuest) {
-        this.showToast(
-          'Guest Mode Reminder: Sign in via Profile to permanently save your study progress & CBT test scores.'
-        );
-      }
-    }, 300000);
   }
 
   private setupGlobalPencilClickCatcher(): void {
@@ -189,15 +219,13 @@ class PrepskmPlatformApp {
   public renderShell(): void {
     dataStore.applySiteThemeToDocument();
     const user = dataStore.getUser();
-    const focusStats = dataStore.getFocusStatsSummary();
     const cohortTheme = getCohortTheme(user.targetExam, user.classYear);
-    const isAdminOrMentor = dataStore.isAuthorizedAdminOrMentor();
     const isMasterAdmin = dataStore.isMasterAdmin();
     const siteTheme = dataStore.getSiteTheme();
-    const broadcasts = dataStore.getBroadcasts();
     const streakNotifications = dataStore.getStreakNotifications();
     const logoSrc = siteTheme.logoDataUrl || DEFAULT_BRAND_LOGO_SVG;
     const brandName = siteTheme.brandName || 'prepskm.in';
+    const xpPoints = user.xpPoints ?? 0;
 
     const path = window.location.pathname.toLowerCase();
     const isLegacyLive = path.includes('live.html');
@@ -212,7 +240,7 @@ class PrepskmPlatformApp {
     }[] = [
       {
         id: 'home',
-        label: 'Home & Dashboard',
+        label: 'Home & Syllabus',
         shortLabel: 'Home',
         href: '/index.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V10.5z"/></svg>`,
@@ -220,7 +248,7 @@ class PrepskmPlatformApp {
       },
       {
         id: 'planner',
-        label: 'To-Do & Backlog Killer',
+        label: 'To-Do & Planner',
         shortLabel: 'Planner',
         href: '/planner.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`,
@@ -236,7 +264,7 @@ class PrepskmPlatformApp {
       },
       {
         id: 'test',
-        label: 'CBT & Practice Engine',
+        label: 'CBT & Mock Engine',
         shortLabel: 'CBT Test',
         href: '/test.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
@@ -244,7 +272,7 @@ class PrepskmPlatformApp {
       },
       {
         id: 'test-history',
-        label: 'Test History & D3 Analytics',
+        label: 'Test Analytics',
         shortLabel: 'History',
         href: '/test-history.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>`,
@@ -252,8 +280,8 @@ class PrepskmPlatformApp {
       },
       {
         id: 'mentorship',
-        label: 'Lectures & 1:1 Mentorship',
-        shortLabel: 'Mentorship',
+        label: 'PW Batches & Mentorship',
+        shortLabel: 'Batches',
         href: '/mentorship.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>`,
         accentDot: 'bg-rose-500',
@@ -265,7 +293,7 @@ class PrepskmPlatformApp {
       navItems[1], // Planner
       navItems[2], // Study
       navItems[3], // CBT Test
-      navItems[5], // Mentorship
+      navItems[5], // PW Batches & Mentorship
     ];
 
     const cohortOptions = [
@@ -377,19 +405,23 @@ class PrepskmPlatformApp {
 
               <button
                 type="button"
-                data-shell-action="open-profile-modal"
-                class="w-full min-h-[42px] px-3.5 py-2 rounded-xl flex items-center gap-3 text-xs font-bold text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all"
+                data-shell-action="open-prep-ai-modal"
+                class="w-full min-h-[42px] px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-bold bg-gradient-to-r from-indigo-50 to-violet-50 text-[#4F46E5] hover:from-indigo-100 hover:to-violet-100 border border-indigo-200 transition-all cursor-pointer"
               >
-                <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z"/></svg>
-                <span>Profile & Photo</span>
+                <span class="flex items-center gap-3">
+                  <span>✨</span>
+                  <span>Prep AI & Whiteboard</span>
+                </span>
+                <span class="px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-[#4F46E5] text-white">AI+PDF</span>
               </button>
 
               ${
-                isAdminOrMentor
+                isMasterAdmin
                   ? `
                 <a
                   href="/admin.html"
                   data-shell-nav="admin"
+                  data-testid="sidebar-admin-studio-link"
                   class="min-h-[42px] px-3.5 py-2 rounded-xl flex items-center justify-between text-xs font-bold transition-all ${
                     this.activePage === 'admin'
                       ? 'bg-slate-900 text-white shadow-sm'
@@ -398,10 +430,10 @@ class PrepskmPlatformApp {
                 >
                   <span class="flex items-center gap-3">
                     <svg class="w-5 h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/></svg>
-                    <span>Admin & Mentor Studio</span>
+                    <span>Owner Admin Panel</span>
                   </span>
                   <span class="px-1.5 py-0.5 rounded text-[10px] bg-[#10B981] text-white">
-                    ${isMasterAdmin ? 'ADMIN' : 'MENTOR'}
+                    ADMIN
                   </span>
                 </a>
               `
@@ -415,24 +447,23 @@ class PrepskmPlatformApp {
             <div class="p-3 rounded-xl bg-gradient-to-br from-indigo-50/70 via-white to-emerald-50/60 border border-[#E2E8F0] space-y-1.5">
               <div class="flex items-center justify-between text-xs">
                 <span class="font-semibold text-slate-600">Active Streak</span>
-                <span class="font-mono-tabular font-bold text-[#10B981]">🔥 ${user.currentStreak} Days</span>
+                <span class="font-mono-tabular font-bold text-amber-600">🔥 ${user.currentStreak} Days</span>
               </div>
               <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-600">Focus Logged</span>
-                <span class="font-mono-tabular font-bold text-[#4F46E5]">⏱ ${focusStats.totalHours}h (${focusStats.totalMinutes}m)</span>
+                <span class="font-semibold text-slate-600">XP / HP Earned</span>
+                <span class="font-mono-tabular font-bold text-[#4F46E5]">⚡ ${xpPoints} XP</span>
               </div>
-              <div class="flex items-center justify-between text-xs">
-                <span class="font-semibold text-slate-600">Cohort Track</span>
-                <span class="font-bold text-slate-800 truncate max-w-[125px]">
-                  ${user.classYear}
-                </span>
+              <div class="flex items-center justify-between text-[11px]">
+                <span class="font-medium text-slate-500">Task Reward</span>
+                <span class="font-bold text-[#10B981]">+${XP_PER_COMPLETED_TASK} XP / task</span>
               </div>
             </div>
 
             <button
               type="button"
               data-shell-action="open-profile-modal"
-              class="w-full p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-[#E2E8F0] flex items-center gap-2.5 text-left transition-colors"
+              data-testid="sidebar-profile-btn"
+              class="w-full p-2.5 rounded-xl bg-white hover:bg-slate-50 border border-[#E2E8F0] flex items-center gap-2.5 text-left transition-colors cursor-pointer"
             >
               <img
                 src="${user.photoURL}"
@@ -441,8 +472,12 @@ class PrepskmPlatformApp {
                 class="w-9 h-9 rounded-full object-cover border border-[#E2E8F0] shrink-0"
               />
               <div class="min-w-0 flex-1">
-                <div class="text-xs font-bold text-slate-900 truncate">${this.escapeHtml(user.name)}</div>
-                <div class="text-[10px] font-mono-tabular text-slate-500 truncate">${this.escapeHtml(user.email)}</div>
+                <div class="text-xs font-bold text-slate-900 truncate">
+                  ${user.isGuest ? 'Sign Up / Log In' : this.escapeHtml(user.name)}
+                </div>
+                <div class="text-[10px] font-mono-tabular text-slate-500 truncate">
+                  ${user.isGuest ? 'Click to create profile' : this.escapeHtml(user.email)}
+                </div>
               </div>
             </button>
           </div>
@@ -507,7 +542,7 @@ class PrepskmPlatformApp {
 
         <!-- MAIN CONTENT WRAPPER -->
         <div class="flex-1 flex flex-col md:pl-20 lg:pl-64 pb-20 md:pb-8">
-          <!-- Top App Header Bar (Ultra-Clean on Mobile: Only Brand + Notification Bell + 3-Dot Menu) -->
+          <!-- Top App Header Bar with Streak & XP Badges -->
           <header class="sticky top-0 z-20 bg-white/95 backdrop-blur-md border-b border-[#E2E8F0] px-3 sm:px-6 lg:px-8 py-2">
             <div class="flex items-center justify-between gap-2 min-h-[44px]">
               <!-- Left: Mobile Logo + Desktop/Tablet Unified Cohort Selector -->
@@ -521,7 +556,6 @@ class PrepskmPlatformApp {
                   <span class="brand-title-target font-extrabold text-sm text-slate-900">${this.escapeHtml(brandName)}</span>
                 </a>
 
-                <!-- Desktop & Tablet Unified Class & Exam Cohort Selector (Hidden on Mobile Top Bar to keep mobile header ultra-clean) -->
                 <div class="hidden md:flex items-center gap-1.5 bg-gradient-to-r from-indigo-50/90 via-white to-emerald-50/90 border border-indigo-200 hover:border-[#4F46E5] rounded-xl px-2.5 py-1 shadow-2xs transition-colors">
                   <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">Cohort:</span>
                   <select
@@ -539,12 +573,42 @@ class PrepskmPlatformApp {
                 </div>
               </div>
 
-              <!-- Right: Notification Bell + (Mobile 3-Dot Menu OR Desktop Profile/Admin Controls) -->
+              <!-- Right: Top Streak + XP Badges + Notification Bell + Profile / Sign-Up CTA -->
               <div class="flex items-center gap-1.5 sm:gap-2 shrink-0 relative">
+                <!-- Streak & XP / HP Counter Pills in Header -->
+                <div
+                  data-testid="header-streak-xp-bar"
+                  class="flex items-center gap-1 sm:gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-gradient-to-r from-amber-50 via-white to-indigo-50 border border-amber-200/80 shadow-2xs"
+                >
+                  <span
+                    data-testid="header-streak-badge"
+                    class="text-[11px] font-mono-tabular font-extrabold text-amber-700 flex items-center gap-0.5"
+                    title="Active Daily Study Streak"
+                  >
+                    🔥 ${user.currentStreak}d
+                  </span>
+                  <span class="text-slate-300">|</span>
+                  <span
+                    data-testid="header-xp-badge"
+                    class="text-[11px] font-mono-tabular font-extrabold text-[#4F46E5] flex items-center gap-0.5"
+                    title="Total XP (+75 XP per completed To-Do task)"
+                  >
+                    ⚡ ${xpPoints} XP
+                  </span>
+                </div>
+
                 ${
                   isMasterAdmin
                     ? `
-                  <!-- Admin Quick Pencil Website Editor Trigger (ONLY visible when logged in as sumit586kumar@gmail.com) -->
+                  <a
+                    href="/admin.html"
+                    data-shell-nav="admin"
+                    data-testid="header-admin-studio-btn"
+                    class="hidden sm:inline-flex min-h-[34px] px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-extrabold items-center gap-1 cursor-pointer"
+                  >
+                    <span>🛡️</span>
+                    <span>Admin Panel</span>
+                  </a>
                   <button
                     type="button"
                     data-shell-action="open-pencil-modal"
@@ -559,61 +623,62 @@ class PrepskmPlatformApp {
                     : ''
                 }
 
-                <!-- Notifications & Streak Alert Bell (Visible on all viewports) -->
+                <!-- Notifications Bell -->
                 <div class="relative">
                   <button
                     type="button"
                     data-shell-action="toggle-notifications"
                     data-testid="header-notification-bell-btn"
-                    aria-label="Notifications and Mentor Broadcasts"
+                    aria-label="Notifications"
                     class="min-h-[36px] min-w-[36px] rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] flex items-center justify-center text-slate-700 relative cursor-pointer"
                   >
                     <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/></svg>
-                    <span class="w-2 h-2 rounded-full bg-[#EF4444] absolute top-1.5 right-1.5"></span>
+                    ${
+                      streakNotifications.length > 0
+                        ? `<span class="w-2 h-2 rounded-full bg-[#EF4444] absolute top-1.5 right-1.5"></span>`
+                        : ''
+                    }
                   </button>
 
                   ${
                     this.isNotificationsOpen
                       ? `
-                    <div class="absolute right-0 mt-2 w-80 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 space-y-2.5 z-50">
+                    <div class="absolute right-0 mt-2 w-72 bg-white border border-[#E2E8F0] rounded-2xl shadow-xl p-4 space-y-2.5 z-50">
                       <div class="flex items-center justify-between">
-                        <span class="text-xs font-bold text-slate-900">Firebase Streak Alerts & Broadcasts</span>
-                        <span class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-indigo-50 text-[#4F46E5] font-bold">${broadcasts.length + streakNotifications.length} Live</span>
+                        <span class="text-xs font-bold text-slate-900">Study Reminders & Alerts</span>
+                        <span class="text-[10px] font-mono-tabular px-2 py-0.5 rounded bg-indigo-50 text-[#4F46E5] font-bold">${streakNotifications.length}</span>
                       </div>
-                      ${streakNotifications
-                        .slice(0, 2)
-                        .map(
-                          (sn) => `
-                        <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-0.5">
-                          <div class="font-extrabold">🔥 ${this.escapeHtml(sn.title)}</div>
-                          <p class="text-[11px] leading-snug">${this.escapeHtml(sn.message)}</p>
-                        </div>
-                      `
-                        )
-                        .join('')}
-                      ${broadcasts
-                        .slice(0, 2)
-                        .map(
-                          (b) => `
-                        <div class="p-2.5 rounded-xl bg-gradient-to-r from-indigo-50/80 to-emerald-50/50 border border-indigo-100 text-xs text-slate-700 space-y-1">
-                          <div class="font-bold text-[#4F46E5]">${this.escapeHtml(b.title)}</div>
-                          <p class="text-[11px] text-slate-600 leading-snug">${this.escapeHtml(b.message)}</p>
-                        </div>
-                      `
-                        )
-                        .join('')}
+                      ${
+                        streakNotifications.length === 0
+                          ? `<p class="text-xs text-slate-500 py-2">No new alerts right now. Complete a To-Do task today to earn +${XP_PER_COMPLETED_TASK} XP!</p>`
+                          : streakNotifications
+                              .slice(0, 3)
+                              .map(
+                                (sn) => `
+                            <div class="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-xs text-amber-950 space-y-0.5">
+                              <div class="font-extrabold">🔥 ${this.escapeHtml(sn.title)}</div>
+                              <p class="text-[11px] leading-snug">${this.escapeHtml(sn.message)}</p>
+                            </div>
+                          `
+                              )
+                              .join('')
+                      }
                     </div>
                   `
                       : ''
                   }
                 </div>
 
-                <!-- Desktop/Tablet Profile & Custom Photo Trigger (Hidden on Mobile Top Header; placed inside Mobile 3-Dot Menu) -->
+                <!-- Desktop/Tablet Profile OR Sign-Up Button -->
                 <button
                   type="button"
                   data-shell-action="open-profile-modal"
                   data-testid="open-profile-modal-btn"
-                  class="hidden md:flex min-h-[36px] pl-1.5 pr-3 py-1 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold items-center gap-1.5 shadow-2xs cursor-pointer"
+                  class="hidden md:flex min-h-[36px] pl-1.5 pr-3 py-1 rounded-xl ${
+                    user.isGuest
+                      ? 'bg-gradient-to-r from-[#4F46E5] to-violet-600 text-white'
+                      : 'bg-[#4F46E5] hover:bg-indigo-700 text-white'
+                  } text-xs font-bold items-center gap-1.5 shadow-2xs cursor-pointer"
                 >
                   <img
                     src="${user.photoURL}"
@@ -621,10 +686,10 @@ class PrepskmPlatformApp {
                     referrerpolicy="no-referrer"
                     class="w-5 h-5 rounded-full object-cover border border-white/50"
                   />
-                  <span>${this.escapeHtml(user.name.split(' ')[0])}</span>
+                  <span>${user.isGuest ? 'Sign Up / Log In' : this.escapeHtml(user.name)}</span>
                 </button>
 
-                <!-- MOBILE 3-DOT MENU BUTTON (⋮) — Houses All Tools, Cohort Selector, Profile & Links on Mobile -->
+                <!-- MOBILE 3-DOT MENU BUTTON (⋮) -->
                 <div class="md:hidden relative">
                   <button
                     type="button"
@@ -643,7 +708,6 @@ class PrepskmPlatformApp {
                       data-testid="mobile-3dot-drawer"
                       class="absolute right-0 mt-2 w-72 bg-white border border-[#E2E8F0] rounded-2xl shadow-2xl p-4 space-y-3 z-50"
                     >
-                      <!-- User Summary & Profile Trigger -->
                       <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100">
                         <div class="flex items-center gap-2.5 min-w-0">
                           <img
@@ -653,9 +717,11 @@ class PrepskmPlatformApp {
                             class="w-9 h-9 rounded-full object-cover border border-[#E2E8F0] shrink-0"
                           />
                           <div class="min-w-0">
-                            <div class="text-xs font-extrabold text-slate-900 truncate">${this.escapeHtml(user.name)}</div>
+                            <div class="text-xs font-extrabold text-slate-900 truncate">
+                              ${user.isGuest ? 'Guest Student' : this.escapeHtml(user.name)}
+                            </div>
                             <div class="text-[10px] font-mono-tabular text-[#4F46E5] font-bold">
-                              🔥 ${user.currentStreak}d Streak · ⏱ ${focusStats.totalHours}h Focus
+                              🔥 ${user.currentStreak}d Streak · ⚡ ${xpPoints} XP
                             </div>
                           </div>
                         </div>
@@ -664,11 +730,10 @@ class PrepskmPlatformApp {
                           data-shell-action="open-profile-modal"
                           class="px-2.5 py-1.5 rounded-xl bg-[#4F46E5] text-white text-[11px] font-extrabold shrink-0 cursor-pointer"
                         >
-                          Profile
+                          ${user.isGuest ? 'Sign Up' : 'Profile'}
                         </button>
                       </div>
 
-                      <!-- Mobile Class & Exam Cohort Selector inside 3-Dot Menu -->
                       <div class="space-y-1">
                         <label class="block text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
                           Class / Foundation Cohort
@@ -687,72 +752,42 @@ class PrepskmPlatformApp {
                         </select>
                       </div>
 
-                      <!-- All Quick-Access Module Links inside 3-Dot Menu -->
                       <div class="space-y-1 pt-1">
+                        <button
+                          type="button"
+                          data-shell-action="open-prep-ai-modal"
+                          class="w-full px-3 py-2 rounded-xl bg-indigo-50 text-xs font-extrabold text-[#4F46E5] flex items-center justify-between cursor-pointer"
+                        >
+                          <span>✨ Prep AI & Whiteboard</span>
+                          <span>Open →</span>
+                        </button>
                         <a
                           href="/planner.html"
                           data-shell-nav="planner"
                           class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
                         >
-                          <span>⚡ To-Do & Backlog Killer</span>
+                          <span>⚡ To-Do & Study Planner</span>
                           <span class="text-[10px] text-[#4F46E5]">Open →</span>
-                        </a>
-                        <a
-                          href="/study.html"
-                          data-shell-nav="study"
-                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
-                        >
-                          <span>⏱ Pomodoro & Study Vault</span>
-                          <span class="text-[10px] text-[#10B981]">${focusStats.totalHours}h</span>
                         </a>
                         <a
                           href="/test-history.html"
                           data-shell-nav="test-history"
                           class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
                         >
-                          <span>📊 D3 Test History & Solutions</span>
+                          <span>📊 Test History & Solutions</span>
                           <span class="text-[10px] text-[#4F46E5]">Open →</span>
-                        </a>
-                        <a
-                          href="/mentorship.html"
-                          data-shell-nav="mentorship"
-                          class="w-full px-3 py-2 rounded-xl bg-slate-50 hover:bg-indigo-50 text-xs font-bold text-slate-800 flex items-center justify-between"
-                        >
-                          <span>📞 1:1 Mentorship & Videos</span>
-                          <span class="text-[10px] text-[#4F46E5]">Open →</span>
-                        </a>
-                        <a
-                          href="/player.html?videoId=vid_rotational_01&mode=horizontal"
-                          class="w-full px-3 py-2 rounded-xl bg-indigo-50 text-xs font-extrabold text-[#4F46E5] flex items-center justify-between"
-                        >
-                          <span>▶ Fullscreen Landscape Player</span>
-                          <span>16:9</span>
                         </a>
                         ${
-                          isAdminOrMentor
+                          isMasterAdmin
                             ? `
                           <a
                             href="/admin.html"
                             data-shell-nav="admin"
                             class="w-full px-3 py-2 rounded-xl bg-slate-900 text-white text-xs font-extrabold flex items-center justify-between"
                           >
-                            <span>🛡️ Admin & Mentor Studio</span>
+                            <span>🛡️ Owner Admin Panel</span>
                             <span>Open</span>
                           </a>
-                        `
-                            : ''
-                        }
-                        ${
-                          isMasterAdmin
-                            ? `
-                          <button
-                            type="button"
-                            data-shell-action="open-pencil-modal"
-                            class="w-full px-3 py-2 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-extrabold flex items-center justify-between cursor-pointer"
-                          >
-                            <span>✏️ Live Pencil UI Editor</span>
-                            <span>Admin</span>
-                          </button>
                         `
                             : ''
                         }
@@ -767,7 +802,7 @@ class PrepskmPlatformApp {
           </header>
 
           <!-- Page Viewport Container -->
-          <main id="page-viewport" class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-4 sm:py-5"></main>
+          <main id="page-viewport" class="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 py-3 sm:py-5"></main>
         </div>
 
         <!-- 3. MOBILE SLEEK LIGHTWEIGHT BOTTOM BAR (< 768px) -->
@@ -796,6 +831,18 @@ class PrepskmPlatformApp {
             .join('')}
         </nav>
 
+        <!-- FLOATING PREP AI & INTERACTIVE WHITEBOARD STUDIO BUTTON (Visible to All Students) -->
+        <button
+          type="button"
+          data-shell-action="open-prep-ai-modal"
+          data-testid="floating-prep-ai-btn"
+          title="Open Floating Prep AI (Gemini) & Interactive Whiteboard (Export Notes as PDF)"
+          class="fixed bottom-16 md:bottom-6 right-4 z-40 px-4 py-2.5 rounded-2xl bg-gradient-to-r from-[#4F46E5] via-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white shadow-xl border-2 border-white flex items-center gap-2 text-xs font-extrabold cursor-pointer transition-transform hover:scale-105"
+        >
+          <span class="text-base">✨</span>
+          <span>Prep AI & Whiteboard</span>
+        </button>
+
         ${
           isMasterAdmin
             ? `
@@ -813,8 +860,11 @@ class PrepskmPlatformApp {
             : ''
         }
 
-        <!-- Student Profile, Custom Photo Upload, Focus Hours & Class Cohort Modal -->
+        <!-- Student Sign-Up / Profile Modal -->
         ${this.renderProfileAndAuthModal()}
+
+        <!-- Floating Prep AI (Gemini) + Whiteboard PDF Studio Modal -->
+        ${this.renderPrepAiAndWhiteboardModal()}
 
         <!-- Floating Admin Pencil Live Customizer Modal (Master Admin Only) -->
         ${isMasterAdmin ? this.renderAdminPencilModal() : ''}
@@ -824,7 +874,7 @@ class PrepskmPlatformApp {
           id="global-toast"
           role="status"
           aria-live="polite"
-          class="fixed bottom-20 md:bottom-6 right-4 z-50 hidden px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl border border-slate-700"
+          class="fixed bottom-28 md:bottom-20 right-4 z-50 hidden px-4 py-3 rounded-xl bg-slate-900 text-white text-xs font-semibold shadow-xl border border-slate-700"
         ></div>
       </div>
     `;
@@ -852,9 +902,403 @@ class PrepskmPlatformApp {
       }
     }
 
-    // Re-apply saved Firebase element overrides after mounting active view
     dataStore.applySiteThemeToDocument();
     this.bindShellEvents();
+    if (this.isPrepAiModalOpen && this.prepAiActiveTab === 'whiteboard') {
+      this.initWhiteboardCanvas();
+    }
+  }
+
+  private renderPrepAiAndWhiteboardModal(): string {
+    if (!this.isPrepAiModalOpen) return '';
+    const user = dataStore.getUser();
+
+    return `
+      <div
+        id="prep-ai-whiteboard-modal"
+        data-testid="prep-ai-whiteboard-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Floating Prep AI and Whiteboard Studio"
+        class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4"
+      >
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-3xl w-full p-4 sm:p-6 shadow-2xl space-y-4 max-h-[92vh] flex flex-col overflow-hidden">
+          <!-- Header & 2-Tab Switcher -->
+          <div class="flex flex-wrap items-center justify-between gap-3 pb-3 border-b border-slate-100 shrink-0">
+            <div class="flex items-center gap-2.5">
+              <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#4F46E5] to-violet-600 text-white flex items-center justify-center font-extrabold text-base shadow-sm">
+                ✨
+              </div>
+              <div>
+                <h2 class="text-sm sm:text-base font-extrabold text-slate-900">
+                  Prep AI Doubt Solver & Smart Whiteboard
+                </h2>
+                <p class="text-[11px] text-slate-500">
+                  Ask Gemini AI any JEE/NEET concept or sketch notes & export directly to PDF
+                </p>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <div class="inline-flex p-1 rounded-xl bg-slate-100 border border-slate-200">
+                <button
+                  type="button"
+                  data-shell-action="switch-prep-ai-tab"
+                  data-tab="ai"
+                  data-testid="tab-prep-ai-btn"
+                  class="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                    this.prepAiActiveTab === 'ai'
+                      ? 'bg-[#4F46E5] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }"
+                >
+                  🤖 Prep AI
+                </button>
+                <button
+                  type="button"
+                  data-shell-action="switch-prep-ai-tab"
+                  data-tab="whiteboard"
+                  data-testid="tab-whiteboard-btn"
+                  class="px-3 py-1.5 rounded-lg text-xs font-extrabold transition-all cursor-pointer ${
+                    this.prepAiActiveTab === 'whiteboard'
+                      ? 'bg-[#4F46E5] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }"
+                >
+                  🎨 Whiteboard & PDF
+                </button>
+              </div>
+              <button
+                type="button"
+                data-shell-action="close-prep-ai-modal"
+                class="min-h-[34px] px-3 py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+          </div>
+
+          ${
+            this.prepAiActiveTab === 'ai'
+              ? `
+            <!-- TAB 1: PREP AI (GEMINI) -->
+            <div class="flex-1 flex flex-col min-h-0 space-y-3 overflow-hidden">
+              <!-- Quick Prompt Chips -->
+              <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar pb-1 shrink-0">
+                ${[
+                  'Explain Rotational Rolling Motion & IAOR shortcuts',
+                  'Important Organic Chemistry Named Reactions for JEE/NEET',
+                  'How to increase Mock Test score from 120 to 200+?',
+                  'Electrostatics Gauss Law & Capacitor formula summary',
+                ]
+                  .map(
+                    (chip) => `
+                  <button
+                    type="button"
+                    data-shell-action="prep-ai-quick-prompt"
+                    data-prompt="${this.escapeHtml(chip)}"
+                    class="px-2.5 py-1 rounded-full bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[#4F46E5] text-[11px] font-bold whitespace-nowrap cursor-pointer shrink-0"
+                  >
+                    ✦ ${this.escapeHtml(chip)}
+                  </button>
+                `
+                  )
+                  .join('')}
+              </div>
+
+              <!-- Chat History Scroll Box -->
+              <div
+                id="prep-ai-chat-scroll"
+                data-testid="prep-ai-chat-messages"
+                class="flex-1 overflow-y-auto p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 min-h-[260px] max-h-[360px]"
+              >
+                ${this.prepAiMessages
+                  .map(
+                    (msg) => `
+                  <div class="flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}">
+                    <div class="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs leading-relaxed ${
+                      msg.role === 'user'
+                        ? 'bg-[#4F46E5] text-white font-semibold'
+                        : 'bg-white border border-[#E2E8F0] text-slate-800 shadow-2xs whitespace-pre-line'
+                    }">
+                      <div class="flex items-center justify-between gap-3 mb-1 text-[10px] ${
+                        msg.role === 'user' ? 'text-indigo-100' : 'text-[#4F46E5] font-extrabold'
+                      }">
+                        <span>${msg.role === 'user' ? this.escapeHtml(user.name) : '✨ Prep AI · Gemini'}</span>
+                        <span>${this.escapeHtml(msg.timestamp)}</span>
+                      </div>
+                      <div>${this.escapeHtml(msg.text)}</div>
+                    </div>
+                  </div>
+                `
+                  )
+                  .join('')}
+                ${
+                  this.isPrepAiLoading
+                    ? `
+                  <div class="flex justify-start">
+                    <div class="rounded-2xl px-4 py-2.5 bg-white border border-indigo-200 text-xs font-bold text-[#4F46E5] animate-pulse">
+                      ✨ Prep AI is solving your doubt...
+                    </div>
+                  </div>
+                `
+                    : ''
+                }
+              </div>
+
+              <!-- Prompt Input Form -->
+              <form id="prep-ai-form" class="flex items-center gap-2 shrink-0">
+                <input
+                  id="prep-ai-input"
+                  data-testid="prep-ai-input"
+                  type="text"
+                  required
+                  placeholder="Ask any Physics, Chemistry, Math, or Biology doubt..."
+                  class="flex-1 min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm text-slate-900 focus:outline-none focus:border-[#4F46E5]"
+                />
+                <button
+                  type="submit"
+                  data-testid="prep-ai-send-btn"
+                  ${this.isPrepAiLoading ? 'disabled' : ''}
+                  class="min-h-[42px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm cursor-pointer shrink-0"
+                >
+                  ${this.isPrepAiLoading ? 'Thinking...' : 'Ask Prep AI →'}
+                </button>
+              </form>
+            </div>
+          `
+              : `
+            <!-- TAB 2: INTERACTIVE WHITEBOARD & EXPORT NOTES AS PDF -->
+            <div class="flex-1 flex flex-col min-h-0 space-y-3 overflow-y-auto">
+              <!-- Whiteboard Toolbar -->
+              <div class="flex flex-wrap items-center justify-between gap-2 p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0]">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-[11px] font-bold text-slate-600 mr-1">Pen:</span>
+                  ${[
+                    { color: '#4F46E5', label: 'Indigo' },
+                    { color: '#0F172A', label: 'Black' },
+                    { color: '#EF4444', label: 'Red' },
+                    { color: '#10B981', label: 'Green' },
+                    { color: '#F59E0B', label: 'Amber' },
+                  ]
+                    .map(
+                      (sw) => `
+                    <button
+                      type="button"
+                      data-shell-action="set-wb-color"
+                      data-color="${sw.color}"
+                      title="${sw.label}"
+                      class="w-6 h-6 rounded-full border-2 cursor-pointer ${
+                        !this.whiteboardEraser && this.whiteboardPenColor === sw.color
+                          ? 'border-slate-900 scale-110'
+                          : 'border-white shadow-2xs'
+                      }"
+                      style="background-color: ${sw.color}"
+                    ></button>
+                  `
+                    )
+                    .join('')}
+                  <button
+                    type="button"
+                    data-shell-action="toggle-wb-eraser"
+                    class="px-2.5 py-1 rounded-lg text-[11px] font-bold border cursor-pointer ${
+                      this.whiteboardEraser
+                        ? 'bg-slate-900 text-white border-slate-900'
+                        : 'bg-white text-slate-700 border-slate-200'
+                    }"
+                  >
+                    🧹 Eraser
+                  </button>
+                  <button
+                    type="button"
+                    data-shell-action="clear-wb-canvas"
+                    class="px-2.5 py-1 rounded-lg bg-white hover:bg-red-50 text-red-600 border border-red-200 text-[11px] font-bold cursor-pointer"
+                  >
+                    🗑️ Clear Board
+                  </button>
+                </div>
+
+                <button
+                  type="button"
+                  data-shell-action="export-whiteboard-pdf"
+                  data-testid="export-whiteboard-pdf-btn"
+                  class="px-3.5 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>⬇ Save & Download Notes as PDF</span>
+                </button>
+              </div>
+
+              <!-- Whiteboard Canvas + Text Notes Split -->
+              <div class="grid grid-cols-1 lg:grid-cols-12 gap-3">
+                <div class="lg:col-span-7 flex flex-col space-y-1.5">
+                  <div class="text-[11px] font-bold text-slate-600 flex items-center justify-between">
+                    <span>✏️ Freehand Diagram & Formula Whiteboard</span>
+                    <span class="text-[10px] text-slate-400">Draw with mouse or touch</span>
+                  </div>
+                  <div class="rounded-xl border-2 border-indigo-200 bg-white overflow-hidden shadow-inner">
+                    <canvas
+                      id="prep-whiteboard-canvas"
+                      data-testid="prep-whiteboard-canvas"
+                      width="520"
+                      height="260"
+                      class="w-full h-[230px] bg-white cursor-crosshair touch-none"
+                    ></canvas>
+                  </div>
+                </div>
+
+                <div class="lg:col-span-5 flex flex-col space-y-2">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Note Title</label>
+                    <input
+                      id="wb-notes-title"
+                      type="text"
+                      value="${this.escapeHtml(this.whiteboardNotesTitle)}"
+                      placeholder="e.g., Rotational Mechanics Formula Sheet"
+                      class="w-full min-h-[36px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-900"
+                    />
+                  </div>
+                  <div class="flex-1 flex flex-col">
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Written Notes & Key Formulas</label>
+                    <textarea
+                      id="wb-notes-textarea"
+                      data-testid="wb-notes-textarea"
+                      rows="7"
+                      placeholder="Write your lecture notes, derivations, or key points here. Click 'Save & Download Notes as PDF' to export both your whiteboard drawing and written notes!"
+                      class="w-full flex-1 p-3 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-slate-900 leading-relaxed focus:outline-none focus:border-[#4F46E5]"
+                    >${this.escapeHtml(this.whiteboardNotesText)}</textarea>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  private initWhiteboardCanvas(): void {
+    const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    if (this.whiteboardDataUrl) {
+      const img = new Image();
+      img.onload = () => {
+        ctx.drawImage(img, 0, 0);
+      };
+      img.src = this.whiteboardDataUrl;
+    }
+
+    let drawing = false;
+    const getPos = (e: MouseEvent | TouchEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const clientX = 'touches' in e ? e.touches[0]?.clientX ?? 0 : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0]?.clientY ?? 0 : e.clientY;
+      return {
+        x: ((clientX - rect.left) / rect.width) * canvas.width,
+        y: ((clientY - rect.top) / rect.height) * canvas.height,
+      };
+    };
+
+    const startDraw = (e: MouseEvent | TouchEvent) => {
+      drawing = true;
+      const pos = getPos(e);
+      ctx.beginPath();
+      ctx.moveTo(pos.x, pos.y);
+    };
+
+    const moveDraw = (e: MouseEvent | TouchEvent) => {
+      if (!drawing) return;
+      if ('touches' in e) e.preventDefault();
+      const pos = getPos(e);
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.strokeStyle = this.whiteboardEraser ? '#FFFFFF' : this.whiteboardPenColor;
+      ctx.lineWidth = this.whiteboardEraser ? 18 : this.whiteboardPenSize;
+      ctx.lineTo(pos.x, pos.y);
+      ctx.stroke();
+    };
+
+    const endDraw = () => {
+      if (!drawing) return;
+      drawing = false;
+      ctx.closePath();
+      this.whiteboardDataUrl = canvas.toDataURL('image/png');
+    };
+
+    canvas.addEventListener('mousedown', startDraw);
+    canvas.addEventListener('mousemove', moveDraw);
+    window.addEventListener('mouseup', endDraw);
+    canvas.addEventListener('touchstart', startDraw, { passive: false });
+    canvas.addEventListener('touchmove', moveDraw, { passive: false });
+    canvas.addEventListener('touchend', endDraw);
+  }
+
+  private exportWhiteboardAndNotesAsPdf(): void {
+    const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
+    if (canvas) {
+      this.whiteboardDataUrl = canvas.toDataURL('image/png');
+    }
+    const titleInput = this.rootEl.querySelector<HTMLInputElement>('#wb-notes-title');
+    const notesInput = this.rootEl.querySelector<HTMLTextAreaElement>('#wb-notes-textarea');
+    if (titleInput) this.whiteboardNotesTitle = titleInput.value.trim() || 'My Study Notes';
+    if (notesInput) this.whiteboardNotesText = notesInput.value;
+
+    const user = dataStore.getUser();
+    const safeTitle = this.whiteboardNotesTitle.replace(/[^a-zA-Z0-9_-]/g, '_');
+
+    // Generate a real minimalist PDF 1.4 binary containing the note title, student details, and written notes
+    const lines = [
+      `prepskm.in — Smart Whiteboard & Study Notes PDF`,
+      `Title: ${this.whiteboardNotesTitle}`,
+      `Student: ${user.name} (${user.classYear} - ${user.targetExam})`,
+      `Date: ${new Date().toLocaleDateString()}`,
+      `------------------------------------------------------------`,
+      ...(this.whiteboardNotesText || 'Whiteboard diagram & formula summary attached.')
+        .split('\n')
+        .map((l) => l.slice(0, 85)),
+    ];
+
+    const escapedLines = lines.map((line) =>
+      line.replace(/\\/g, '\\\\').replace(/\(/g, '\\(').replace(/\)/g, '\\)')
+    );
+    const textOps = escapedLines
+      .map((line, idx) => `1 0 0 1 45 ${760 - idx * 18} Tm (${line}) Tj`)
+      .join('\n');
+
+    const streamContent = `BT\n/F1 11 Tf\n${textOps}\nET`;
+    const pdfContent = [
+      '%PDF-1.4',
+      '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+      '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+      '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >> endobj',
+      `4 0 obj << /Length ${streamContent.length} >> stream\n${streamContent}\nendstream endobj`,
+      '5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj',
+      'xref',
+      '0 6',
+      '0000000000 65535 f ',
+      'trailer << /Size 6 /Root 1 0 R >>',
+      'startxref',
+      '0',
+      '%%EOF',
+    ].join('\n');
+
+    const blob = new Blob([pdfContent], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeTitle}.pdf`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 5000);
+
+    this.showToast(`Downloaded "${this.whiteboardNotesTitle}.pdf" to your device!`);
   }
 
   private renderAdminPencilModal(): string {
@@ -936,7 +1380,7 @@ class PrepskmPlatformApp {
                 id="pencil-custom-text"
                 type="text"
                 value="${this.escapeHtml(this.selectedElementText)}"
-                placeholder="Leave blank to keep current text, or type new label/title..."
+                placeholder="Leave blank to keep current text, or type new label/title"
                 class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-slate-900"
               />
             </div>
@@ -993,7 +1437,7 @@ class PrepskmPlatformApp {
                 data-testid="save-pencil-changes-btn"
                 class="min-h-[40px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm cursor-pointer"
               >
-                💾 Apply & Save to Firebase
+                💾 Apply & Save Changes
               </button>
             </div>
           </form>
@@ -1005,15 +1449,13 @@ class PrepskmPlatformApp {
   private renderProfileAndAuthModal(): string {
     if (!this.isProfileModalOpen) return '';
     const user = dataStore.getUser();
-    const focusStats = dataStore.getFocusStatsSummary();
     const cohortTheme = getCohortTheme(user.targetExam, user.classYear);
-    const mentors = dataStore.getMentors();
 
     return `
       <div
         role="dialog"
         aria-modal="true"
-        aria-label="Student Profile and Cohort Settings"
+        aria-label="Student Sign Up and Profile Settings"
         data-testid="student-profile-modal"
         class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
       >
@@ -1021,22 +1463,36 @@ class PrepskmPlatformApp {
           <div class="flex items-center justify-between pb-3 border-b border-slate-100">
             <div>
               <span class="text-xs font-bold uppercase tracking-wider text-[#4F46E5]">
-                Personal Aspirant Profile, Focus Stats & Custom Photo
+                ${user.isGuest ? 'Create Your Student Account' : 'Verified Student Profile'}
               </span>
-              <h2 class="text-lg font-bold text-slate-900">
-                Customize Profile Photo, Class (9–12 / Foundation / Dropper) & Exam
+              <h2 class="text-lg font-extrabold text-slate-900">
+                ${user.isGuest ? 'Sign Up / Log In to Save Your Progress' : `Welcome, ${this.escapeHtml(user.name)}`}
               </h2>
             </div>
             <button
               type="button"
               data-shell-action="close-profile-modal"
-              class="min-h-[36px] px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+              class="min-h-[36px] px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold cursor-pointer"
             >
               Close ✕
             </button>
           </div>
 
-          <!-- Account Status & Google Sign-In / Sign-Up Card -->
+          ${
+            this.authModalReasonMessage
+              ? `
+            <div
+              data-testid="auth-modal-reason-banner"
+              class="p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-950 flex items-start gap-2.5"
+            >
+              <span class="text-base">🔒</span>
+              <span>${this.escapeHtml(this.authModalReasonMessage)}</span>
+            </div>
+          `
+              : ''
+          }
+
+          <!-- Account Status & Google Sign-In Card -->
           <div class="p-4 rounded-2xl bg-gradient-to-r ${cohortTheme.gradientClass} text-white space-y-3 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-2">
               <div class="flex items-center gap-3">
@@ -1050,11 +1506,15 @@ class PrepskmPlatformApp {
                   <div class="flex items-center gap-1.5">
                     <span class="text-sm font-extrabold">${this.escapeHtml(user.name)}</span>
                     <span class="px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-extrabold">
-                      ${!user.isGuest ? '✓ Verified' : 'Guest'}
+                      ${!user.isGuest ? (dataStore.isMasterAdmin() ? '👑 Owner Admin' : '✓ Signed In') : 'Guest'}
                     </span>
                   </div>
-                  <div class="text-xs font-mono-tabular text-white/85">${this.escapeHtml(user.email)}</div>
-                  <div class="text-[11px] font-bold text-white/90 mt-0.5">${this.escapeHtml(cohortTheme.label)}</div>
+                  <div class="text-xs font-mono-tabular text-white/85">
+                    ${user.isGuest ? 'Sign up below with your Gmail' : this.escapeHtml(user.email)}
+                  </div>
+                  <div class="text-[11px] font-bold text-white/90 mt-0.5">
+                    🔥 ${user.currentStreak}d Streak · ⚡ ${user.xpPoints ?? 0} XP
+                  </div>
                 </div>
               </div>
 
@@ -1064,129 +1524,64 @@ class PrepskmPlatformApp {
                 <button
                   type="button"
                   data-shell-action="signout-user"
-                  class="min-h-[34px] px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold"
+                  class="min-h-[34px] px-3 py-1.5 rounded-xl bg-white/20 hover:bg-white/30 text-white text-xs font-bold cursor-pointer"
                 >
                   Sign Out
                 </button>
               `
-                  : `
-                <button
-                  type="button"
-                  data-shell-action="set-role-mode"
-                  data-mode="student"
-                  class="min-h-[34px] px-3 py-1.5 rounded-xl bg-white text-slate-900 text-xs font-bold"
-                >
-                  Login Student
-                </button>
-              `
+                  : ''
               }
             </div>
 
             <button
               type="button"
               data-shell-action="google-signin"
-              class="w-full min-h-[40px] px-4 py-2 rounded-xl bg-white text-slate-900 hover:bg-slate-50 shadow-2xs flex items-center justify-center gap-2.5 text-xs font-extrabold transition-all"
+              data-testid="google-signin-btn"
+              class="w-full min-h-[40px] px-4 py-2 rounded-xl bg-white text-slate-900 hover:bg-slate-50 shadow-2xs flex items-center justify-center gap-2.5 text-xs font-extrabold transition-all cursor-pointer"
             >
-              <span>${user.isGuest ? 'Sign Up / Log In with Google Account' : 'Verified Google Account Connected'}</span>
+              <span>${user.isGuest ? 'Continue with Google Account' : 'Switch / Reconnect Google Account'}</span>
             </button>
           </div>
 
-          <!-- Logged Pomodoro Focus Hours & Subject Statistics in Profile -->
-          <div
-            data-testid="profile-focus-hours-summary"
-            class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 space-y-2.5"
-          >
-            <div class="flex items-center justify-between">
-              <div>
-                <div class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                  ⏱ Pomodoro Study Focus Statistics · Synced to Firebase
-                </div>
-                <div class="text-xs text-slate-600">
-                  Logged from the Study Module Focus Timer
-                </div>
-              </div>
-              <div class="text-right">
-                <span class="text-base font-mono-tabular font-extrabold text-slate-900">
-                  ${focusStats.totalHours} hrs
-                </span>
-                <span class="block text-[10px] font-mono-tabular text-slate-500">
-                  (${focusStats.totalMinutes} mins total)
-                </span>
-              </div>
-            </div>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1">
-              ${(['Physics', 'Chemistry', 'Math', 'Biology'] as const)
-                .map((subj) => {
-                  const mins = focusStats.subjectMinutes[subj] ?? 0;
-                  const hrs = Math.round((mins / 60) * 10) / 10;
-                  return `
-                  <div class="p-2 rounded-xl bg-white border border-indigo-100 text-center">
-                    <div class="text-[10px] font-bold text-slate-500">${subj}</div>
-                    <div class="text-xs font-mono-tabular font-extrabold text-[#4F46E5]">${hrs}h (${mins}m)</div>
-                  </div>
-                `;
-                })
-                .join('')}
-            </div>
-          </div>
-
-          <!-- Profile Update Form -->
+          <!-- Sign-Up & Profile Update Form -->
           <form id="profile-update-form" class="space-y-4">
-            <!-- Custom Personal Photo Upload + Preset Avatars -->
-            <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5">
-              <div class="flex items-center justify-between">
-                <label for="prof-custom-photo-input" class="text-xs font-extrabold text-slate-800">
-                  📸 Upload Your Personal Profile Photo
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label for="prof-name-input" class="block text-xs font-bold text-slate-700 mb-1">
+                  Your Full Name (As on Gmail)
                 </label>
-                <span class="text-[10px] font-semibold text-[#10B981]">Saved to Firebase</span>
+                <input
+                  id="prof-name-input"
+                  data-testid="prof-name-input"
+                  type="text"
+                  required
+                  placeholder="e.g., Rahul Verma"
+                  value="${user.isGuest ? '' : this.escapeHtml(user.name)}"
+                  class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+                />
               </div>
-              <input
-                id="prof-custom-photo-input"
-                data-testid="upload-profile-photo-input"
-                type="file"
-                accept="image/*"
-                class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-[#4F46E5] file:text-white cursor-pointer"
-              />
-              <div class="flex items-center gap-2.5 pt-1">
-                <span class="text-[11px] text-slate-500 font-semibold">Or pick preset:</span>
-                ${AVATAR_CHOICES.map(
-                  (url) => `
-                  <button
-                    type="button"
-                    data-shell-action="select-avatar"
-                    data-avatar="${url}"
-                    class="w-9 h-9 rounded-full overflow-hidden border-2 transition-transform ${
-                      user.photoURL === url
-                        ? 'border-[#4F46E5] scale-110'
-                        : 'border-[#E2E8F0]'
-                    }"
-                  >
-                    <img src="${url}" alt="Avatar option" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
-                  </button>
-                `
-                ).join('')}
+
+              <div>
+                <label for="prof-email-input" class="block text-xs font-bold text-slate-700 mb-1">
+                  Gmail / Email Address
+                </label>
+                <input
+                  id="prof-email-input"
+                  data-testid="prof-email-input"
+                  type="email"
+                  required
+                  placeholder="yourname@gmail.com"
+                  value="${user.isGuest ? '' : this.escapeHtml(user.email)}"
+                  class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+                />
               </div>
             </div>
 
-            <!-- Display Name -->
-            <div>
-              <label for="prof-name-input" class="block text-xs font-bold text-slate-700 mb-1">
-                Student Full Name
-              </label>
-              <input
-                id="prof-name-input"
-                type="text"
-                required
-                value="${this.escapeHtml(user.name)}"
-                class="w-full min-h-[42px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
-              />
-            </div>
-
-            <!-- Class Cohort (Including Class 10 Foundation & Class 11 Foundation) & Exam -->
+            <!-- Class Cohort & Exam -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label for="prof-class-select" class="block text-xs font-bold text-slate-700 mb-1">
-                  Class / Foundation Cohort
+                  Class / Batch Cohort
                 </label>
                 <select
                   id="prof-class-select"
@@ -1225,68 +1620,106 @@ class PrepskmPlatformApp {
               </div>
             </div>
 
+            <!-- Custom Personal Photo Upload + Preset Avatars -->
+            <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5">
+              <div class="flex items-center justify-between">
+                <label for="prof-custom-photo-input" class="text-xs font-extrabold text-slate-800">
+                  📸 Profile Photo (Optional)
+                </label>
+              </div>
+              <input
+                id="prof-custom-photo-input"
+                data-testid="upload-profile-photo-input"
+                type="file"
+                accept="image/*"
+                class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-[#4F46E5] file:text-white cursor-pointer"
+              />
+              <div class="flex items-center gap-2.5 pt-1">
+                <span class="text-[11px] text-slate-500 font-semibold">Or pick avatar:</span>
+                ${AVATAR_CHOICES.map(
+                  (url) => `
+                  <button
+                    type="button"
+                    data-shell-action="select-avatar"
+                    data-avatar="${url}"
+                    class="w-9 h-9 rounded-full overflow-hidden border-2 transition-transform cursor-pointer ${
+                      user.photoURL === url
+                        ? 'border-[#4F46E5] scale-110'
+                        : 'border-[#E2E8F0]'
+                    }"
+                  >
+                    <img src="${url}" alt="Avatar option" referrerpolicy="no-referrer" class="w-full h-full object-cover" />
+                  </button>
+                `
+                ).join('')}
+              </div>
+            </div>
+
             <div class="pt-2 flex flex-wrap items-center justify-end gap-2">
               <button
                 type="submit"
-                class="w-full sm:w-auto min-h-[42px] px-6 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold shadow-sm cursor-pointer"
+                data-testid="save-signup-profile-btn"
+                class="w-full min-h-[44px] px-6 py-2.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer"
               >
-                Save Profile & Cohort Theme →
+                ${user.isGuest ? 'Complete Sign Up & Save Profile →' : 'Update Profile →'}
               </button>
             </div>
           </form>
-
-          <!-- Discreet Faculty / Mentor / Master Admin Access Gate -->
-          <div class="pt-3 border-t border-slate-100">
-            <button
-              type="button"
-              data-shell-action="toggle-faculty-login"
-              class="text-[11px] font-semibold text-slate-400 hover:text-slate-600 flex items-center gap-1"
-            >
-              <span>${this.isFacultyLoginExpanded ? '▾' : '▸'} Educator / Mentor / Admin Sign-In (${MASTER_ADMIN_EMAIL})</span>
-            </button>
-
-            ${
-              this.isFacultyLoginExpanded
-                ? `
-              <div class="mt-3 p-3.5 rounded-xl bg-slate-50 border border-[#E2E8F0] space-y-2.5">
-                <div class="text-[11px] font-bold text-slate-700">
-                  Authorized Faculty & Master Admin Portal Access
-                </div>
-                <div class="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    data-shell-action="set-role-mode"
-                    data-mode="admin"
-                    data-testid="login-master-admin-btn"
-                    class="min-h-[36px] px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-bold cursor-pointer"
-                  >
-                    Master Admin (${MASTER_ADMIN_EMAIL})
-                  </button>
-                  ${mentors
-                    .filter((m) => m.id !== 'mentor_sumit_master')
-                    .map(
-                      (m) => `
-                    <button
-                      type="button"
-                      data-shell-action="set-role-mode"
-                      data-mode="mentor"
-                      data-mentor-email="${this.escapeHtml(m.email)}"
-                      class="min-h-[36px] px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-bold cursor-pointer"
-                    >
-                      Mentor: ${this.escapeHtml(m.name)}
-                    </button>
-                  `
-                    )
-                    .join('')}
-                </div>
-              </div>
-            `
-                : ''
-            }
-          </div>
         </div>
       </div>
     `;
+  }
+
+  private async submitPrepAiPrompt(promptText: string): Promise<void> {
+    const clean = promptText.trim();
+    if (!clean || this.isPrepAiLoading) return;
+
+    const user = dataStore.getUser();
+    const nowTime = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    this.prepAiMessages.push({
+      id: `user_${Date.now()}`,
+      role: 'user',
+      text: clean,
+      timestamp: nowTime,
+    });
+    this.isPrepAiLoading = true;
+    this.renderShell();
+
+    try {
+      const res = await fetch('/api/gemini/prep-ai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          prompt: clean,
+          targetExam: user.targetExam,
+          classYear: user.classYear,
+        }),
+      });
+      const data = (await res.json()) as { answer?: string };
+      this.prepAiMessages.push({
+        id: `ai_${Date.now()}`,
+        role: 'assistant',
+        text:
+          data.answer ||
+          'Break this chapter into NCERT/core theory first, then solve 25 past-year questions with a strict timer.',
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    } catch {
+      this.prepAiMessages.push({
+        id: `ai_${Date.now()}`,
+        role: 'assistant',
+        text: `Here is your structured ${user.targetExam} solution strategy:\n1. Identify the conservation law or core formula first.\n2. Write dimensional units and boundary conditions.\n3. Solve 15 PYQs from this topic in the CBT Engine.`,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      });
+    } finally {
+      this.isPrepAiLoading = false;
+      this.renderShell();
+      const scrollBox = this.rootEl.querySelector<HTMLElement>('#prep-ai-chat-scroll');
+      if (scrollBox) {
+        scrollBox.scrollTop = scrollBox.scrollHeight;
+      }
+    }
   }
 
   private bindShellEvents(): void {
@@ -1298,6 +1731,26 @@ class PrepskmPlatformApp {
         window.history.pushState({}, '', link.getAttribute('href') || '/index.html');
         this.navigateToPage(targetPage);
       });
+    });
+
+    // Prep AI Chat Form
+    const prepAiForm = this.rootEl.querySelector<HTMLFormElement>('#prep-ai-form');
+    prepAiForm?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const input = prepAiForm.querySelector<HTMLInputElement>('#prep-ai-input');
+      const val = input?.value || '';
+      if (input) input.value = '';
+      void this.submitPrepAiPrompt(val);
+    });
+
+    // Preserve Whiteboard Notes Input Changes
+    const wbTitleInput = this.rootEl.querySelector<HTMLInputElement>('#wb-notes-title');
+    wbTitleInput?.addEventListener('input', () => {
+      this.whiteboardNotesTitle = wbTitleInput.value;
+    });
+    const wbNotesTextarea = this.rootEl.querySelector<HTMLTextAreaElement>('#wb-notes-textarea');
+    wbNotesTextarea?.addEventListener('input', () => {
+      this.whiteboardNotesText = wbNotesTextarea.value;
     });
 
     // Custom Personal Profile Photo File Upload
@@ -1312,20 +1765,22 @@ class PrepskmPlatformApp {
         if (typeof reader.result === 'string') {
           const compressed = await compressImageDataUrl(reader.result, 320, 0.84);
           await dataStore.updateUser({ photoURL: compressed });
-          this.showToast('Personal profile photo updated & synced to Firebase!');
+          this.showToast('Profile photo updated!');
           this.renderShell();
         }
       };
       reader.readAsDataURL(file);
     });
 
+    // Sign-Up & Profile Update Form
     const profileForm =
       this.rootEl.querySelector<HTMLFormElement>('#profile-update-form');
     profileForm?.addEventListener('submit', async (e) => {
       e.preventDefault();
       const name =
-        profileForm.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() ??
-        'Aarav Sharma';
+        profileForm.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() || '';
+      const email =
+        profileForm.querySelector<HTMLInputElement>('#prof-email-input')?.value.trim() || '';
       const classYear =
         (profileForm.querySelector<HTMLSelectElement>('#prof-class-select')
           ?.value as StudentClassYear) ?? 'Class 12';
@@ -1333,9 +1788,30 @@ class PrepskmPlatformApp {
         (profileForm.querySelector<HTMLSelectElement>('#prof-exam-select')
           ?.value as TargetExam) ?? 'JEE';
 
-      await dataStore.updateUser({ name, classYear, targetExam });
+      if (!email) {
+        this.showToast('Please enter your Gmail / Email address.');
+        return;
+      }
+
+      const signedInUser = await dataStore.signUpOrLoginProfile({
+        name,
+        email,
+        classYear,
+        targetExam,
+      });
+
       this.isProfileModalOpen = false;
-      this.showToast(`Profile saved for ${name} (${classYear} · ${targetExam})`);
+      this.authModalReasonMessage = '';
+
+      if (isMasterAdminEmail(signedInUser.email)) {
+        this.showToast(
+          `Welcome Owner & Master Admin (${signedInUser.name})! Admin Panel unlocked.`
+        );
+      } else {
+        this.showToast(
+          `Welcome ${signedInUser.name}! Your profile (${classYear} · ${targetExam}) is now active.`
+        );
+      }
       this.renderShell();
     });
 
@@ -1382,7 +1858,7 @@ class PrepskmPlatformApp {
       }
 
       this.isPencilModalOpen = false;
-      this.showToast('Saved live UI customizations to Firebase!');
+      this.showToast('Saved live UI customizations!');
       this.renderShell();
     });
 
@@ -1395,7 +1871,7 @@ class PrepskmPlatformApp {
           classYear: classPart,
         });
         this.isMobile3DotMenuOpen = false;
-        this.showToast(`Switched Cohort & Theme to ${classPart} (${examPart})`);
+        this.showToast(`Switched Cohort to ${classPart} (${examPart})`);
         this.renderShell();
       }
     };
@@ -1416,6 +1892,61 @@ class PrepskmPlatformApp {
       const action = el.dataset.shellAction;
       el.addEventListener('click', async () => {
         switch (action) {
+          case 'open-prep-ai-modal': {
+            this.isMobile3DotMenuOpen = false;
+            this.isPrepAiModalOpen = true;
+            this.renderShell();
+            break;
+          }
+          case 'close-prep-ai-modal': {
+            const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
+            if (canvas) {
+              this.whiteboardDataUrl = canvas.toDataURL('image/png');
+            }
+            this.isPrepAiModalOpen = false;
+            this.renderShell();
+            break;
+          }
+          case 'switch-prep-ai-tab': {
+            const canvas = this.rootEl.querySelector<HTMLCanvasElement>('#prep-whiteboard-canvas');
+            if (canvas) {
+              this.whiteboardDataUrl = canvas.toDataURL('image/png');
+            }
+            const tab = el.dataset.tab as 'ai' | 'whiteboard';
+            if (tab) {
+              this.prepAiActiveTab = tab;
+              this.renderShell();
+            }
+            break;
+          }
+          case 'prep-ai-quick-prompt': {
+            const prompt = el.dataset.prompt || '';
+            if (prompt) {
+              void this.submitPrepAiPrompt(prompt);
+            }
+            break;
+          }
+          case 'set-wb-color': {
+            const color = el.dataset.color || '#4F46E5';
+            this.whiteboardPenColor = color;
+            this.whiteboardEraser = false;
+            this.renderShell();
+            break;
+          }
+          case 'toggle-wb-eraser': {
+            this.whiteboardEraser = !this.whiteboardEraser;
+            this.renderShell();
+            break;
+          }
+          case 'clear-wb-canvas': {
+            this.whiteboardDataUrl = '';
+            this.renderShell();
+            break;
+          }
+          case 'export-whiteboard-pdf': {
+            this.exportWhiteboardAndNotesAsPdf();
+            break;
+          }
           case 'open-pencil-modal': {
             if (!dataStore.isMasterAdmin()) {
               this.showToast(`Only Master Admin (${MASTER_ADMIN_EMAIL}) can edit website UI.`);
@@ -1446,23 +1977,20 @@ class PrepskmPlatformApp {
           case 'clear-pencil-overrides': {
             await dataStore.clearElementStyleOverrides();
             this.isPencilModalOpen = false;
-            this.showToast('Cleared all custom element overrides.');
+            this.showToast('Cleared custom element overrides.');
             this.renderShell();
             break;
           }
           case 'open-profile-modal': {
             this.isMobile3DotMenuOpen = false;
+            this.authModalReasonMessage = '';
             this.isProfileModalOpen = true;
             this.renderShell();
             break;
           }
           case 'close-profile-modal': {
             this.isProfileModalOpen = false;
-            this.renderShell();
-            break;
-          }
-          case 'toggle-faculty-login': {
-            this.isFacultyLoginExpanded = !this.isFacultyLoginExpanded;
+            this.authModalReasonMessage = '';
             this.renderShell();
             break;
           }
@@ -1485,40 +2013,13 @@ class PrepskmPlatformApp {
           }
           case 'signout-user': {
             await dataStore.signOutUser();
-            this.showToast('Signed out to Guest Mode.');
-            this.renderShell();
-            break;
-          }
-          case 'set-role-mode': {
-            const mode = el.dataset.mode as 'student' | 'guest' | 'admin' | 'mentor';
-            const mentorEmail = el.dataset.mentorEmail;
-            if (mode) {
-              dataStore.switchRoleSession(
-                mode,
-                undefined,
-                undefined,
-                undefined,
-                mentorEmail
-              );
-              this.isProfileModalOpen = false;
-              if (mode === 'admin' || mode === 'mentor') {
-                window.history.pushState({}, '', '/admin.html');
-                this.activePage = 'admin';
-              } else if (this.activePage === 'admin') {
-                window.history.pushState({}, '', '/index.html');
-                this.activePage = 'home';
-              }
-              this.showToast(
-                mode === 'admin'
-                  ? `Activated Master Admin (${MASTER_ADMIN_EMAIL})`
-                  : mode === 'mentor'
-                    ? `Signed in as Mentor (${mentorEmail})`
-                    : mode === 'guest'
-                      ? 'Entered Guest Mode'
-                      : 'Signed in to Verified Student Account'
-              );
-              this.renderShell();
+            this.isProfileModalOpen = false;
+            if (this.activePage === 'admin') {
+              window.history.pushState({}, '', '/index.html');
+              this.activePage = 'home';
             }
+            this.showToast('Signed out.');
+            this.renderShell();
             break;
           }
           case 'select-avatar': {
@@ -1533,12 +2034,23 @@ class PrepskmPlatformApp {
             try {
               await dataStore.signInWithGoogle();
               this.isProfileModalOpen = false;
+              this.authModalReasonMessage = '';
               this.showToast('Signed in with Google!');
               this.renderShell();
             } catch {
-              dataStore.switchRoleSession('student', 'Aarav Sharma (Google Verified)');
+              const nameInput =
+                this.rootEl.querySelector<HTMLInputElement>('#prof-name-input')?.value.trim() ||
+                'Student';
+              const emailInput =
+                this.rootEl.querySelector<HTMLInputElement>('#prof-email-input')?.value.trim() ||
+                `${nameInput.toLowerCase().replace(/[^a-z0-9]/g, '') || 'student'}@gmail.com`;
+              await dataStore.signUpOrLoginProfile({
+                name: nameInput,
+                email: emailInput,
+              });
               this.isProfileModalOpen = false;
-              this.showToast('Google Account verified & signed in!');
+              this.authModalReasonMessage = '';
+              this.showToast(`Signed in as ${dataStore.getUser().name}!`);
               this.renderShell();
             }
             break;

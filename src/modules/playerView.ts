@@ -37,18 +37,14 @@ export class PlayerModule {
     this.callbacks = callbacks;
     const saved = dataStore.getLectureProgress();
     this.currentTimeSeconds = saved.lastPositionSeconds || 525;
-    this.activeVideo = dataStore.getVideos()[0];
+    this.activeVideo = dataStore.getVideoById();
   }
 
   public mount(container: HTMLElement): void {
     this.containerEl = container;
     const params = new URLSearchParams(window.location.search);
     const vidParam = params.get('videoId');
-    if (vidParam) {
-      this.activeVideo = dataStore.getVideoById(vidParam);
-    } else {
-      this.activeVideo = dataStore.getVideos()[0];
-    }
+    this.activeVideo = dataStore.getVideoById(vidParam);
     const modeParam = params.get('mode');
     this.isLandscapeMode = modeParam !== 'vertical';
     const saved = dataStore.getLectureProgress();

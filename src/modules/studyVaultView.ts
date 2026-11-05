@@ -184,9 +184,6 @@ export class StudyVaultModule {
             </div>
           </section>
 
-          <!-- Pomodoro-Style Subject Focus Timer & Profile Statistics Logger -->
-          ${this.renderPomodoroFocusWidget()}
-
           <!-- Dedicated Section Folder Cards Grid -->
           <section aria-label="Study Material Sections" class="space-y-3">
             <div class="flex items-center justify-between px-1">
@@ -240,8 +237,8 @@ export class StudyVaultModule {
 
             <!-- In-App Secure PDF Viewer Modal -->
             ${this.renderSecurePdfModal()}
-            <!-- Edit PDF Study Material Modal -->
-            ${this.renderEditMaterialModal()}
+            <!-- Edit PDF Study Material Modal (Master Admin Only) -->
+            ${dataStore.isMasterAdmin() ? this.renderEditMaterialModal() : ''}
             <!-- Explicit User Confirmation Modal for Mutating Google Calendar & Tasks Sync -->
             ${this.renderWorkspaceSyncConfirmModal()}
           </div>
@@ -255,12 +252,10 @@ export class StudyVaultModule {
     // VIEW 2: DEDICATED SECTION PAGE (/study.html?section=PYQs)
     // =========================================================================
     const activeSecStyle = this.getSectionStyle(this.activeOpenedSection, 0);
+    const isAdmin = dataStore.isMasterAdmin();
 
     this.containerEl.innerHTML = `
       <div class="space-y-5" data-testid="study-vault-dedicated-section-page">
-        <!-- Pomodoro-Style Subject Focus Timer & Profile Statistics Logger -->
-        ${this.renderPomodoroFocusWidget()}
-
         <!-- Dedicated Section Page Hero Header with Back Button -->
         <section
           aria-label="Dedicated Section Page Header"
@@ -350,7 +345,7 @@ export class StudyVaultModule {
           </div>
         </section>
 
-        <!-- COMPACT-HEIGHT, WIDE HORIZONTAL PDF ROW LIST (Shows 5 to 6 PDFs in a single viewport!) -->
+        <!-- COMPACT-HEIGHT, WIDE HORIZONTAL PDF ROW LIST -->
         <section
           aria-label="Compact Wide Study Material PDF List"
           data-testid="compact-pdf-list"
@@ -360,7 +355,7 @@ export class StudyVaultModule {
             <div class="flex items-center gap-2">
               <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
               <span class="text-xs font-extrabold text-slate-800">
-                ${this.escapeHtml(this.activeOpenedSection)} — Compact Wide PDF List (5–6 Visible at Once)
+                ${this.escapeHtml(this.activeOpenedSection)} — Study Material PDFs
               </span>
             </div>
             <span class="text-[11px] font-mono-tabular text-slate-500">
@@ -372,13 +367,16 @@ export class StudyVaultModule {
             filteredMaterials.length === 0
               ? `
             <div class="p-8 text-center space-y-3">
-              <div class="text-sm font-bold text-slate-900">No PDFs match the current filter in ${this.escapeHtml(this.activeOpenedSection)}</div>
+              <div class="text-sm font-bold text-slate-900">No PDFs uploaded in ${this.escapeHtml(this.activeOpenedSection)} yet</div>
+              <p class="text-xs text-slate-500 max-w-md mx-auto">
+                New verified ${this.escapeHtml(this.activeOpenedSection)} PDFs will appear here as soon as they are published, or you can import resources from Google Classroom below.
+              </p>
               <button
                 type="button"
                 data-action="reset-vault-filters"
                 class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold"
               >
-                Show All PDFs in Section
+                Reset Section Filter
               </button>
             </div>
           `
@@ -425,7 +423,7 @@ export class StudyVaultModule {
                         </div>
                       </div>
 
-                      <!-- Right: Compact Action Buttons (Preview, Edit PDF & Download) -->
+                      <!-- Right: Compact Action Buttons (Preview & Download for Students; Edit PDF strictly for Master Admin) -->
                       <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         <button
                           type="button"
@@ -435,15 +433,21 @@ export class StudyVaultModule {
                         >
                           Preview
                         </button>
-                        <button
-                          type="button"
-                          data-action="open-edit-material"
-                          data-material-id="${mat.id}"
-                          data-testid="edit-pdf-material-btn"
-                          class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
-                        >
-                          ✏️ Edit PDF
-                        </button>
+                        ${
+                          isAdmin
+                            ? `
+                          <button
+                            type="button"
+                            data-action="open-edit-material"
+                            data-material-id="${mat.id}"
+                            data-testid="edit-pdf-material-btn"
+                            class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                          >
+                            ✏️ Edit PDF
+                          </button>
+                        `
+                            : ''
+                        }
                         <button
                           type="button"
                           data-action="download-material"
