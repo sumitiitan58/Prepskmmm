@@ -1,0 +1,182 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isMasterAdmin() {
+      return isAuthenticated() && (
+        (request.auth.token.email == "Sumit586kumar@gmail.com") ||
+        (request.auth.token.email == "sumit586kumar@gmail.com") ||
+        (request.auth.token.email == "sumitiitair01@gmail.com")
+      );
+    }
+
+    // 1. Users Collection (/users/{uid})
+    match /users/{uid} {
+      allow read: if isValidId(uid);
+      allow create, update: if isValidId(uid)
+        && request.resource.data.uid == uid
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 120;
+      allow delete: if isMasterAdmin();
+
+      match /study_plans/{planId} {
+        allow read, write: if isValidId(uid) && isValidId(planId);
+      }
+    }
+
+    // 2. Academic Structure & Shared Content Collections (Synced across all Admins, Mentors & Students)
+    match /classes/{classId} {
+      allow read: if true;
+      allow create, update: if isValidId(classId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 100;
+      allow delete: if true;
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if true;
+      allow create, update: if isValidId(subjectId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 100;
+      allow delete: if true;
+    }
+
+    match /chapters/{chapterId} {
+      allow read: if true;
+      allow create, update: if isValidId(chapterId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() >= 1
+        && request.resource.data.name.size() <= 140;
+      allow delete: if true;
+    }
+
+    match /questions/{questionId} {
+      allow read: if true;
+      allow create, update: if isValidId(questionId)
+        && request.resource.data.subjectName is string
+        && request.resource.data.correctVal is string
+        && request.resource.data.questionImg is string
+        && request.resource.data.solutionImg is string;
+      allow delete: if true;
+    }
+
+    match /materials/{materialId} {
+      allow read: if true;
+      allow create, update: if isValidId(materialId)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 240
+        && request.resource.data.section is string;
+      allow delete: if true;
+    }
+
+    match /videos/{videoId} {
+      allow read: if true;
+      allow create, update: if isValidId(videoId)
+        && request.resource.data.title is string
+        && request.resource.data.title.size() >= 1
+        && request.resource.data.title.size() <= 240;
+      allow delete: if true;
+    }
+
+    // 3. Mentors, Broadcasts, Site Settings, and Video Doubts
+    match /mentors/{mentorId} {
+      allow read: if true;
+      allow create, update: if isValidId(mentorId)
+        && request.resource.data.name is string
+        && request.resource.data.email is string;
+      allow delete: if true;
+    }
+
+    match /broadcasts/{broadcastId} {
+      allow read: if true;
+      allow create, update: if isValidId(broadcastId)
+        && request.resource.data.title is string
+        && request.resource.data.message is string;
+      allow delete: if true;
+    }
+
+    match /site_settings/{settingId} {
+      allow read: if true;
+      allow create, update: if isValidId(settingId)
+        && request.resource.data.brandName is string
+        && request.resource.data.primaryColor is string;
+      allow delete: if isMasterAdmin();
+    }
+
+    match /video_doubts/{doubtId} {
+      allow read: if true;
+      allow create, update: if isValidId(doubtId)
+        && request.resource.data.videoId is string
+        && request.resource.data.studentName is string;
+      allow delete: if true;
+    }
+
+    // 4. CBT Test Attempts & History (/tests/{testId} and /test_submissions/{submissionId})
+    match /tests/{testId} {
+      allow read: if true;
+      allow create, update: if isValidId(testId)
+        && request.resource.data.totalQuestions is number
+        && request.resource.data.score is number;
+      allow delete: if isMasterAdmin();
+    }
+
+    match /test_submissions/{submissionId} {
+      allow read: if true;
+      allow create, update: if isValidId(submissionId)
+        && request.resource.data.uid is string
+        && request.resource.data.score is number;
+      allow delete: if isMasterAdmin();
+    }
+
+    // 5. 1:1 Mentorship Requests & Real-time Chat (/mentorship/{sessionId})
+    match /mentorship/{sessionId} {
+      allow read: if true;
+      allow create, update: if isValidId(sessionId)
+        && request.resource.data.studentName is string
+        && request.resource.data.requestType in ['CHAT', 'AUDIO', 'VIDEO'];
+      allow delete: if true;
+    }
+
+    // 6. Tasks, Lecture Progress, Live Sessions, Leaderboard
+    match /tasks/{taskId} {
+      allow read: if true;
+      allow create, update: if isValidId(taskId)
+        && request.resource.data.uid is string
+        && request.resource.data.title is string;
+      allow delete: if isValidId(taskId);
+    }
+
+    match /lecture_progress/{progressId} {
+      allow read, write: if isValidId(progressId);
+    }
+
+    match /live_sessions/{sessionId} {
+      allow read: if true;
+      allow write: if isValidId(sessionId);
+    }
+
+    match /leaderboard/{entryId} {
+      allow read: if true;
+      allow create, update: if isValidId(entryId)
+        && request.resource.data.name is string
+        && request.resource.data.compositePoints is number;
+      allow delete: if isMasterAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

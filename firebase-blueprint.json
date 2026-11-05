@@ -1,0 +1,265 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "Registered student, guest aspirant, mentor, or master admin profile on prepskm.in.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "description": "Unique user ID." },
+        "email": { "type": "string", "description": "Locked registered email address." },
+        "name": { "type": "string", "description": "Student display name." },
+        "class": { "type": "string", "description": "Class or Target Year (9, 10, 11, 12, Dropper)." },
+        "targetExam": { "type": "string", "enum": ["JEE", "NEET"], "description": "Primary target examination." },
+        "photoURL": { "type": "string", "description": "Profile avatar URL." },
+        "isGuest": { "type": "boolean", "description": "Whether the user is browsing in Guest Mode." },
+        "currentStreak": { "type": "number", "description": "Consecutive active study days." },
+        "lastActiveDate": { "type": "string", "description": "YYYY-MM-DD last active date." },
+        "createdAt": { "type": "string", "description": "Account creation timestamp." }
+      },
+      "required": ["uid", "name", "targetExam", "isGuest", "createdAt"]
+    },
+    "ClassItem": {
+      "title": "ClassItem",
+      "description": "Academic class or target cohort managed by Admin.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "order": { "type": "number" }
+      },
+      "required": ["name", "order"]
+    },
+    "SubjectItem": {
+      "title": "SubjectItem",
+      "description": "Subject associated with a Class.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["classId", "name"]
+    },
+    "ChapterItem": {
+      "title": "ChapterItem",
+      "description": "Chapter associated with a Class and Subject.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["classId", "subjectId", "name"]
+    },
+    "QuestionItem": {
+      "title": "QuestionItem",
+      "description": "CBT Question uploaded via Admin Dual-Crop Workbench.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "classId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "chapterId": { "type": "string" },
+        "type": { "type": "string", "enum": ["MCQ", "NUMERICAL", "MULTI_MCQ"] },
+        "prompt": { "type": "string" },
+        "questionImg": { "type": "string" },
+        "solutionImg": { "type": "string" },
+        "correctVal": { "type": "string" },
+        "marks": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["classId", "subjectId", "chapterId", "type", "questionImg", "solutionImg", "correctVal", "marks", "createdAt"]
+    },
+    "MaterialItem": {
+      "title": "MaterialItem",
+      "description": "Study material PDF in the Study Vault.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "section": { "type": "string" },
+        "classId": { "type": "string" },
+        "subjectId": { "type": "string" },
+        "pdfUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "downloads": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "section", "classId", "subjectId", "pdfUrl", "downloads", "createdAt"]
+    },
+    "VideoItem": {
+      "title": "VideoItem",
+      "description": "Privacy-protected video lecture or roadmap with mentor attribution.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "videoUrl": { "type": "string" },
+        "thumbnailUrl": { "type": "string" },
+        "duration": { "type": "string" },
+        "topicTag": { "type": "string" },
+        "section": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "mentorEmail": { "type": "string" },
+        "isNewRoadmap": { "type": "boolean" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "description", "videoUrl", "isNewRoadmap", "createdAt"]
+    },
+    "MentorProfile": {
+      "title": "MentorProfile",
+      "description": "Authorized mentor or co-admin who can upload video lectures and handle 1:1 student mentorship.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "email": { "type": "string" },
+        "name": { "type": "string" },
+        "roleTitle": { "type": "string" },
+        "subjectSpecialty": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "jitsiRoomSlug": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["email", "name", "roleTitle"]
+    },
+    "BroadcastMessage": {
+      "title": "BroadcastMessage",
+      "description": "Global announcement message sent by Admin to all students.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "title": { "type": "string" },
+        "message": { "type": "string" },
+        "badge": { "type": "string" },
+        "ctaLabel": { "type": "string" },
+        "ctaHref": { "type": "string" },
+        "senderName": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["title", "message", "createdAt"]
+    },
+    "SiteSettings": {
+      "title": "SiteSettings",
+      "description": "Global brand logo, icon, and multi-color theme configuration customized by Admin.",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string" },
+        "brandTagline": { "type": "string" },
+        "logoDataUrl": { "type": "string" },
+        "primaryColor": { "type": "string" },
+        "secondaryColor": { "type": "string" },
+        "accentColor": { "type": "string" },
+        "surfaceTint": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["brandName", "primaryColor", "secondaryColor"]
+    },
+    "VideoDoubt": {
+      "title": "VideoDoubt",
+      "description": "Student doubt attached to a specific video lecture and timestamp.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "videoId": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "timestampFormatted": { "type": "string" },
+        "questionText": { "type": "string" },
+        "attachmentDataUrl": { "type": "string" },
+        "mentorReply": { "type": "string" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["videoId", "studentName", "timestampFormatted", "questionText", "createdAt"]
+    },
+    "TestRecord": {
+      "title": "TestRecord",
+      "description": "Completed CBT exam attempt and score.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "userId": { "type": "string" },
+        "examType": { "type": "string", "enum": ["JEE", "NEET"] },
+        "totalQuestions": { "type": "number" },
+        "score": { "type": "number" },
+        "accuracy": { "type": "number" },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["userId", "examType", "totalQuestions", "score", "accuracy", "timestamp"]
+    },
+    "MentorshipSession": {
+      "title": "MentorshipSession",
+      "description": "1:1 student mentorship request and real-time chat/call log with a specific mentor.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "studentId": { "type": "string" },
+        "studentName": { "type": "string" },
+        "mentorId": { "type": "string" },
+        "mentorName": { "type": "string" },
+        "jitsiRoom": { "type": "string" },
+        "requestType": { "type": "string", "enum": ["CHAT", "AUDIO", "VIDEO"] },
+        "status": { "type": "string", "enum": ["PENDING", "ACTIVE", "COMPLETED"] },
+        "messages": { "type": "array" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["studentId", "studentName", "requestType", "status", "messages"]
+    }
+  },
+  "firestore": {
+    "/users/{uid}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profiles."
+    },
+    "/classes/{classId}": {
+      "schema": { "$ref": "#/entities/ClassItem" },
+      "description": "Academic classes."
+    },
+    "/subjects/{subjectId}": {
+      "schema": { "$ref": "#/entities/SubjectItem" },
+      "description": "Subjects per class."
+    },
+    "/chapters/{chapterId}": {
+      "schema": { "$ref": "#/entities/ChapterItem" },
+      "description": "Chapters per subject."
+    },
+    "/questions/{questionId}": {
+      "schema": { "$ref": "#/entities/QuestionItem" },
+      "description": "CBT questions uploaded by Admin."
+    },
+    "/materials/{materialId}": {
+      "schema": { "$ref": "#/entities/MaterialItem" },
+      "description": "Study vault PDF materials."
+    },
+    "/videos/{videoId}": {
+      "schema": { "$ref": "#/entities/VideoItem" },
+      "description": "Video lectures and roadmaps."
+    },
+    "/mentors/{mentorId}": {
+      "schema": { "$ref": "#/entities/MentorProfile" },
+      "description": "Authorized mentors and co-admins."
+    },
+    "/broadcasts/{broadcastId}": {
+      "schema": { "$ref": "#/entities/BroadcastMessage" },
+      "description": "Global broadcast messages to all students."
+    },
+    "/site_settings/{settingId}": {
+      "schema": { "$ref": "#/entities/SiteSettings" },
+      "description": "Global website branding and theme settings."
+    },
+    "/video_doubts/{doubtId}": {
+      "schema": { "$ref": "#/entities/VideoDoubt" },
+      "description": "Timestamped student doubts attached to video lectures."
+    },
+    "/tests/{testId}": {
+      "schema": { "$ref": "#/entities/TestRecord" },
+      "description": "Student CBT test attempts."
+    },
+    "/mentorship/{sessionId}": {
+      "schema": { "$ref": "#/entities/MentorshipSession" },
+      "description": "1:1 mentorship chat and audio/video call requests."
+    }
+  }
+}

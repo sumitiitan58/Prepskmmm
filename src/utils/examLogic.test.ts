@@ -1,0 +1,271 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {
+  buildStreakCalendarStrip,
+  calculateBacklogKillerPlan,
+  calculateDailyGoalProgress,
+  calculateLeaderboardCompositePoints,
+  calculateMentorshipPrice,
+  calculatePollPercentages,
+  computeUpdatedStreak,
+  evaluateCBTSubmission,
+  formatDuration,
+  generateAIStudyDiagnosis,
+  generatePersonalizedStudyPlan,
+  getSubjectsForExam,
+  getValidInfinitePracticeCounts,
+  rankLeaderboardEntries,
+  selectAutoBalancedQuestions,
+  selectInfinitePracticeEqualByChapter,
+  summarizePaletteStatuses,
+} from './examLogic';
+import { CBT_QUESTION_BANK, INITIAL_CHAPTERS, INITIAL_TASKS } from '../constants';
+import type { CBTQuestion, LeaderboardEntry } from '../types';
+
+test('formatDuration formats MM:SS and HH:MM:SS accurately', () => {
+  assert.equal(formatDuration(0), '00:00');
+  assert.equal(formatDuration(525), '08:45');
+  assert.equal(formatDuration(10800, true), '03:00:00');
+});
+
+test('getSubjectsForExam switches Math and Biology for JEE vs NEET', () => {
+  assert.deepEqual(getSubjectsForExam('JEE'), ['Physics', 'Chemistry', 'Math']);
+  assert.deepEqual(getSubjectsForExam('NEET'), ['Physics', 'Chemistry', 'Biology']);
+});
+
+test('calculateMentorshipPrice enforces 15/30/45 min @ Rs 75/150/225 tiers', () => {
+  const tier15 = calculateMentorshipPrice(15);
+  assert.equal(tier15.priceInr, 75);
+  assert.ok(tier15.upiUri.includes('am=75'));
+
+  const tier30 = calculateMentorshipPrice(30);
+  assert.equal(tier30.priceInr, 150);
+
+  const tier45 = calculateMentorshipPrice(45);
+  assert.equal(tier45.priceInr, 225);
+});
+
+test('computeUpdatedStreak increments only once per active calendar day', () => {
+  const firstCompletion = computeUpdatedStreak(4, '2026-11-03', '2026-11-04');
+  assert.equal(firstCompletion.currentStreak, 5);
+  assert.equal(firstCompletion.incremented, true);
+
+  const secondCompletionSameDay = computeUpdatedStreak(5, '2026-11-04', '2026-11-04');
+  assert.equal(secondCompletionSameDay.currentStreak, 5);
+  assert.equal(secondCompletionSameDay.incremented, false);
+});
+
+test('calculatePollPercentages computes accurate vote totals and percentages', () => {
+  const res = calculatePollPercentages(['A', 'B', 'C', 'D'], {
+    '0': 10,
+    '1': 25,
+    '2': 5,
+    '3': 10,
+  });
+  assert.equal(res.totalVotes, 50);
+  assert.deepEqual(res.percentages, [20, 50, 10, 20]);
+});
+
+test('evaluateCBTSubmission applies +4 correct, -1 wrong, 0 unattempted across MCQ and NAT', () => {
+  const mockQuestions: CBTQuestion[] = [
+    {
+      id: 'q1',
+      number: 1,
+      subject: 'Physics',
+      type: 'MCQ',
+      topic: 'Rotational Dynamics',
+      prompt: 'Moment of inertia of a uniform solid sphere about its diameter:',
+      options: ['(2/5)MR^2', '(2/3)MR^2', '(1/2)MR^2', 'MR^2'],
+      correctAnswer: '0',
+      solution: 'Solid sphere I = (2/5)MR^2.',
+    },
+    {
+      id: 'q2',
+      number: 2,
+      subject: 'Chemistry',
+      type: 'MCQ',
+      topic: 'Electrochemistry',
+      prompt: 'Number of Faradays required to reduce 1 mol of MnO4- to Mn2+:',
+      options: ['3', '5', '7', '2'],
+      correctAnswer: '1',
+      solution: 'Oxidation state changes from +7 to +2, so 5 Faradays.',
+    },
+    {
+      id: 'q3',
+      number: 3,
+      subject: 'Math',
+      type: 'NAT',
+      topic: 'Calculus',
+      prompt: 'Evaluate integral of 2x from 0 to 3:',
+      correctAnswer: '9',
+      solution: 'x^2 evaluated from 0 to 3 is 9.',
+    },
+  ];
+
+  const evaluation = evaluateCBTSubmission(mockQuestions, {
+    q1: '0',
+    q2: '0',
+    q3: '',
+  });
+
+  assert.equal(evaluation.totalScore, 3);
+  assert.equal(evaluation.correctCount, 1);
+  assert.equal(evaluation.wrongCount, 1);
+  assert.equal(evaluation.unattemptedCount, 1);
+  assert.equal(evaluation.accuracyPercent, 50);
+});
+
+test('summarizePaletteStatuses tallies NTA palette buckets accurately', () => {
+  const summary = summarizePaletteStatuses(['q1', 'q2', 'q3', 'q4'], {
+    q1: 'answered',
+    q2: 'not_answered',
+    q3: 'marked_review',
+  });
+  assert.deepEqual(summary, {
+    answered: 1,
+    notAnswered: 1,
+    markedReview: 1,
+    notVisited: 1,
+  });
+});
+
+test('generatePersonalizedStudyPlan prioritizes Weak subjects with highest weekly hours', () => {
+  const plan = generatePersonalizedStudyPlan({
+    uid: 'user_1',
+    targetExam: 'JEE',
+    dailyHours: 6,
+    proficiency: {
+      Physics: 'Weak',
+      Chemistry: 'Moderate',
+      Math: 'Strong',
+    },
+    planId: 'plan_test_1',
+    now: 1700000000000,
+  });
+
+  assert.equal(plan.weeks.length, 4);
+  assert.equal(plan.weeks[0].totalWeeklyHours, 42);
+  assert.equal(plan.weeks[0].allocations[0].subject, 'Physics');
+  assert.equal(plan.weeks[0].allocations[0].proficiency, 'Weak');
+  assert.ok(
+    plan.weeks[0].allocations[0].allocatedHoursPerWeek >
+      plan.weeks[0].allocations[2].allocatedHoursPerWeek
+  );
+});
+
+test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank Top 10 accurately', () => {
+  const pts = calculateLeaderboardCompositePoints(80, 50, 5);
+  assert.equal(pts, 1910);
+
+  const sampleEntries: LeaderboardEntry[] = [
+    {
+      uid: 'u2',
+      name: 'Riya',
+      targetExam: 'JEE',
+      taskCompletionRate: 95,
+      bestMockScore: 56,
+      currentStreak: 12,
+      compositePoints: 2460,
+    },
+    {
+      uid: 'u1',
+      name: 'Aarav',
+      targetExam: 'JEE',
+      taskCompletionRate: 80,
+      bestMockScore: 50,
+      currentStreak: 5,
+      compositePoints: 1910,
+    },
+  ];
+
+  const ranked = rankLeaderboardEntries(sampleEntries, 'u1');
+  assert.equal(ranked.top10[0].uid, 'u2');
+  assert.equal(ranked.top10[0].rank, 1);
+  assert.equal(ranked.currentUserRank, 2);
+});
+
+test('calculateBacklogKillerPlan computes daily extra quota and generates micro-tasks', () => {
+  const result = calculateBacklogKillerPlan({
+    uid: 'u1',
+    subject: 'Physics',
+    chapterName: 'Rotational Motion & IAOR',
+    pendingHours: 9,
+    targetDays: 6,
+    examFocus: 'JEE',
+    now: 1700000000000,
+  });
+
+  assert.equal(result.dailyQuotaHours, 1.5);
+  assert.equal(result.microTasks.length, 3);
+  assert.equal(result.microTasks[0].priority, 'High');
+  assert.ok(result.microTasks[0].title.includes('1.5h/day'));
+});
+
+test('selectAutoBalancedQuestions enforces 80% MCQ + 20% NAT for JEE and 100% MCQ for NEET', () => {
+  const jeeSet = selectAutoBalancedQuestions(
+    CBT_QUESTION_BANK,
+    'JEE',
+    ['Physics', 'Chemistry', 'Math'],
+    10
+  );
+  assert.equal(jeeSet.length, 10);
+  const jeeMcqs = jeeSet.filter((q) => q.type === 'MCQ').length;
+  const jeeNats = jeeSet.filter((q) => q.type === 'NAT').length;
+  assert.equal(jeeMcqs, 8);
+  assert.equal(jeeNats, 2);
+
+  const neetSet = selectAutoBalancedQuestions(
+    CBT_QUESTION_BANK,
+    'NEET',
+    ['Physics', 'Chemistry', 'Biology'],
+    10
+  );
+  assert.equal(neetSet.length, 10);
+  const neetMcqs = neetSet.filter((q) => q.type === 'MCQ').length;
+  assert.equal(neetMcqs, 10);
+});
+
+test('generateAIStudyDiagnosis flags low-accuracy chapters for immediate revision', () => {
+  const sampleQs = CBT_QUESTION_BANK.slice(0, 3);
+  const diagnosis = generateAIStudyDiagnosis(
+    sampleQs,
+    { [sampleQs[0].id]: sampleQs[0].correctAnswer },
+    'JEE'
+  );
+  assert.equal(diagnosis.chapterBreakdown.length, 3);
+  assert.ok(diagnosis.diagnosisBullets.length >= 2);
+});
+
+test('calculateDailyGoalProgress computes SVG ring circumference and dashoffset dynamically', () => {
+  const progress = calculateDailyGoalProgress(INITIAL_TASKS, 4, 36);
+  assert.equal(progress.completedCount, 2);
+  assert.equal(progress.dailyGoalTarget, 4);
+  assert.equal(progress.percentage, 50);
+  assert.equal(progress.statusLabel, 'Strong Momentum');
+  assert.ok(progress.strokeDashoffset > 0 && progress.strokeDashoffset < progress.circumference);
+});
+
+test('buildStreakCalendarStrip builds 7-day strip synced with currentStreak and Lucide icons', () => {
+  const strip = buildStreakCalendarStrip(4, '2026-11-04', '2026-11-04');
+  assert.equal(strip.length, 7);
+  const activeDays = strip.filter((d) => d.status === 'streak_active');
+  assert.equal(activeDays.length, 4);
+  const todayItem = strip.find((d) => d.isToday);
+  assert.ok(todayItem);
+  assert.equal(todayItem.lucideIcon, 'flame');
+});
+
+test('getValidInfinitePracticeCounts and selectInfinitePracticeEqualByChapter enforce equal questions per chapter', () => {
+  const countsFor3 = getValidInfinitePracticeCounts(3);
+  assert.deepEqual(countsFor3, [3, 6, 9, 12, 15, 18, 24, 30]);
+
+  const selectedChapters = INITIAL_CHAPTERS.slice(0, 3);
+  const res = selectInfinitePracticeEqualByChapter(CBT_QUESTION_BANK, selectedChapters, 9);
+  assert.equal(res.totalQuestions, 9);
+  assert.equal(res.questionsPerChapter, 3);
+  assert.equal(res.questions.length, 9);
+  for (const ch of selectedChapters) {
+    assert.equal(res.perChapterCounts[ch.id], 3);
+  }
+});
+
