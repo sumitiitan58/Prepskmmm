@@ -654,36 +654,46 @@ export class AdminCommandModule {
               />
             </div>
 
-            <div class="grid grid-cols-2 gap-3">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">Target Section</label>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Target Video Section (Folder)</label>
                 <select
                   id="vid-upload-section"
                   class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold"
                 >
-                  <option value="Strategy Roadmaps">Strategy Roadmaps</option>
-                  <option value="Physics Masterclass">Physics Masterclass</option>
-                  <option value="Chemistry Masterclass">Chemistry Masterclass</option>
-                  <option value="Mathematics Masterclass">Mathematics Masterclass</option>
-                  <option value="Biology Masterclass">Biology Masterclass</option>
-                  <option value="PYQ Solutions">PYQ Solutions</option>
-                </select>
-              </div>
-
-              <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">Uploading Mentor (Shown on Video)</label>
-                <select
-                  id="vid-upload-mentor"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold"
-                >
-                  ${mentors
+                  ${dataStore
+                    .getVideoSections()
                     .map(
-                      (m) =>
-                        `<option value="${m.id}" ${m.id === matchedMentor.id ? 'selected' : ''}>${this.escapeHtml(m.name)} (${this.escapeHtml(m.subjectSpecialty)})</option>`
+                      (sec) =>
+                        `<option value="${this.escapeHtml(sec)}">${this.escapeHtml(sec)}</option>`
                     )
                     .join('')}
                 </select>
               </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Or Create New Video Section</label>
+                <input
+                  id="vid-upload-custom-section"
+                  type="text"
+                  placeholder="e.g., Class 10 & 11 Foundation"
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Uploading Mentor (Shown on Video)</label>
+              <select
+                id="vid-upload-mentor"
+                class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold"
+              >
+                ${mentors
+                  .map(
+                    (m) =>
+                      `<option value="${m.id}" ${m.id === matchedMentor.id ? 'selected' : ''}>${this.escapeHtml(m.name)} (${this.escapeHtml(m.subjectSpecialty)})</option>`
+                  )
+                  .join('')}
+              </select>
             </div>
 
             <div class="grid grid-cols-2 gap-3">
@@ -943,7 +953,7 @@ export class AdminCommandModule {
             ${mentors
               .map(
                 (m) => `
-              <div class="py-3 flex items-center justify-between gap-3">
+              <div class="py-3 flex flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-3 min-w-0">
                   <img
                     src="${m.avatarUrl}"
@@ -952,28 +962,50 @@ export class AdminCommandModule {
                     class="w-10 h-10 rounded-full object-cover border border-slate-200 shrink-0"
                   />
                   <div class="min-w-0">
-                    <div class="text-xs font-extrabold text-slate-900 truncate">
-                      ${this.escapeHtml(m.name)} <span class="text-[#4F46E5]">(${this.escapeHtml(m.role)})</span>
+                    <div class="text-xs font-extrabold text-slate-900 truncate flex items-center gap-1.5">
+                      <span>${this.escapeHtml(m.name)}</span>
+                      <span class="text-[#4F46E5]">(${this.escapeHtml(m.role)})</span>
+                      <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        m.isOnline !== false
+                          ? 'bg-emerald-100 text-emerald-800'
+                          : 'bg-slate-200 text-slate-600'
+                      }">
+                        ${m.isOnline !== false ? '🟢 Active for Calls' : '⚪ Offline (Calls Locked)'}
+                      </span>
                     </div>
                     <div class="text-[11px] text-slate-500 font-mono truncate">
                       ${this.escapeHtml(m.email)} · ${this.escapeHtml(m.subjectSpecialty)}
                     </div>
                   </div>
                 </div>
-                ${
-                  m.id === 'mentor_sumit_master'
-                    ? `<span class="px-2 py-0.5 rounded bg-indigo-50 text-[#4F46E5] text-[10px] font-bold">Owner</span>`
-                    : `
+                <div class="flex items-center gap-2">
                   <button
                     type="button"
-                    data-action="del-mentor"
+                    data-action="toggle-mentor-online"
                     data-id="${m.id}"
-                    class="px-2.5 py-1 rounded-lg bg-red-50 text-[#EF4444] text-xs font-bold"
+                    class="px-2.5 py-1 rounded-lg border text-[11px] font-bold ${
+                      m.isOnline !== false
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    }"
                   >
-                    Remove
+                    ${m.isOnline !== false ? 'Set Offline' : 'Set Active'}
                   </button>
-                `
-                }
+                  ${
+                    m.id === 'mentor_sumit_master'
+                      ? `<span class="px-2 py-0.5 rounded bg-indigo-50 text-[#4F46E5] text-[10px] font-bold">Owner</span>`
+                      : `
+                    <button
+                      type="button"
+                      data-action="del-mentor"
+                      data-id="${m.id}"
+                      class="px-2.5 py-1 rounded-lg bg-red-50 text-[#EF4444] text-xs font-bold"
+                    >
+                      Remove
+                    </button>
+                  `
+                  }
+                </div>
               </div>
             `
               )
@@ -2134,9 +2166,17 @@ export class AdminCommandModule {
           .querySelector<HTMLInputElement>('#vid-upload-title')
           ?.value.trim() ?? '';
       if (!title) return;
-      const section =
+      const secSelect =
         uploadVideoForm.querySelector<HTMLSelectElement>('#vid-upload-section')
           ?.value ?? 'Strategy Roadmaps';
+      const customSec =
+        uploadVideoForm
+          .querySelector<HTMLInputElement>('#vid-upload-custom-section')
+          ?.value.trim() ?? '';
+      const section = customSec || secSelect;
+      if (customSec) {
+        dataStore.addCustomVideoSection(customSec);
+      }
       const mentorId =
         uploadVideoForm.querySelector<HTMLSelectElement>('#vid-upload-mentor')
           ?.value ?? 'mentor_sumit_master';
@@ -2530,6 +2570,19 @@ export class AdminCommandModule {
             if (id) {
               await dataStore.deleteVideoLecture(id);
               this.callbacks.onShowToast('Removed video lecture');
+              this.rerender();
+            }
+            break;
+          }
+          case 'toggle-mentor-online': {
+            const id = el.dataset.id;
+            if (id) {
+              const nextOnline = await dataStore.toggleMentorOnlineStatus(id);
+              this.callbacks.onShowToast(
+                nextOnline
+                  ? 'Mentor is now ACTIVE — Students can initiate 1:1 Voice & Video Calls!'
+                  : 'Mentor set to OFFLINE — 1:1 Voice & Video Calls are locked.'
+              );
               this.rerender();
             }
             break;

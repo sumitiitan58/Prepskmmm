@@ -966,9 +966,11 @@ export const INITIAL_LEADERBOARD: LeaderboardEntry[] = [
 export const INITIAL_CLASSES: ClassEntity[] = [
   { id: 'cls_9', name: 'Class 9', order: 1 },
   { id: 'cls_10', name: 'Class 10', order: 2 },
-  { id: 'cls_11', name: 'Class 11', order: 3 },
-  { id: 'cls_12', name: 'Class 12', order: 4 },
-  { id: 'cls_dropper', name: 'Dropper', order: 5 },
+  { id: 'cls_10_found', name: 'Class 10 Foundation', order: 3 },
+  { id: 'cls_11_found', name: 'Class 11 Foundation', order: 4 },
+  { id: 'cls_11', name: 'Class 11', order: 5 },
+  { id: 'cls_12', name: 'Class 12', order: 6 },
+  { id: 'cls_dropper', name: 'Dropper', order: 7 },
 ];
 
 export const INITIAL_SUBJECTS: SubjectEntity[] = [
@@ -976,6 +978,10 @@ export const INITIAL_SUBJECTS: SubjectEntity[] = [
   { id: 'sub_chem_11', classId: 'cls_11', name: 'Chemistry' },
   { id: 'sub_math_11', classId: 'cls_11', name: 'Math' },
   { id: 'sub_bio_11', classId: 'cls_11', name: 'Biology' },
+  { id: 'sub_phy_11_f', classId: 'cls_11_found', name: 'Physics' },
+  { id: 'sub_chem_11_f', classId: 'cls_11_found', name: 'Chemistry' },
+  { id: 'sub_math_11_f', classId: 'cls_11_found', name: 'Math' },
+  { id: 'sub_bio_11_f', classId: 'cls_11_found', name: 'Biology' },
   { id: 'sub_phy_12', classId: 'cls_12', name: 'Physics' },
   { id: 'sub_chem_12', classId: 'cls_12', name: 'Chemistry' },
   { id: 'sub_math_12', classId: 'cls_12', name: 'Math' },
@@ -986,6 +992,10 @@ export const INITIAL_SUBJECTS: SubjectEntity[] = [
   { id: 'sub_bio_drop', classId: 'cls_dropper', name: 'Biology' },
   { id: 'sub_phy_10', classId: 'cls_10', name: 'Physics' },
   { id: 'sub_math_10', classId: 'cls_10', name: 'Math' },
+  { id: 'sub_phy_10_f', classId: 'cls_10_found', name: 'Physics' },
+  { id: 'sub_chem_10_f', classId: 'cls_10_found', name: 'Chemistry' },
+  { id: 'sub_math_10_f', classId: 'cls_10_found', name: 'Math' },
+  { id: 'sub_bio_10_f', classId: 'cls_10_found', name: 'Biology' },
   { id: 'sub_phy_9', classId: 'cls_9', name: 'Physics' },
 ];
 
@@ -1001,6 +1011,8 @@ export const INITIAL_CHAPTERS: ChapterEntity[] = [
   { id: 'ch_def_int', classId: 'cls_12', subjectId: 'sub_math_12', name: 'Definite Integration & Differential Equations' },
   { id: 'ch_human_phys', classId: 'cls_11', subjectId: 'sub_bio_11', name: 'Human Physiology & Cardiac Cycle' },
   { id: 'ch_mol_genetics', classId: 'cls_12', subjectId: 'sub_bio_12', name: 'Molecular Basis of Inheritance' },
+  { id: 'ch_found_10_optics', classId: 'cls_10_found', subjectId: 'sub_phy_10_f', name: 'Ray Optics, NTSE Light & Lens Makers Bridge' },
+  { id: 'ch_found_11_vectors', classId: 'cls_11_found', subjectId: 'sub_phy_11_f', name: 'Vectors, Calculus Bridge & Kinematics 2D' },
 ];
 
 export const DEFAULT_VAULT_SECTIONS = [
@@ -1008,6 +1020,14 @@ export const DEFAULT_VAULT_SECTIONS = [
   'Formula Sheets',
   'Hand-written Notes',
   'DPPs',
+];
+
+export const DEFAULT_VIDEO_SECTIONS = [
+  'Master Roadmaps',
+  'Physics One-Shots',
+  'Chemistry & Biology Masterclass',
+  'Mathematics Rank Booster',
+  'Foundation Bridge Lectures',
 ];
 
 export const INITIAL_MATERIALS: StudyMaterialItem[] = [
@@ -1497,6 +1517,8 @@ export interface ClassCohortTheme {
   accentBorderClass: string;
   pillBgClass: string;
   focusPills: string[];
+  surfaceTint?: string;
+  accentHex?: string;
 }
 
 export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
@@ -1584,6 +1606,54 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
     pillBgClass: 'bg-amber-50 text-amber-800 border-amber-200',
     focusPills: ['Ray Optics & Electricity', 'Carbon & Compounds', 'Trigonometry & Quadratics', 'Life Processes'],
   },
+  'JEE|Class 10 Foundation': {
+    key: 'JEE|Class 10 Foundation',
+    label: 'Class 10 Foundation · IJSO / NTSE / JEE-NEET Bridge',
+    badgeText: 'CLASS 10 FOUNDATION OLYMPIAD ACCELERATOR',
+    headline: 'Class 10 Foundation Bridge to Top 100 AIR',
+    subheadline:
+      'Dedicated Foundation curriculum bridging Class 10 Board Science/Math with JEE/NEET Vectors, Mole Concept, Quadratic Locus, and Cell Energetics.',
+    gradientClass: 'from-orange-600 via-amber-600 to-yellow-500',
+    accentBorderClass: 'border-orange-300',
+    pillBgClass: 'bg-orange-50 text-orange-800 border-orange-200',
+    focusPills: ['NTSE & IJSO Sprint', 'Early Mole & Atomic', 'Optics + Circuit Bridge', 'Olympiad Number Theory'],
+  },
+  'JEE|Class 11 Foundation': {
+    key: 'JEE|Class 11 Foundation',
+    label: 'Class 11 Foundation · Concept-First JEE & NEET Bridge',
+    badgeText: 'CLASS 11 FOUNDATION ZERO-TO-ADVANCED TRACK',
+    headline: 'Class 11 Foundation: Mathematical Tools, NLM & Atomic Structure',
+    subheadline:
+      'Step-by-step concept builder for students transitioning from Class 10 to 11 — master Basic Calculus, Vectors, Mole Stoichiometry, and NCERT Foundations without overwhelm.',
+    gradientClass: 'from-cyan-600 via-sky-600 to-indigo-600',
+    accentBorderClass: 'border-cyan-200',
+    pillBgClass: 'bg-cyan-50 text-cyan-800 border-cyan-200',
+    focusPills: ['Calculus & Vector Tools', 'Units, Kinematics & NLM', 'Mole & Atomic Foundation', 'Daily Concept Drills'],
+  },
+  'NEET|Class 10 Foundation': {
+    key: 'NEET|Class 10 Foundation',
+    label: 'Class 10 Foundation · Medical & Biology Olympiad Track',
+    badgeText: 'CLASS 10 MEDICAL + NSEB FOUNDATION',
+    headline: 'Class 10 Medical Foundation & NCERT Science Booster',
+    subheadline:
+      'Early NEET UG & Biology Olympiad preparation covering Life Processes, Heredity, Chemical Reactions, and Ray Optics.',
+    gradientClass: 'from-emerald-500 via-green-600 to-teal-600',
+    accentBorderClass: 'border-emerald-200',
+    pillBgClass: 'bg-emerald-50 text-emerald-800 border-emerald-200',
+    focusPills: ['Life Processes & Control', 'Heredity & Evolution', 'Acids, Bases & Carbon', 'Light & Current'],
+  },
+  'NEET|Class 11 Foundation': {
+    key: 'NEET|Class 11 Foundation',
+    label: 'Class 11 Foundation · NEET UG Concept Bridge',
+    badgeText: 'CLASS 11 NEET FOUNDATION + NCERT BRIDGE',
+    headline: 'Class 11 Medical Foundation: Cell, Biomolecules & Basic Physics',
+    subheadline:
+      'Build effortless speed in Basic Mathematics for Physics, Stoichiometry, Cell Biology, and Biomolecules from the ground up.',
+    gradientClass: 'from-teal-500 via-cyan-600 to-emerald-600',
+    accentBorderClass: 'border-teal-200',
+    pillBgClass: 'bg-teal-50 text-teal-800 border-teal-200',
+    focusPills: ['Basic Math for NEET Physics', 'Cell & Biomolecules', 'Mole & Redox Basics', 'NCERT Diagram Drills'],
+  },
   'JEE|Class 9': {
     key: 'JEE|Class 9',
     label: 'Class 9 · Junior Science & Math Olympiad Track',
@@ -1599,10 +1669,13 @@ export const CLASS_COHORT_THEMES: Record<string, ClassCohortTheme> = {
 };
 
 export function getCohortTheme(targetExam: string, classYear: string): ClassCohortTheme {
+  const exactKey = `${targetExam}|${classYear}`;
+  if (CLASS_COHORT_THEMES[exactKey]) return CLASS_COHORT_THEMES[exactKey];
+  if (classYear === 'Class 10 Foundation') return CLASS_COHORT_THEMES['JEE|Class 10 Foundation'];
+  if (classYear === 'Class 11 Foundation') return CLASS_COHORT_THEMES['JEE|Class 11 Foundation'];
   if (classYear === 'Class 10') return CLASS_COHORT_THEMES['JEE|Class 10'];
   if (classYear === 'Class 9') return CLASS_COHORT_THEMES['JEE|Class 9'];
-  const key = `${targetExam}|${classYear}`;
-  return CLASS_COHORT_THEMES[key] ?? CLASS_COHORT_THEMES['JEE|Class 12'];
+  return CLASS_COHORT_THEMES['JEE|Class 12'];
 }
 
 export const INITIAL_TEST_SUBMISSIONS: TestSubmission[] = [
@@ -1853,6 +1926,70 @@ export const INITIAL_TEST_SUBMISSIONS: TestSubmission[] = [
       'Review Director Circle formula x² + y² = a² + b² in Coordinate Geometry.',
     ],
     timestamp: '2026-11-01T19:15:00Z',
+  },
+  {
+    testId: 'sub_baseline_00',
+    uid: 'local_aspirant_01',
+    title: 'Foundation Diagnostic Part-Syllabus Test #0 (JEE)',
+    classYear: 'Class 12',
+    examType: 'JEE',
+    mode: 'MOCK',
+    totalQuestions: 6,
+    score: 11,
+    maxScore: 24,
+    accuracyPercent: 60,
+    correctCount: 3,
+    wrongCount: 2,
+    timeTaken: 1650,
+    subjectBreakdown: {
+      Physics: {
+        subject: 'Physics',
+        score: 3,
+        maxScore: 8,
+        correct: 1,
+        wrong: 1,
+        unattempted: 0,
+        accuracyPercent: 50,
+      },
+      Chemistry: {
+        subject: 'Chemistry',
+        score: 4,
+        maxScore: 8,
+        correct: 1,
+        wrong: 0,
+        unattempted: 1,
+        accuracyPercent: 100,
+      },
+      Math: {
+        subject: 'Math',
+        score: 4,
+        maxScore: 8,
+        correct: 1,
+        wrong: 1,
+        unattempted: 0,
+        accuracyPercent: 50,
+      },
+    },
+    questionRows: [
+      {
+        id: 'phy_3',
+        number: 1,
+        subject: 'Physics',
+        topic: 'Modern Physics',
+        type: 'MCQ',
+        prompt: 'Ratio of de Broglie wavelengths of a proton and an alpha particle accelerated through potential V:',
+        userAnswer: '2√2 : 1',
+        correctAnswer: '2√2 : 1',
+        status: 'CORRECT',
+        marks: 4,
+        solution: 'λ ∝ 1/√(mq), so λ_p/λ_α = √(4 × 2) = 2√2 : 1.',
+      },
+    ],
+    diagnosisBullets: [
+      'Baseline diagnostic completed at 60% accuracy.',
+      'Subsequent attempts improved accuracy to 67% and 83%.',
+    ],
+    timestamp: '2026-10-27T17:00:00Z',
   },
 ];
 

@@ -7,8 +7,10 @@ import {
   calculateLeaderboardCompositePoints,
   calculateMentorshipPrice,
   calculatePollPercentages,
+  computePerformanceTrendsForD3,
   computeUpdatedStreak,
   evaluateCBTSubmission,
+  evaluateStreakRiskStatus,
   formatDuration,
   generateAIStudyDiagnosis,
   generatePersonalizedStudyPlan,
@@ -19,7 +21,12 @@ import {
   selectInfinitePracticeEqualByChapter,
   summarizePaletteStatuses,
 } from './examLogic';
-import { CBT_QUESTION_BANK, INITIAL_CHAPTERS, INITIAL_TASKS } from '../constants';
+import {
+  CBT_QUESTION_BANK,
+  INITIAL_CHAPTERS,
+  INITIAL_TASKS,
+  INITIAL_TEST_SUBMISSIONS,
+} from '../constants';
 import type { CBTQuestion, LeaderboardEntry } from '../types';
 
 test('formatDuration formats MM:SS and HH:MM:SS accurately', () => {
@@ -268,4 +275,42 @@ test('getValidInfinitePracticeCounts and selectInfinitePracticeEqualByChapter en
     assert.equal(res.perChapterCounts[ch.id], 3);
   }
 });
+
+test('evaluateStreakRiskStatus flags CRITICAL when near midnight with 0 tasks today and SAFE when task completed', () => {
+  const criticalRisk = evaluateStreakRiskStatus({
+    uid: 'u1',
+    studentName: 'Aarav Sharma',
+    currentStreak: 6,
+    lastActiveDate: '2026-11-03',
+    todayIso: '2026-11-04',
+    completedTasksToday: 0,
+    currentHour24: 21,
+  });
+  assert.equal(criticalRisk.riskLevel, 'CRITICAL');
+  assert.equal(criticalRisk.hoursRemaining, 3);
+  assert.ok(criticalRisk.notificationPayload.title.includes('Streak at Risk'));
+
+  const safeStatus = evaluateStreakRiskStatus({
+    uid: 'u1',
+    studentName: 'Aarav Sharma',
+    currentStreak: 7,
+    lastActiveDate: '2026-11-04',
+    todayIso: '2026-11-04',
+    completedTasksToday: 2,
+    currentHour24: 21,
+  });
+  assert.equal(safeStatus.riskLevel, 'SAFE');
+});
+
+test('computePerformanceTrendsForD3 computes chronological improvement delta and subject accuracy aggregates', () => {
+  const trends = computePerformanceTrendsForD3(INITIAL_TEST_SUBMISSIONS);
+  assert.equal(trends.chronologicalTrend.length, 3);
+  assert.equal(trends.chronologicalTrend[0].accuracyPercent, 60);
+  assert.equal(trends.chronologicalTrend[2].accuracyPercent, 83);
+  assert.equal(trends.overallImprovementDelta, 23);
+  const phy = trends.subjectAggregates.find((s) => s.subject === 'Physics');
+  assert.ok(phy);
+  assert.ok(phy.avgAccuracy >= 75);
+});
+
 

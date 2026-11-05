@@ -62,9 +62,14 @@ export class MentorshipHubModule {
 
   private hasRealVideoSource(vid: VideoRoadmapItem): boolean {
     if (!vid.videoUrl) return false;
+    if (vid.videoUrl.startsWith('blob:')) {
+      return (
+        typeof window !== 'undefined' &&
+        vid.videoUrl.startsWith(`blob:${window.location.origin}`)
+      );
+    }
     return (
       vid.videoUrl.startsWith('data:video/') ||
-      vid.videoUrl.startsWith('blob:') ||
       vid.videoUrl.endsWith('.mp4') ||
       vid.videoUrl.endsWith('.webm')
     );
@@ -78,12 +83,7 @@ export class MentorshipHubModule {
     const activeMentor =
       mentors.find((m) => m.id === this.activeMentorId) ?? mentors[0];
 
-    const videoSections = [
-      'ALL',
-      ...Array.from(
-        new Set(allVideos.map((v) => v.section || 'Strategy Roadmaps'))
-      ),
-    ];
+    const videoSections = ['ALL', ...dataStore.getVideoSections()];
 
     const filteredVideos = allVideos.filter((v) => {
       if (this.selectedVideoSection === 'ALL') return true;
@@ -101,39 +101,193 @@ export class MentorshipHubModule {
     const videoDoubts = dataStore.getVideoDoubts(this.activeVideo.id);
     const speed = SPEED_OPTIONS[this.speedIdx];
     const isRealVideo = this.hasRealVideoSource(this.activeVideo);
+    const isMentorOnline = activeMentor.isOnline !== false;
 
     this.containerEl.innerHTML = `
       <div class="space-y-6">
-        <!-- Top Page Header with Mentor Selector & Instant Jitsi Video/Audio Call -->
-        <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div>
-            <span class="text-xs font-extrabold uppercase tracking-wider text-[#4F46E5]">
-              HD Media Player · Timestamped Doubts · Multi-Mentor Jitsi Video Calls
-            </span>
-            <h1 class="text-xl sm:text-2xl font-extrabold text-slate-900 mt-0.5">
-              Video Lectures & 1:1 Specific Mentor Connect
-            </h1>
+        <!-- TOP PROMINENT 1:1 MENTORSHIP BAR (Chat, Voice Call & Video Call Gated by Admin/Mentor Active Status) -->
+        <section
+          aria-label="Top 1:1 Mentorship Live Bar"
+          data-testid="top-1on1-mentorship-bar"
+          class="bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white border border-indigo-500/30 rounded-3xl p-4 sm:p-6 shadow-md space-y-4"
+        >
+          <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div class="space-y-1">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-full bg-indigo-500/30 border border-indigo-400/40 text-indigo-200 text-[11px] font-extrabold uppercase tracking-wider">
+                  🎯 1:1 Mentorship Live Connect
+                </span>
+                <span
+                  data-testid="mentor-active-status-pill"
+                  class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold ${
+                    isMentorOnline
+                      ? 'bg-emerald-500/20 border border-emerald-400/40 text-emerald-300'
+                      : 'bg-amber-500/20 border border-amber-400/40 text-amber-300'
+                  }"
+                >
+                  <span class="w-2 h-2 rounded-full ${
+                    isMentorOnline ? 'bg-[#10B981] animate-ping' : 'bg-amber-400'
+                  }"></span>
+                  ${
+                    isMentorOnline
+                      ? `${this.escapeHtml(activeMentor.name)} is ACTIVE — Voice & Video Calls Open`
+                      : `${this.escapeHtml(activeMentor.name)} is OFFLINE — 1:1 Chat Open (Calls Locked Until Active)`
+                  }
+                </span>
+              </div>
+              <h1 class="text-lg sm:text-2xl font-extrabold tracking-tight">
+                1:1 Mentorship Desk (Chat, Voice Call & Video Call with Admin & Mentors)
+              </h1>
+              <p class="text-xs text-slate-300 max-w-2xl">
+                Choose any subject mentor below to chat 24/7. Voice & Video Calls unlock automatically whenever your selected Admin/Mentor is <strong>Active Online</strong>.
+              </p>
+            </div>
+
+            <!-- Action Buttons: Chat, Voice Call (Gated by Active), Video Call (Gated by Active) + Admin Status Toggle -->
+            <div class="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                data-action="focus-mentor-chat"
+                class="min-h-[42px] px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-extrabold transition-colors"
+              >
+                💬 1:1 Chat (${this.escapeHtml(activeMentor.name.split(' ')[0])})
+              </button>
+              <button
+                type="button"
+                data-action="start-jitsi-call"
+                data-call-type="AUDIO"
+                data-mentor-id="${activeMentor.id}"
+                data-testid="launch-jitsi-audio-btn"
+                ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                class="min-h-[42px] px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                  isMentorOnline
+                    ? 'bg-[#10B981] hover:bg-emerald-600 text-white shadow-sm cursor-pointer'
+                    : 'bg-slate-800/90 border border-slate-700 text-slate-400 cursor-not-allowed'
+                }"
+              >
+                ${isMentorOnline ? `📞 Voice Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})` : '🔒 Voice Call (Wait for Active)'}
+              </button>
+              <button
+                type="button"
+                data-action="start-jitsi-call"
+                data-call-type="VIDEO"
+                data-mentor-id="${activeMentor.id}"
+                data-testid="launch-jitsi-video-btn"
+                ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                class="min-h-[42px] px-4 py-2 rounded-xl text-xs font-extrabold transition-all ${
+                  isMentorOnline
+                    ? 'bg-[#4F46E5] hover:bg-indigo-500 text-white shadow-sm cursor-pointer'
+                    : 'bg-slate-800/90 border border-slate-700 text-slate-400 cursor-not-allowed'
+                }"
+              >
+                ${isMentorOnline ? `🎥 Video Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})` : '🔒 Video Call (Wait for Active)'}
+              </button>
+              <button
+                type="button"
+                data-action="toggle-mentor-online-status"
+                data-mentor-id="${activeMentor.id}"
+                data-testid="toggle-mentor-active-btn"
+                title="Admin/Mentor Presence Control: Toggle Active/Offline Status in Firebase"
+                class="min-h-[42px] px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-[11px] font-mono-tabular font-bold text-indigo-200"
+              >
+                ⚡ Set ${isMentorOnline ? 'Offline' : 'Active'}
+              </button>
+            </div>
           </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              data-action="start-jitsi-call"
-              data-call-type="AUDIO"
-              data-mentor-id="${activeMentor.id}"
-              class="min-h-[42px] px-4 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-[#10B981] text-xs font-extrabold transition-colors"
+
+          <!-- Multi-Mentor Switcher Pills inside Top Bar -->
+          <div class="pt-3 border-t border-white/10 flex items-center gap-2 overflow-x-auto no-scrollbar" data-testid="top-mentor-switcher">
+            <span class="text-[11px] font-bold text-indigo-200 uppercase tracking-wider shrink-0">
+              Available Mentors (${mentors.length}):
+            </span>
+            ${mentors
+              .map((m) => {
+                const isSelected = m.id === activeMentor.id;
+                const online = m.isOnline !== false;
+                return `
+                  <button
+                    type="button"
+                    data-action="select-mentor"
+                    data-mentor-id="${m.id}"
+                    class="px-3 py-1.5 rounded-xl border text-left flex items-center gap-2 shrink-0 transition-all ${
+                      isSelected
+                        ? 'bg-white text-slate-900 border-white font-extrabold shadow-xs'
+                        : 'bg-white/10 border-white/15 text-white hover:bg-white/20'
+                    }"
+                  >
+                    <span class="w-2 h-2 rounded-full ${
+                      online ? 'bg-[#10B981]' : 'bg-amber-400'
+                    }"></span>
+                    <span class="text-xs font-bold">${this.escapeHtml(m.name)}</span>
+                    <span class="text-[10px] ${
+                      isSelected ? 'text-[#4F46E5]' : 'text-indigo-200'
+                    }">(${this.escapeHtml(m.subjectSpecialty)})</span>
+                  </button>
+                `;
+              })
+              .join('')}
+          </div>
+        </section>
+
+        <!-- VIDEO LECTURES SECTION DIRECTORY FOLDERS (Organized by Section Like Study Vault PDFs!) -->
+        <section
+          aria-label="Video Lecture Sections Directory"
+          data-testid="video-sections-directory"
+          class="bg-white border border-[#E2E8F0] rounded-2xl p-4 sm:p-5 shadow-sm space-y-3"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                Structured Video Vault · Same Section Architecture as PDF Study Vault
+              </span>
+              <h2 class="text-base sm:text-lg font-extrabold text-slate-900">
+                Browse Video Lectures by Section (${videoSections.length - 1} Sections)
+              </h2>
+            </div>
+            <a
+              href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}"
+              data-testid="open-dedicated-player-link"
+              class="min-h-[38px] px-4 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold inline-flex items-center gap-1.5 self-start sm:self-auto transition-colors"
             >
-              📞 Jitsi Audio Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})
-            </button>
-            <button
-              type="button"
-              data-action="start-jitsi-call"
-              data-call-type="VIDEO"
-              data-mentor-id="${activeMentor.id}"
-              data-testid="launch-jitsi-video-btn"
-              class="min-h-[42px] px-4 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm transition-colors"
-            >
-              🎥 Live Jitsi Video Call (${this.escapeHtml(activeMentor.name.split(' ')[0])})
-            </button>
+              <span>⛶ Open Dedicated Full-Screen / Mobile Player</span>
+              <span>→</span>
+            </a>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            ${videoSections
+              .map((sec) => {
+                const count =
+                  sec === 'ALL'
+                    ? allVideos.length
+                    : allVideos.filter(
+                        (v) => (v.section || 'Strategy Roadmaps') === sec
+                      ).length;
+                const active = this.selectedVideoSection === sec;
+                return `
+                  <button
+                    type="button"
+                    data-action="filter-video-section"
+                    data-section="${this.escapeHtml(sec)}"
+                    class="p-3 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                      active
+                        ? 'bg-indigo-50/90 border-[#4F46E5] ring-2 ring-[#4F46E5]/15'
+                        : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white'
+                    }"
+                  >
+                    <div class="flex items-center justify-between gap-1">
+                      <span class="text-sm">${sec === 'ALL' ? '🎬' : '📁'}</span>
+                      <span class="px-1.5 py-0.5 rounded bg-white border border-slate-200 font-mono-tabular text-[10px] font-extrabold text-[#4F46E5]">
+                        ${count} Vids
+                      </span>
+                    </div>
+                    <div class="text-xs font-extrabold text-slate-900 truncate">
+                      ${sec === 'ALL' ? 'All Video Sections' : this.escapeHtml(sec)}
+                    </div>
+                  </button>
+                `;
+              })
+              .join('')}
           </div>
         </section>
 
@@ -171,14 +325,22 @@ export class MentorshipHubModule {
                   </div>
                 </div>
 
-                <button
-                  type="button"
-                  data-action="connect-video-mentor"
-                  data-mentor-id="${this.activeVideo.mentorId || 'mentor_sumit_master'}"
-                  class="min-h-[34px] px-3 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition-colors"
-                >
-                  💬 Talk to ${this.escapeHtml((this.activeVideo.mentorName || 'Sumit').split(' ')[0])} →
-                </button>
+                <div class="flex items-center gap-2">
+                  <a
+                    href="/player.html?videoId=${encodeURIComponent(this.activeVideo.id)}"
+                    class="min-h-[34px] px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-[11px] font-bold inline-flex items-center gap-1"
+                  >
+                    <span>⛶ Dedicated Player</span>
+                  </a>
+                  <button
+                    type="button"
+                    data-action="connect-video-mentor"
+                    data-mentor-id="${this.activeVideo.mentorId || 'mentor_sumit_master'}"
+                    class="min-h-[34px] px-3 py-1.5 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold shadow-2xs transition-colors"
+                  >
+                    💬 Talk to ${this.escapeHtml((this.activeVideo.mentorName || 'Sumit').split(' ')[0])} →
+                  </button>
+                </div>
               </div>
 
               <!-- Video Viewport Stage -->
@@ -223,7 +385,7 @@ export class MentorshipHubModule {
 
                 <!-- Right-Click Disabled Shield Badge -->
                 <div class="absolute top-3 right-3 z-20 pointer-events-none px-2.5 py-1 rounded-lg bg-indigo-950/80 border border-indigo-400/30 text-[10px] font-mono-tabular text-indigo-200">
-                  🔒 ${isRealVideo ? 'Uploaded Video File' : 'DRM Stream'} · By ${this.escapeHtml(this.activeVideo.mentorName || 'Sumit Kumar')}
+                  🔒 ${isRealVideo ? 'Uploaded Video File' : 'HD Interactive Lecture Stream'} · By ${this.escapeHtml(this.activeVideo.mentorName || 'Sumit Kumar')}
                 </div>
 
                 <!-- Bottom Docked Transport Controls -->
@@ -238,6 +400,7 @@ export class MentorshipHubModule {
                   <button
                     type="button"
                     data-action="vid-toggle-play"
+                    data-testid="mentorship-play-video-btn"
                     aria-label="${this.isPlaying ? 'Pause Video' : 'Play Video'}"
                     class="pointer-events-auto w-12 h-12 rounded-full bg-[#4F46E5] hover:bg-indigo-500 text-white flex items-center justify-center shadow-lg"
                   >
@@ -388,32 +551,14 @@ export class MentorshipHubModule {
               </div>
             </section>
 
-            <!-- Video Lectures & Section Playlist Cards (Showing Mentor Name on Each Card) -->
+            <!-- Video Lectures & Section Playlist Cards (Showing Mentor Name + Open in Fullscreen Player) -->
             <section aria-label="Mentor Video Roadmaps" class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
               <div class="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h2 class="text-base font-extrabold text-slate-900">Video Lectures by Section & Mentor</h2>
-                  <p class="text-xs text-slate-500">Every video displays its uploading Mentor and section.</p>
-                </div>
-                <div class="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                  ${videoSections
-                    .map(
-                      (sec) => `
-                    <button
-                      type="button"
-                      data-action="filter-video-section"
-                      data-section="${this.escapeHtml(sec)}"
-                      class="min-h-[32px] px-3 py-1 rounded-xl text-xs font-bold transition-colors ${
-                        this.selectedVideoSection === sec
-                          ? 'bg-[#4F46E5] text-white'
-                          : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-600 hover:bg-slate-100'
-                      }"
-                    >
-                      ${sec === 'ALL' ? 'All Sections' : this.escapeHtml(sec)}
-                    </button>
-                  `
-                    )
-                    .join('')}
+                  <h2 class="text-base font-extrabold text-slate-900">
+                    ${this.selectedVideoSection === 'ALL' ? 'All Video Lectures' : `${this.escapeHtml(this.selectedVideoSection)} Lectures`} (${filteredVideos.length})
+                  </h2>
+                  <p class="text-xs text-slate-500">Click any lecture to play inline or open in the dedicated full-screen / mobile YouTube-style player.</p>
                 </div>
               </div>
 
@@ -462,8 +607,13 @@ export class MentorshipHubModule {
                         </div>
                       </button>
 
-                      <div class="px-3 pb-3 pt-1 flex items-center justify-between border-t border-slate-100">
-                        <span class="text-[10px] text-slate-500 truncate">${this.escapeHtml(v.topicTag)}</span>
+                      <div class="px-3 pb-3 pt-1 flex items-center justify-between gap-1 border-t border-slate-100">
+                        <a
+                          href="/player.html?videoId=${encodeURIComponent(v.id)}"
+                          class="text-[11px] font-extrabold text-slate-800 hover:text-[#4F46E5] shrink-0"
+                        >
+                          ⛶ Full Player
+                        </a>
                         <button
                           type="button"
                           data-action="connect-video-mentor"
@@ -481,21 +631,23 @@ export class MentorshipHubModule {
             </section>
           </div>
 
-          <!-- Right 5 Cols: Multi-Mentor 1:1 Connect (Select Specific Mentor + Chat + Jitsi Video Call) -->
+          <!-- Right 5 Cols: Multi-Mentor 1:1 Connect (Select Specific Mentor + Chat + Active-Gated Call) -->
           <div class="lg:col-span-5 space-y-6">
             <section
               aria-label="1:1 Mentorship Connect"
+              id="mentor-1on1-chat-panel"
               class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm flex flex-col h-[680px]"
             >
               <!-- Specific Mentor Selector Strip -->
               <div class="pb-3 border-b border-slate-100 space-y-2">
                 <div class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                  Select Specific Mentor to Chat or Video Call (${mentors.length} Available)
+                  Select Specific Mentor to Chat or Call (${mentors.length} Mentors)
                 </div>
                 <div class="flex items-center gap-2 overflow-x-auto no-scrollbar pb-1" data-testid="mentor-selector-strip">
                   ${mentors
                     .map((m) => {
                       const isCurrent = m.id === activeMentor.id;
+                      const online = m.isOnline !== false;
                       return `
                       <button
                         type="button"
@@ -507,15 +659,22 @@ export class MentorshipHubModule {
                             : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-slate-100'
                         }"
                       >
-                        <img
-                          src="${m.avatarUrl}"
-                          alt="${this.escapeHtml(m.name)}"
-                          referrerpolicy="no-referrer"
-                          class="w-7 h-7 rounded-full object-cover border border-slate-200"
-                        />
+                        <div class="relative shrink-0">
+                          <img
+                            src="${m.avatarUrl}"
+                            alt="${this.escapeHtml(m.name)}"
+                            referrerpolicy="no-referrer"
+                            class="w-8 h-8 rounded-full object-cover border border-slate-200"
+                          />
+                          <span class="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border border-white ${
+                            online ? 'bg-[#10B981]' : 'bg-amber-400'
+                          }"></span>
+                        </div>
                         <div>
                           <div class="text-xs font-extrabold text-slate-900 leading-none">${this.escapeHtml(m.name)}</div>
-                          <div class="text-[10px] font-semibold text-[#10B981] mt-0.5">${this.escapeHtml(m.subjectSpecialty)}</div>
+                          <div class="text-[10px] font-semibold ${
+                            online ? 'text-[#10B981]' : 'text-amber-600'
+                          } mt-0.5">${this.escapeHtml(m.subjectSpecialty)} · ${online ? 'Active' : 'Offline'}</div>
                         </div>
                       </button>
                     `;
@@ -536,19 +695,25 @@ export class MentorshipHubModule {
                   <div>
                     <div class="flex items-center gap-2">
                       <h2 class="text-sm font-extrabold text-slate-900">${this.escapeHtml(activeMentor.name)}</h2>
-                      <span class="w-2 h-2 rounded-full bg-[#10B981]"></span>
+                      <span class="w-2.5 h-2.5 rounded-full ${
+                        isMentorOnline ? 'bg-[#10B981]' : 'bg-amber-400'
+                      }"></span>
                     </div>
                     <p class="text-[11px] text-slate-500">
                       ${this.escapeHtml(activeMentor.role)} · ${this.escapeHtml(activeMentor.qualification)}
                     </p>
                   </div>
                 </div>
-                <span class="px-2 py-0.5 rounded-md bg-emerald-50 text-[#10B981] text-[10px] font-bold">
-                  ${mySession?.status || 'ACTIVE'}
+                <span class="px-2.5 py-1 rounded-lg text-[10px] font-extrabold ${
+                  isMentorOnline
+                    ? 'bg-emerald-50 text-[#10B981] border border-emerald-200'
+                    : 'bg-amber-50 text-amber-800 border border-amber-200'
+                }">
+                  ${isMentorOnline ? '🟢 ACTIVE FOR CALLS' : '⚪ OFFLINE (CHAT ONLY)'}
                 </span>
               </div>
 
-              <!-- 3-Mode Quick Request Strip (Chat, Jitsi Audio, Jitsi Video) -->
+              <!-- 3-Mode Quick Request Strip (Chat Always Open, Voice/Video Gated by Mentor Active Status) -->
               <div class="grid grid-cols-3 gap-2 py-3 border-b border-slate-100">
                 <button
                   type="button"
@@ -563,18 +728,28 @@ export class MentorshipHubModule {
                   data-action="start-jitsi-call"
                   data-call-type="AUDIO"
                   data-mentor-id="${activeMentor.id}"
-                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-emerald-50 text-[#10B981] text-xs font-bold hover:bg-emerald-100 transition-colors"
+                  ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                    isMentorOnline
+                      ? 'bg-emerald-50 text-[#10B981] hover:bg-emerald-100'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }"
                 >
-                  🎙️ Jitsi Audio
+                  ${isMentorOnline ? '🎙️ Voice Call' : '🔒 Voice (Offline)'}
                 </button>
                 <button
                   type="button"
                   data-action="start-jitsi-call"
                   data-call-type="VIDEO"
                   data-mentor-id="${activeMentor.id}"
-                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 text-xs font-bold hover:bg-amber-100 transition-colors"
+                  ${!isMentorOnline ? 'data-offline-blocked="true"' : ''}
+                  class="min-h-[38px] px-2.5 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                    isMentorOnline
+                      ? 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                      : 'bg-slate-100 text-slate-400 cursor-not-allowed'
+                  }"
                 >
-                  📹 Jitsi Video
+                  ${isMentorOnline ? '📹 Video Call' : '🔒 Video (Offline)'}
                 </button>
               </div>
 
@@ -788,9 +963,26 @@ export class MentorshipHubModule {
       ctx.font = '700 22px "JetBrains Mono", monospace';
       ctx.fillText(b.pct, 1020, y + 52);
     });
+
+    // Animated Live Playhead Progress Indicator on Canvas
+    const progressRatio = Math.min(1, Math.max(0, this.currentTimeSec / Math.max(1, this.totalDurationSec)));
+    ctx.fillStyle = 'rgba(79, 70, 229, 0.35)';
+    ctx.fillRect(64, 595, 1140, 26);
+    ctx.fillStyle = '#10B981';
+    ctx.fillRect(64, 595, Math.max(18, 1140 * progressRatio), 26);
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '700 16px "JetBrains Mono", monospace';
+    ctx.fillText(
+      `${this.isPlaying ? '▶ PLAYING LIVE LECTURE' : '❚❚ PAUSED'} · ${formatDuration(this.currentTimeSec)} / ${this.activeVideo.duration}`,
+      80,
+      614
+    );
   }
 
   private startPlaybackLoop(): void {
+    if (this.animId !== null) {
+      cancelAnimationFrame(this.animId);
+    }
     const step = (now: number) => {
       if (!this.isPlaying) return;
       const dt = (now - this.lastTick) / 1000;
@@ -812,6 +1004,7 @@ export class MentorshipHubModule {
       if (scrub) {
         scrub.value = String(Math.floor(this.currentTimeSec));
       }
+      this.drawPrivacyStreamFrame();
 
       this.animId = requestAnimationFrame(step);
     };
@@ -827,6 +1020,22 @@ export class MentorshipHubModule {
       this.callbacks.onShowToast(
         'Right-click & direct video downloads are disabled on prepskm.in'
       );
+    });
+
+    const canvasEl = this.containerEl.querySelector<HTMLCanvasElement>(
+      '#privacy-video-canvas'
+    );
+    canvasEl?.addEventListener('click', () => {
+      this.isPlaying = !this.isPlaying;
+      if (this.isPlaying) {
+        this.lastTick = performance.now();
+        this.startPlaybackLoop();
+      } else if (this.animId !== null) {
+        cancelAnimationFrame(this.animId);
+        this.animId = null;
+      }
+      this.rerender();
+      this.drawPrivacyStreamFrame();
     });
 
     const realVideoEl =
@@ -1028,8 +1237,35 @@ export class MentorshipHubModule {
               if (found.mentorId) {
                 this.activeMentorId = found.mentorId;
               }
-              this.currentTimeSec = 0;
-              this.isPlaying = false;
+              this.currentTimeSec = 120;
+              this.isPlaying = true;
+              this.lastTick = performance.now();
+              this.startPlaybackLoop();
+              this.callbacks.onShowToast(`Playing "${found.title}"`);
+              this.rerender();
+              this.drawPrivacyStreamFrame();
+            }
+            break;
+          }
+          case 'focus-mentor-chat': {
+            const chatInput = this.containerEl?.querySelector<HTMLInputElement>(
+              '#mentorship-chat-input'
+            );
+            chatInput?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            chatInput?.focus();
+            break;
+          }
+          case 'toggle-mentor-online-status': {
+            const mId = el.dataset.mentorId || this.activeMentorId;
+            const updated = await dataStore.toggleMentorOnlineStatus(mId);
+            if (updated) {
+              this.callbacks.onShowToast(
+                `${updated.name} is now ${
+                  updated.isOnline
+                    ? '🟢 ACTIVE (Voice & Video Calls Unlocked!)'
+                    : '⚪ OFFLINE (Calls Gated — Chat Open)'
+                }`
+              );
               this.rerender();
               this.drawPrivacyStreamFrame();
             }
@@ -1079,6 +1315,14 @@ export class MentorshipHubModule {
             const mentors = dataStore.getMentors();
             const mentor = mentors.find((m) => m.id === mId) ?? mentors[0];
             this.activeMentorId = mentor.id;
+
+            // Enforce Active Status Call Gate!
+            if (mentor.isOnline === false) {
+              this.callbacks.onShowToast(
+                `🔒 ${mentor.name} is currently Offline. Voice & Video Calls are only available when the Admin/Mentor is Active! Send a 1:1 Chat message or toggle Active status.`
+              );
+              return;
+            }
 
             const session = await dataStore.createMentorshipRequest({
               requestType: callType,

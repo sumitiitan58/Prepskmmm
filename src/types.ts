@@ -3,9 +3,47 @@ export type SubjectName = 'Physics' | 'Chemistry' | 'Math' | 'Biology';
 export type TaskBucket = 'Today' | 'Backlog';
 export type TaskPriority = 'High' | 'Medium' | 'Low';
 export type ModuleId = 'dashboard' | 'player' | 'live' | 'cbt';
-export type PageId = 'home' | 'study' | 'mentorship' | 'test' | 'admin' | 'profile';
+export type PageId =
+  | 'home'
+  | 'study'
+  | 'mentorship'
+  | 'test'
+  | 'test-history'
+  | 'planner'
+  | 'player'
+  | 'admin'
+  | 'profile';
 export type ProficiencyLevel = 'Weak' | 'Moderate' | 'Strong';
-export type StudentClassYear = 'Class 9' | 'Class 10' | 'Class 11' | 'Class 12' | 'Dropper';
+export type StudentClassYear =
+  | 'Class 9'
+  | 'Class 10'
+  | 'Class 10 Foundation'
+  | 'Class 11'
+  | 'Class 11 Foundation'
+  | 'Class 12'
+  | 'Dropper';
+
+export interface StreakNotificationItem {
+  id: string;
+  uid: string;
+  studentName: string;
+  currentStreak: number;
+  riskLevel: 'SAFE' | 'WARNING' | 'CRITICAL';
+  hoursRemaining: number;
+  title: string;
+  message: string;
+  actionHref: string;
+  isRead?: boolean;
+  createdAt: string;
+}
+
+export interface ElementStyleOverride {
+  selectorKey: string;
+  label?: string;
+  text?: string;
+  color?: string;
+  bgColor?: string;
+}
 
 export interface AspirantUser {
   uid: string;
@@ -99,6 +137,17 @@ export interface SiteThemeSettings {
   surfaceTint: string;
   surfaceBg: string;
   presetName: string;
+  elementOverrides?: Record<string, ElementStyleOverride>;
+  cohortThemeOverrides?: Record<
+    string,
+    {
+      headline?: string;
+      subheadline?: string;
+      primaryColor?: string;
+      secondaryColor?: string;
+      surfaceBg?: string;
+    }
+  >;
   updatedAt: string;
 }
 

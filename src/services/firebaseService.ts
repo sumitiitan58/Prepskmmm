@@ -32,6 +32,7 @@ import {
   DEFAULT_SITE_THEME,
   DEFAULT_USER,
   DEFAULT_VAULT_SECTIONS,
+  DEFAULT_VIDEO_SECTIONS,
   INITIAL_ADMIN_QUESTIONS,
   INITIAL_BROADCASTS,
   INITIAL_CHAPTERS,
@@ -56,6 +57,7 @@ import type {
   CBTQuestion,
   ChapterEntity,
   ClassEntity,
+  ElementStyleOverride,
   LeaderboardEntry,
   LectureProgress,
   LiveSession,
@@ -63,6 +65,7 @@ import type {
   MentorshipSessionItem,
   ProficiencyLevel,
   SiteThemeSettings,
+  StreakNotificationItem,
   StudentClassYear,
   StudyMaterialItem,
   StudyPlan,
@@ -76,6 +79,7 @@ import type {
 } from '../types';
 import {
   calculateLeaderboardCompositePoints,
+  evaluateStreakRiskStatus,
   generatePersonalizedStudyPlan,
   getSubjectsForExam,
   rankLeaderboardEntries,
@@ -245,11 +249,13 @@ const STORAGE_KEYS = {
   CHAPTERS: 'prepskm_chapters_v3',
   MATERIALS: 'prepskm_materials_v3',
   VAULT_SECTIONS: 'prepskm_vault_sections_v3',
+  VIDEO_SECTIONS: 'prepskm_video_sections_v3',
   VIDEOS: 'prepskm_videos_v3',
   VIDEO_DOUBTS: 'prepskm_video_doubts_v3',
   MENTORSHIP: 'prepskm_mentorship_v3',
   MENTORS: 'prepskm_mentors_v3',
   BROADCASTS: 'prepskm_broadcasts_v3',
+  STREAK_NOTIFICATIONS: 'prepskm_streak_notifications_v3',
   SITE_THEME: 'prepskm_site_theme_v3',
   DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v3',
   ADMIN_QUESTIONS: 'prepskm_admin_questions_v3',
@@ -273,15 +279,18 @@ export class PrepskmDataStore {
   private chapters: ChapterEntity[];
   private materials: StudyMaterialItem[];
   private vaultSections: string[];
+  private videoSections: string[];
   private videos: VideoRoadmapItem[];
   private videoDoubts: VideoDoubtItem[];
   private mentorshipSessions: MentorshipSessionItem[];
   private mentors: MentorProfileItem[];
   private broadcasts: BroadcastMessageItem[];
+  private streakNotifications: StreakNotificationItem[];
   private siteTheme: SiteThemeSettings;
   private dailyGoalTarget: number;
   private adminQuestions: AdminQuestionItem[];
   private authListeners: ((user: AspirantUser, isCloudAuthenticated: boolean) => void)[] = [];
+  private streakListeners: ((notifications: StreakNotificationItem[]) => void)[] = [];
   public isCloudAuthenticated = false;
 
   constructor() {
@@ -329,6 +338,7 @@ export class PrepskmDataStore {
     this.chapters = this.loadLocal(STORAGE_KEYS.CHAPTERS, [...INITIAL_CHAPTERS]);
     this.materials = this.loadLocal(STORAGE_KEYS.MATERIALS, [...INITIAL_MATERIALS]);
     this.vaultSections = this.loadLocal(STORAGE_KEYS.VAULT_SECTIONS, [...DEFAULT_VAULT_SECTIONS]);
+    this.videoSections = this.loadLocal(STORAGE_KEYS.VIDEO_SECTIONS, [...DEFAULT_VIDEO_SECTIONS]);
     this.videos = this.loadLocal(STORAGE_KEYS.VIDEOS, [...INITIAL_VIDEOS]);
     this.videoDoubts = this.loadLocal(STORAGE_KEYS.VIDEO_DOUBTS, [...INITIAL_VIDEO_DOUBTS]);
     this.mentorshipSessions = this.loadLocal(STORAGE_KEYS.MENTORSHIP, [
@@ -336,6 +346,25 @@ export class PrepskmDataStore {
     ]);
     this.mentors = this.loadLocal(STORAGE_KEYS.MENTORS, [...INITIAL_MENTORS]);
     this.broadcasts = this.loadLocal(STORAGE_KEYS.BROADCASTS, [...INITIAL_BROADCASTS]);
+
+    const initialRisk = evaluateStreakRiskStatus({
+      uid: this.currentUser.uid,
+      studentName: this.currentUser.name,
+      currentStreak: this.currentUser.currentStreak,
+      lastActiveDate: this.currentUser.lastActiveDate,
+      todayIso: '2026-11-04',
+      completedTasksToday: this.tasks.filter((t) => t.dateIso === '2026-11-04' && t.isCompleted).length,
+      currentHour24: 20,
+    });
+    this.streakNotifications = this.loadLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, [
+      {
+        id: 'streak_notif_initial_01',
+        ...initialRisk.notificationPayload,
+        isRead: false,
+        createdAt: '2026-11-04T14:30:00Z',
+      },
+    ]);
+
     this.siteTheme = this.loadLocal(STORAGE_KEYS.SITE_THEME, { ...DEFAULT_SITE_THEME });
     this.dailyGoalTarget = this.loadLocal(STORAGE_KEYS.DAILY_GOAL_TARGET, 4);
     this.adminQuestions = this.loadLocal(STORAGE_KEYS.ADMIN_QUESTIONS, [
@@ -490,6 +519,60 @@ export class PrepskmDataStore {
             for (const m of remoteMentors) merged.set(m.id, m);
             this.mentors = Array.from(merged.values());
             this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        doc(db, 'site_settings', 'global'),
+        (snap) => {
+          if (snap.exists()) {
+            this.siteTheme = {
+              ...DEFAULT_SITE_THEME,
+              ...(snap.data() as Partial<SiteThemeSettings>),
+            };
+            this.saveLocal(STORAGE_KEYS.SITE_THEME, this.siteTheme);
+            this.applySiteThemeToDocument();
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        collection(db, 'streak_notifications'),
+        (snap) => {
+          if (!snap.empty) {
+            const remote = snap.docs.map((d) => d.data() as StreakNotificationItem);
+            const merged = new Map<string, StreakNotificationItem>();
+            for (const item of remote) merged.set(item.id, item);
+            for (const item of this.streakNotifications) {
+              if (!merged.has(item.id)) merged.set(item.id, item);
+            }
+            this.streakNotifications = Array.from(merged.values()).sort((a, b) =>
+              b.createdAt.localeCompare(a.createdAt)
+            );
+            this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
+            this.notifyStreakListeners();
+          }
+        },
+        () => {}
+      );
+
+      onSnapshot(
+        collection(db, 'test_submissions'),
+        (snap) => {
+          if (!snap.empty) {
+            const remote = snap.docs.map((d) => d.data() as TestSubmission);
+            const merged = new Map<string, TestSubmission>();
+            for (const s of remote) merged.set(s.testId, s);
+            for (const s of this.submissions) {
+              if (!merged.has(s.testId)) merged.set(s.testId, s);
+            }
+            this.submissions = Array.from(merged.values()).sort((a, b) =>
+              (b.timestamp || '').localeCompare(a.timestamp || '')
+            );
+            this.saveLocal(STORAGE_KEYS.TEST_SUBMISSIONS, this.submissions);
           }
         },
         () => {}
@@ -1152,6 +1235,35 @@ export class PrepskmDataStore {
     return item;
   }
 
+  public async updateMaterial(
+    materialId: string,
+    partial: Partial<
+      Pick<
+        StudyMaterialItem,
+        'title' | 'section' | 'classId' | 'subjectId' | 'cohortTag' | 'pdfUrl' | 'summaryPages'
+      >
+    >
+  ): Promise<StudyMaterialItem | undefined> {
+    const idx = this.materials.findIndex((m) => m.id === materialId);
+    if (idx < 0) return undefined;
+    const existing = this.materials[idx];
+    const updated: StudyMaterialItem = {
+      ...existing,
+      ...partial,
+      title: (partial.title ?? existing.title).trim(),
+      section: (partial.section ?? existing.section).trim(),
+      pagesCount: partial.summaryPages ? partial.summaryPages.length : existing.pagesCount,
+    };
+    this.materials[idx] = updated;
+    this.saveLocal(STORAGE_KEYS.MATERIALS, this.materials);
+    try {
+      await setDoc(doc(db, 'materials', updated.id), updated);
+    } catch {
+      // Saved locally
+    }
+    return updated;
+  }
+
   public async deleteMaterial(materialId: string): Promise<void> {
     this.materials = this.materials.filter((m) => m.id !== materialId);
     this.saveLocal(STORAGE_KEYS.MATERIALS, this.materials);
@@ -1170,9 +1282,34 @@ export class PrepskmDataStore {
     }
   }
 
-  // --- Video Lectures, Real File Uploads & Timestamped Doubts ---
+  // --- Video Lectures, Sections, Real File Uploads & Timestamped Doubts ---
+  public getVideoSections(): string[] {
+    const dynamicFromVideos = this.videos
+      .map((v) => v.section?.trim())
+      .filter((s): s is string => Boolean(s));
+    const merged = Array.from(new Set([...this.videoSections, ...dynamicFromVideos]));
+    return merged;
+  }
+
+  public addCustomVideoSection(sectionName: string): string[] {
+    const clean = sectionName.trim();
+    if (clean && !this.videoSections.includes(clean)) {
+      this.videoSections.push(clean);
+      this.saveLocal(STORAGE_KEYS.VIDEO_SECTIONS, this.videoSections);
+    }
+    return this.getVideoSections();
+  }
+
   public getVideos(): VideoRoadmapItem[] {
     return [...this.videos];
+  }
+
+  public getVideoById(videoId?: string | null): VideoRoadmapItem {
+    if (videoId) {
+      const found = this.videos.find((v) => v.id === videoId);
+      if (found) return found;
+    }
+    return this.getLatestRoadmapAnnouncement();
   }
 
   public getLatestRoadmapAnnouncement(): VideoRoadmapItem {
@@ -1185,19 +1322,23 @@ export class PrepskmDataStore {
     duration: string;
     topicTag: string;
     section: string;
+    classCohort?: string;
     thumbnailUrl: string;
     videoUrl: string;
     mentorId: string;
   }): Promise<VideoRoadmapItem> {
     const mentor =
       this.mentors.find((m) => m.id === params.mentorId) ?? this.mentors[0];
+    const cleanSection = params.section.trim() || 'Master Roadmaps';
+    this.addCustomVideoSection(cleanSection);
     const item: VideoRoadmapItem = {
       id: sanitizeId(`vid_${Date.now()}`),
       title: params.title.trim(),
       description: params.description.trim() || 'High-yield strategy & PYQ masterclass lecture.',
       duration: params.duration.trim() || '25:00',
-      topicTag: params.topicTag.trim() || `${params.section} · ${mentor.subjectSpecialty}`,
-      section: params.section.trim() || 'Strategy Roadmaps',
+      topicTag: params.topicTag.trim() || `${cleanSection} · ${mentor.subjectSpecialty}`,
+      section: cleanSection,
+      classCohort: params.classCohort || 'Class 12',
       thumbnailUrl: params.thumbnailUrl,
       videoUrl: params.videoUrl,
       isNewRoadmap: true,
@@ -1216,6 +1357,27 @@ export class PrepskmDataStore {
       // Saved locally
     }
     return item;
+  }
+
+  public async updateVideoLecture(
+    videoId: string,
+    partial: Partial<Pick<VideoRoadmapItem, 'title' | 'description' | 'section' | 'duration' | 'videoUrl' | 'classCohort'>>
+  ): Promise<VideoRoadmapItem | undefined> {
+    const idx = this.videos.findIndex((v) => v.id === videoId);
+    if (idx < 0) return undefined;
+    if (partial.section) this.addCustomVideoSection(partial.section);
+    const updated: VideoRoadmapItem = {
+      ...this.videos[idx],
+      ...partial,
+    };
+    this.videos[idx] = updated;
+    this.saveLocal(STORAGE_KEYS.VIDEOS, this.videos);
+    try {
+      await setDoc(doc(db, 'videos', updated.id), updated);
+    } catch {
+      // Saved locally
+    }
+    return updated;
   }
 
   public async deleteVideoLecture(videoId: string): Promise<void> {
@@ -1332,6 +1494,22 @@ export class PrepskmDataStore {
     return item;
   }
 
+  public async toggleMentorOnlineStatus(
+    mentorId: string,
+    isOnline?: boolean
+  ): Promise<MentorProfileItem | undefined> {
+    const mentor = this.mentors.find((m) => m.id === mentorId);
+    if (!mentor) return undefined;
+    mentor.isOnline = isOnline !== undefined ? isOnline : !mentor.isOnline;
+    this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
+    try {
+      await setDoc(doc(db, 'mentors', mentor.id), mentor);
+    } catch {
+      // Saved locally
+    }
+    return { ...mentor };
+  }
+
   public async deleteMentor(mentorId: string): Promise<void> {
     // Prevent deleting Master Admin Sumit
     if (mentorId === 'mentor_sumit_master') return;
@@ -1341,6 +1519,88 @@ export class PrepskmDataStore {
       await deleteDoc(doc(db, 'mentors', mentorId));
     } catch {
       // Ignore
+    }
+  }
+
+  // --- Real-Time Firebase Streak-At-Risk Notifications ---
+  public onStreakNotificationChange(
+    cb: (notifications: StreakNotificationItem[]) => void
+  ): () => void {
+    this.streakListeners.push(cb);
+    cb(this.getStreakNotifications());
+    return () => {
+      this.streakListeners = this.streakListeners.filter((fn) => fn !== cb);
+    };
+  }
+
+  private notifyStreakListeners(): void {
+    const list = this.getStreakNotifications();
+    for (const cb of this.streakListeners) {
+      cb(list);
+    }
+  }
+
+  public getStreakNotifications(): StreakNotificationItem[] {
+    return [...this.streakNotifications];
+  }
+
+  public evaluateCurrentStreakRisk() {
+    const todayIso = '2026-11-04';
+    const completedTasksToday = this.tasks.filter(
+      (t) => (t.dateIso === todayIso || t.type === 'Today') && t.isCompleted
+    ).length;
+    return evaluateStreakRiskStatus({
+      uid: this.currentUser.uid,
+      studentName: this.currentUser.name,
+      currentStreak: this.currentUser.currentStreak,
+      lastActiveDate: this.currentUser.lastActiveDate,
+      todayIso,
+      completedTasksToday,
+      currentHour24: 20,
+    });
+  }
+
+  public async triggerStreakRiskNotification(
+    customNote?: string
+  ): Promise<StreakNotificationItem> {
+    const risk = this.evaluateCurrentStreakRisk();
+    const item: StreakNotificationItem = {
+      id: sanitizeId(`streak_notif_${Date.now()}`),
+      ...risk.notificationPayload,
+      message: customNote?.trim() || risk.notificationPayload.message,
+      isRead: false,
+      createdAt: new Date().toISOString(),
+    };
+    this.streakNotifications = [item, ...this.streakNotifications.slice(0, 14)];
+    this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
+    this.notifyStreakListeners();
+
+    if (
+      typeof window !== 'undefined' &&
+      'Notification' in window &&
+      Notification.permission === 'granted'
+    ) {
+      try {
+        new Notification(item.title, { body: item.message });
+      } catch {
+        // Ignore browser notification errors in headless/iframe
+      }
+    }
+
+    try {
+      await setDoc(doc(db, 'streak_notifications', item.id), item);
+    } catch {
+      // Saved locally
+    }
+    return item;
+  }
+
+  public markStreakNotificationRead(id: string): void {
+    const found = this.streakNotifications.find((n) => n.id === id);
+    if (found) {
+      found.isRead = true;
+      this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
+      this.notifyStreakListeners();
     }
   }
 
@@ -1391,7 +1651,7 @@ export class PrepskmDataStore {
     }
   }
 
-  // --- Whole-Website Theme & Custom Logo/Icon Customizer ---
+  // --- Whole-Website Theme, Custom Logo/Icon & Inline Pencil Visual Editor ---
   public getSiteTheme(): SiteThemeSettings {
     return { ...this.siteTheme };
   }
@@ -1413,6 +1673,23 @@ export class PrepskmDataStore {
       // Saved locally
     }
     return this.getSiteTheme();
+  }
+
+  public async saveElementStyleOverride(
+    selectorKey: string,
+    override: Omit<ElementStyleOverride, 'selectorKey'>
+  ): Promise<SiteThemeSettings> {
+    const existingOverrides = { ...(this.siteTheme.elementOverrides || {}) };
+    existingOverrides[selectorKey] = {
+      ...(existingOverrides[selectorKey] || {}),
+      ...override,
+      selectorKey,
+    };
+    return this.updateSiteTheme({ elementOverrides: existingOverrides });
+  }
+
+  public async clearElementStyleOverrides(): Promise<SiteThemeSettings> {
+    return this.updateSiteTheme({ elementOverrides: {} });
   }
 
   public applySiteThemeToDocument(): void {
@@ -1445,6 +1722,31 @@ export class PrepskmDataStore {
       .bg-\\[\\#F59E0B\\] { background-color: ${this.siteTheme.accentColor} !important; }
       .text-\\[\\#F59E0B\\] { color: ${this.siteTheme.accentColor} !important; }
     `;
+
+    // Apply inline element overrides saved via the Admin Floating Pencil Editor
+    const overrides = this.siteTheme.elementOverrides;
+    if (overrides && typeof document !== 'undefined') {
+      window.requestAnimationFrame(() => {
+        for (const key of Object.keys(overrides)) {
+          const item = overrides[key];
+          if (!item) continue;
+          const elements = document.querySelectorAll<HTMLElement>(
+            `[data-edit-key="${key}"], ${key.startsWith('#') || key.startsWith('.') ? key : `[data-edit-key="${key}"]`}`
+          );
+          elements.forEach((el) => {
+            if (item.text !== undefined && item.text.trim() !== '') {
+              el.textContent = item.text;
+            }
+            if (item.color) {
+              el.style.color = item.color;
+            }
+            if (item.bgColor) {
+              el.style.backgroundColor = item.bgColor;
+            }
+          });
+        }
+      });
+    }
   }
 
   // --- 1:1 Mentorship Hub & Admin Mentorship Desk ---

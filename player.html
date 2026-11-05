@@ -1,16 +1,27 @@
 <!doctype html>
-<html lang="en" class="dark">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Private Lecture Player | Prepskm — JEE & NEET Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=5.0" />
+    <title>Full-Screen Lecture Player — prepskm.in</title>
     <meta
       name="description"
-      content="Distraction-free JEE & NEET video lecture player with persistent timestamp resume, clickable chapters, formula sheets, and auto-saving personal scratchpad."
+      content="Full-screen and mobile YouTube-style video lecture player with suggested lectures, section playlist, timestamped doubts, and auto-saving scratchpad on prepskm.in."
+    />
+    <meta property="og:title" content="Full-Screen Lecture Player — prepskm.in" />
+    <meta
+      property="og:description"
+      content="Watch JEE, NEET, and Foundation video lectures in full-screen horizontal or vertical YouTube-style mobile view with suggested videos."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
     />
     <link rel="stylesheet" href="/src/index.css" />
   </head>
-  <body class="bg-zinc-950 text-zinc-100 antialiased selection:bg-indigo-500 selection:text-white">
+  <body data-page="player" class="bg-[#0B0F19] text-slate-100 antialiased selection:bg-indigo-500 selection:text-white overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/index.ts"></script>
   </body>

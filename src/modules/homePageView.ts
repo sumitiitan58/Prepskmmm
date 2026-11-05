@@ -14,6 +14,10 @@ import {
   computeUpdatedStreak,
   getSubjectsForExam,
 } from '../utils/examLogic';
+import {
+  renderD3StreakProgressionWidget,
+  renderD3SubjectAccuracyChart,
+} from './d3Visualizations';
 
 export interface HomePageCallbacks {
   onNavigatePage: (page: PageId) => void;
@@ -32,6 +36,7 @@ export class HomePageModule {
   private backlogHours = 9;
   private backlogDays = 6;
   private lastBacklogQuota: number | null = 1.5;
+  private unsubscribeStreakNotifs: (() => void) | null = null;
 
   // Personalized Study Plan Generator state
   private planDailyHours = 6;
@@ -57,6 +62,14 @@ export class HomePageModule {
 
   public mount(container: HTMLElement): void {
     this.containerEl = container;
+    if (this.unsubscribeStreakNotifs) {
+      this.unsubscribeStreakNotifs();
+    }
+    this.unsubscribeStreakNotifs = dataStore.onStreakNotificationChange((notifs) => {
+      if (this.containerEl && notifs.length > 0) {
+        this.rerender();
+      }
+    });
     this.rerender();
   }
 
@@ -103,6 +116,8 @@ export class HomePageModule {
       todayIso,
       goalProgress.completedTasks > 0
     );
+    const streakRisk = dataStore.evaluateCurrentStreakRisk();
+    const streakNotifications = dataStore.getStreakNotifications();
     const activeCalendarDay =
       streakDays.find((d) => d.dateIso === this.selectedCalendarDateIso) ??
       streakDays[streakDays.length - 1];
@@ -328,7 +343,7 @@ export class HomePageModule {
               .join('')}
           </div>
 
-          <!-- Selected Calendar Day Task Log Box -->
+            <!-- Selected Calendar Day Task Log Box -->
           <div
             data-testid="calendar-day-task-panel"
             class="p-3.5 sm:p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2.5"
@@ -379,6 +394,98 @@ export class HomePageModule {
             `
             }
           </div>
+
+          <!-- D3.JS STREAK PROGRESSION WIDGET + REAL-TIME FIREBASE STREAK-AT-RISK PUSH NOTIFICATION SYSTEM -->
+          <div
+            data-testid="d3-streak-widget-section"
+            class="grid grid-cols-1 lg:grid-cols-12 gap-4 pt-2 border-t border-slate-100"
+          >
+            <!-- Left 7 Cols: D3.js Interactive 7-Day Streak Progression Graph -->
+            <div class="lg:col-span-7 p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                    D3.js Live Streak Progression Visualization
+                  </span>
+                  <h3 class="text-xs sm:text-sm font-extrabold text-slate-900">
+                    7-Day Study Streak Momentum & Daily Goal Completion Curve
+                  </h3>
+                </div>
+                <span class="px-2 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] font-mono-tabular text-[10px] font-extrabold">
+                  D3.js SVG
+                </span>
+              </div>
+              <div id="d3-home-streak-widget" data-testid="d3-home-streak-widget" class="w-full min-h-[150px]"></div>
+            </div>
+
+            <!-- Right 5 Cols: Real-Time Firebase Streak-At-Risk Notification Center -->
+            <div class="lg:col-span-5 p-4 rounded-2xl ${
+              streakRisk.riskLevel === 'CRITICAL'
+                ? 'bg-red-50/70 border border-red-200'
+                : streakRisk.riskLevel === 'WARNING'
+                  ? 'bg-amber-50/70 border border-amber-200'
+                  : 'bg-emerald-50/60 border border-emerald-200'
+            } flex flex-col justify-between gap-3">
+              <div class="space-y-1.5">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase ${
+                    streakRisk.riskLevel === 'CRITICAL'
+                      ? 'bg-[#EF4444] text-white'
+                      : streakRisk.riskLevel === 'WARNING'
+                        ? 'bg-[#F59E0B] text-white'
+                        : 'bg-[#10B981] text-white'
+                  }">
+                    🔔 Firebase Streak Guard · ${streakRisk.riskLevel}
+                  </span>
+                  <span class="font-mono-tabular text-[11px] font-bold text-slate-700">
+                    ${streakRisk.hoursRemaining}h left today
+                  </span>
+                </div>
+                <h3 class="text-xs sm:text-sm font-extrabold text-slate-900">
+                  ${this.escapeHtml(streakRisk.statusHeadline)}
+                </h3>
+                <p class="text-[11px] text-slate-600 leading-relaxed">
+                  ${this.escapeHtml(
+                    streakRisk.notificationPayload?.message ||
+                      'Complete at least 1 study task today to protect and advance your daily streak.'
+                  )}
+                </p>
+
+                ${
+                  streakNotifications.length > 0
+                    ? `
+                  <div class="mt-2 p-2.5 rounded-xl bg-white/90 border border-slate-200/80 space-y-1">
+                    <div class="flex items-center justify-between text-[10px] font-mono-tabular text-[#4F46E5] font-bold">
+                      <span>Latest Firebase Push Alert</span>
+                      <span>${streakNotifications[0].hoursRemaining}h left</span>
+                    </div>
+                    <p class="text-[11px] font-semibold text-slate-800 line-clamp-2">
+                      ${this.escapeHtml(streakNotifications[0].title)}
+                    </p>
+                  </div>
+                `
+                    : ''
+                }
+              </div>
+
+              <div class="flex flex-wrap items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  data-action="trigger-firebase-streak-reminder"
+                  data-testid="trigger-streak-notification-btn"
+                  class="flex-1 min-h-[38px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold transition-colors"
+                >
+                  🔔 Send Firebase Streak Reminder
+                </button>
+                <a
+                  href="/planner.html"
+                  class="min-h-[38px] px-3 py-2 rounded-xl bg-white hover:bg-slate-100 border border-slate-300 text-slate-800 text-xs font-extrabold inline-flex items-center"
+                >
+                  Planner →
+                </a>
+              </div>
+            </div>
+          </div>
         </section>
 
         <!-- Expansive Desktop Multi-Column Layout: Center Content Area (8 cols) + Right-Hand Live Widgets (4 cols) -->
@@ -391,13 +498,23 @@ export class HomePageModule {
               class="bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm space-y-5"
             >
               <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-                <div>
+                <div class="space-y-1">
                   <span class="text-xs font-semibold uppercase tracking-wider text-[#4F46E5]">
                     Routine & Completion Tracker · ${user.classYear} (${user.targetExam})
                   </span>
-                  <h2 class="text-lg sm:text-xl font-bold text-slate-900 mt-0.5">
+                  <h2 class="text-lg sm:text-xl font-bold text-slate-900">
                     Weekly Schedule & Daily Goal Progress Ring
                   </h2>
+                  <div class="pt-1">
+                    <a
+                      href="/planner.html"
+                      data-testid="open-dedicated-planner-link"
+                      class="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[#4F46E5] text-xs font-extrabold transition-colors"
+                    >
+                      <span>🗂️ Open Dedicated Full-Page Backlog & To-Do Workspace</span>
+                      <span>→</span>
+                    </a>
+                  </div>
                 </div>
 
                 <!-- Dynamic SVG Visual Progress Ring (Tracks Daily Goal vs Completed Tasks) -->
@@ -644,8 +761,16 @@ export class HomePageModule {
                     Backlog Killer Engine
                   </h2>
                 </div>
-                <div class="text-xs font-mono-tabular px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold">
-                  Extra Quota: ${(Math.round((this.backlogHours / Math.max(1, this.backlogDays)) * 10) / 10).toFixed(1)} hrs / day
+                <div class="flex items-center gap-2">
+                  <div class="text-xs font-mono-tabular px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 font-bold">
+                    Extra Quota: ${(Math.round((this.backlogHours / Math.max(1, this.backlogDays)) * 10) / 10).toFixed(1)} hrs / day
+                  </div>
+                  <a
+                    href="/planner.html?tab=backlog"
+                    class="px-3 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-bold text-[#4F46E5]"
+                  >
+                    Full Engine →
+                  </a>
                 </div>
               </div>
 
@@ -879,12 +1004,34 @@ export class HomePageModule {
 
           <!-- Right-Hand Live Widgets Column (4 cols on Desktop) -->
           <aside class="xl:col-span-4 space-y-6" aria-label="Live Study Widgets">
+            <!-- D3.js Subject Accuracy & Mock Test Analytics Widget -->
+            <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
+              <div class="flex items-center justify-between">
+                <div>
+                  <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+                    D3.js Mock Exam Analytics
+                  </span>
+                  <h3 class="text-sm sm:text-base font-extrabold text-slate-900">
+                    Subject Accuracy Snapshot
+                  </h3>
+                </div>
+                <a
+                  href="/test-history.html"
+                  data-testid="home-open-test-history-link"
+                  class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold"
+                >
+                  Full History →
+                </a>
+              </div>
+              <div id="d3-home-accuracy-mini" data-testid="d3-home-accuracy-mini" class="w-full min-h-[190px]"></div>
+            </section>
+
             <!-- Multi-Mentor Live Directory & Quick Connect Widget -->
             <section class="bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4">
               <div class="flex items-center justify-between">
                 <span class="inline-flex items-center gap-1.5 text-xs font-bold text-[#10B981]">
                   <span class="w-2 h-2 rounded-full bg-[#10B981] animate-pulse"></span>
-                  ${mentors.length} Subject Mentors Online
+                  ${mentors.filter((m) => m.isOnline !== false).length} Subject Mentors Active
                 </span>
                 <span class="text-[11px] font-mono-tabular text-[#4F46E5] font-bold">1:1 Video & Chat</span>
               </div>
@@ -896,22 +1043,27 @@ export class HomePageModule {
                     (m) => `
                   <div class="p-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] flex items-center justify-between gap-2.5">
                     <div class="flex items-center gap-2.5 min-w-0">
-                      <img
-                        src="${m.avatarUrl}"
-                        alt="${this.escapeHtml(m.name)}"
-                        referrerpolicy="no-referrer"
-                        class="w-10 h-10 rounded-full object-cover border border-[#E2E8F0] shrink-0"
-                      />
+                      <div class="relative shrink-0">
+                        <img
+                          src="${m.avatarUrl}"
+                          alt="${this.escapeHtml(m.name)}"
+                          referrerpolicy="no-referrer"
+                          class="w-10 h-10 rounded-full object-cover border border-[#E2E8F0]"
+                        />
+                        <span class="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full border-2 border-white ${
+                          m.isOnline !== false ? 'bg-[#10B981]' : 'bg-amber-400'
+                        }"></span>
+                      </div>
                       <div class="min-w-0">
                         <h3 class="text-xs font-bold text-slate-900 truncate">${this.escapeHtml(m.name)}</h3>
-                        <p class="text-[11px] text-slate-500 truncate">${this.escapeHtml(m.subjectSpecialty)} · ${this.escapeHtml(m.qualification)}</p>
+                        <p class="text-[11px] text-slate-500 truncate">${this.escapeHtml(m.subjectSpecialty)} · ${m.isOnline !== false ? '🟢 Active' : '⚪ Offline'}</p>
                       </div>
                     </div>
                     <a
                       href="/mentorship.html"
                       class="px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-[11px] font-bold shrink-0"
                     >
-                      Talk →
+                      ${m.isOnline !== false ? 'Call/Chat →' : 'Chat →'}
                     </a>
                   </div>
                 `
@@ -927,10 +1079,10 @@ export class HomePageModule {
                   1:1 Mentorship
                 </a>
                 <a
-                  href="/test.html"
+                  href="/test-history.html"
                   class="min-h-[42px] px-3 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-xs font-semibold flex items-center justify-center transition-colors"
                 >
-                  Mock & Practice
+                  Test History
                 </a>
               </div>
             </section>
@@ -998,7 +1150,31 @@ export class HomePageModule {
       </div>
     `;
 
+    this.mountD3HomeWidgets(streakDays);
     this.bindEvents();
+  }
+
+  private mountD3HomeWidgets(streakDays: StreakCalendarDay[]): void {
+    if (!this.containerEl) return;
+
+    const streakWidgetEl = this.containerEl.querySelector<HTMLElement>(
+      '#d3-home-streak-widget'
+    );
+    if (streakWidgetEl) {
+      renderD3StreakProgressionWidget(
+        streakWidgetEl,
+        streakDays,
+        dataStore.getUser().currentStreak
+      );
+    }
+
+    const accuracyMiniEl = this.containerEl.querySelector<HTMLElement>(
+      '#d3-home-accuracy-mini'
+    );
+    if (accuracyMiniEl) {
+      const submissions = dataStore.getTestSubmissions();
+      renderD3SubjectAccuracyChart(accuracyMiniEl, submissions);
+    }
   }
 
   private bindEvents(): void {
@@ -1114,6 +1290,14 @@ export class HomePageModule {
 
       el.addEventListener('click', async () => {
         switch (action) {
+          case 'trigger-firebase-streak-reminder': {
+            const notif = await dataStore.triggerStreakRiskNotification();
+            if (notif) {
+              this.callbacks.onShowToast(`🔔 Firebase Alert Sent: ${notif.title}`);
+            }
+            this.rerender();
+            break;
+          }
           case 'adjust-daily-goal': {
             const delta = Number(el.dataset.delta || 0);
             const next = dataStore.updateDailyGoalTarget(
@@ -1195,8 +1379,8 @@ export class HomePageModule {
     });
   }
 
-  private escapeHtml(str: string): string {
-    return str
+  private escapeHtml(str: string | undefined | null): string {
+    return String(str ?? '')
       .replace(/&/g, '&amp;')
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;')

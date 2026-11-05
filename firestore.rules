@@ -175,8 +175,18 @@ service cloud.firestore {
       allow delete: if isMasterAdmin();
     }
 
+    match /streak_notifications/{notifId} {
+      allow read: if true;
+      allow create, update: if isValidId(notifId)
+        && request.resource.data.uid is string
+        && request.resource.data.title is string
+        && request.resource.data.message is string;
+      allow delete: if true;
+    }
+
     match /{document=**} {
       allow read, write: if false;
     }
   }
 }
+

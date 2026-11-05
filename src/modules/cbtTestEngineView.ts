@@ -21,6 +21,10 @@ import {
   selectInfinitePracticeEqualByChapter,
   summarizePaletteStatuses,
 } from '../utils/examLogic';
+import {
+  renderD3ImprovementTrendGraph,
+  renderD3SubjectAccuracyChart,
+} from './d3Visualizations';
 
 export interface CBTTestEngineCallbacks {
   onShowToast: (message: string) => void;
@@ -184,6 +188,7 @@ export class CBTTestEngineModule {
           ${this.renderTestHistoryAndAnalyticsStage()}
         </div>
       `;
+      this.mountHistoryD3Charts();
       this.bindEvents();
       return;
     }
@@ -278,6 +283,8 @@ export class CBTTestEngineModule {
       'Class 12',
       'Class 11',
       'Dropper',
+      'Class 11 Foundation',
+      'Class 10 Foundation',
       'Class 10',
       'Class 9',
     ];
@@ -919,68 +926,96 @@ export class CBTTestEngineModule {
                 </div>
               </div>
 
-              <!-- Question Prompt -->
-              <div class="space-y-3">
-                <p class="text-sm sm:text-base font-medium text-slate-900 leading-relaxed">
-                  ${this.escapeHtml(currentQ.prompt)}
-                </p>
-                ${
-                  currentQ.equationBlock
-                    ? `
-                  <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono-tabular text-xs sm:text-sm text-indigo-950 overflow-x-auto">
-                    ${this.escapeHtml(currentQ.equationBlock)}
-                  </div>
-                `
-                    : ''
-                }
+              <!-- Question Viewport: Enlarged Question Image (No Cluttered Text Above Image) -->
+              <div class="space-y-3" data-testid="cbt-question-display">
                 ${
                   currentQ.questionImg
                     ? `
-                  <div class="rounded-xl overflow-hidden border border-[#E2E8F0] bg-[#F8FAFC] p-2">
+                  <div class="rounded-2xl overflow-hidden border-2 border-indigo-200 bg-white p-2 sm:p-4 shadow-xs">
                     <img
                       src="${currentQ.questionImg}"
                       alt="Question Diagram"
+                      data-testid="cbt-enlarged-question-image"
                       referrerpolicy="no-referrer"
-                      class="max-h-56 w-auto mx-auto object-contain rounded-lg"
+                      class="w-full max-h-[420px] sm:max-h-[480px] mx-auto object-contain rounded-xl"
                     />
                   </div>
                 `
-                    : ''
+                    : `
+                  <p class="text-sm sm:text-base font-medium text-slate-900 leading-relaxed">
+                    ${this.escapeHtml(currentQ.prompt)}
+                  </p>
+                  ${
+                    currentQ.equationBlock
+                      ? `
+                    <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono-tabular text-xs sm:text-sm text-indigo-950 overflow-x-auto">
+                      ${this.escapeHtml(currentQ.equationBlock)}
+                    </div>
+                  `
+                      : ''
+                  }
+                `
                 }
               </div>
 
-              <!-- MCQ Options OR Virtual Numerical Keypad -->
+              <!-- MCQ Options (Compact Single Row A B C D) OR Virtual Numerical Keypad -->
               ${
                 currentQ.type === 'MCQ' && currentQ.options
                   ? `
-                <div class="space-y-2.5 pt-2">
-                  ${currentQ.options
-                    .map((opt, idx) => {
-                      const optLetter = ['A', 'B', 'C', 'D'][idx] ?? 'A';
-                      const selected = currentAnswer === opt;
-                      return `
-                      <button
-                        type="button"
-                        data-action="select-mcq-option"
-                        data-option="${this.escapeHtml(opt)}"
-                        class="w-full min-h-[48px] p-3.5 rounded-xl border text-left flex items-center gap-3 transition-all ${
-                          selected
-                            ? 'bg-indigo-50/90 border-[#4F46E5] ring-2 ring-[#4F46E5]/15 text-slate-900 font-bold'
-                            : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white text-slate-700'
-                        }"
-                      >
-                        <span class="w-7 h-7 rounded-lg font-mono-tabular text-xs font-bold flex items-center justify-center shrink-0 ${
-                          selected
-                            ? 'bg-[#4F46E5] text-white'
-                            : 'bg-white border border-slate-200 text-slate-700'
-                        }">
-                          ${optLetter}
-                        </span>
-                        <span class="text-xs sm:text-sm">${this.escapeHtml(opt)}</span>
-                      </button>
-                    `;
-                    })
-                    .join('')}
+                <div class="space-y-3 pt-2">
+                  ${
+                    !currentQ.questionImg
+                      ? `
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
+                      ${currentQ.options
+                        .map((opt, idx) => {
+                          const optLetter = ['A', 'B', 'C', 'D'][idx] ?? 'A';
+                          return `<div class="flex items-start gap-2"><span class="font-mono-tabular font-extrabold text-[#4F46E5]">(${optLetter})</span><span>${this.escapeHtml(opt)}</span></div>`;
+                        })
+                        .join('')}
+                    </div>
+                  `
+                      : ''
+                  }
+                  <div class="space-y-1.5">
+                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                      Select Option (Single Compact Row A · B · C · D)
+                    </span>
+                    <div
+                      data-testid="single-row-abcd-options"
+                      class="grid grid-cols-4 gap-2 sm:gap-3"
+                    >
+                      ${currentQ.options
+                        .slice(0, 4)
+                        .map((opt, idx) => {
+                          const optLetter = ['A', 'B', 'C', 'D'][idx] ?? 'A';
+                          const selected = currentAnswer === opt;
+                          return `
+                          <button
+                            type="button"
+                            data-action="select-mcq-option"
+                            data-option="${this.escapeHtml(opt)}"
+                            data-option-letter="${optLetter}"
+                            class="min-h-[44px] px-2.5 py-2 rounded-xl border text-center flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                              selected
+                                ? 'bg-[#4F46E5] border-[#4F46E5] text-white font-extrabold shadow-sm ring-2 ring-[#4F46E5]/25'
+                                : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-indigo-50/60 hover:border-indigo-300 text-slate-800 font-bold'
+                            }"
+                          >
+                            <span class="w-6 h-6 rounded-lg font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0 ${
+                              selected
+                                ? 'bg-white text-[#4F46E5]'
+                                : 'bg-white border border-slate-200 text-slate-800'
+                            }">
+                              ${optLetter}
+                            </span>
+                            <span class="text-xs font-extrabold hidden sm:inline truncate">Option ${optLetter}</span>
+                          </button>
+                        `;
+                        })
+                        .join('')}
+                    </div>
+                  </div>
                 </div>
               `
                   : `
@@ -1303,55 +1338,32 @@ export class CBTTestEngineModule {
             </div>
           </section>
 
-          <!-- Right 7 Cols: Visual Subject-Wise Score & Accuracy Bar Graph -->
+          <!-- Right 7 Cols: D3.js Subject-Wise Score & Accuracy Graph + Trend -->
           <section
             aria-label="Subject Performance Graph"
             data-testid="test-performance-graph"
             class="lg:col-span-7 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-sm space-y-4"
           >
-            <div class="flex items-center justify-between">
+            <div class="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h3 class="text-base font-extrabold text-slate-900">
-                  Subject-Wise Score & Accuracy Graph
+                  D3.js Subject-Wise Accuracy & Performance Trend
                 </h3>
                 <p class="text-xs text-slate-500">
-                  Visual comparison of marks scored and accuracy across subjects
+                  Interactive D3.js SVG visualization of subject accuracy and chronological mock improvement
                 </p>
               </div>
-              <span class="px-3 py-1 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono-tabular text-xs font-bold text-slate-700">
-                📊 Performance Chart
-              </span>
+              <a
+                href="/test-history.html"
+                class="px-3 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-extrabold hover:bg-indigo-700 transition-colors"
+              >
+                Open Dedicated Test History Page →
+              </a>
             </div>
 
-            <div class="space-y-3.5 pt-1">
-              ${subEntries
-                .map((sub) => {
-                  const pct = Math.min(
-                    100,
-                    Math.max(8, Math.round((Math.max(0, sub.score) / Math.max(1, sub.maxScore)) * 100))
-                  );
-                  const barGrad =
-                    sub.subject === 'Physics'
-                      ? 'from-indigo-500 to-blue-600'
-                      : sub.subject === 'Chemistry'
-                        ? 'from-emerald-500 to-teal-600'
-                        : 'from-amber-500 to-orange-600';
-                  return `
-                  <div class="p-3.5 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-2">
-                    <div class="flex items-center justify-between text-xs font-extrabold text-slate-800">
-                      <span>${sub.subject} <span class="text-slate-400 font-normal">(+${sub.correct} / -${sub.wrong})</span></span>
-                      <span class="font-mono-tabular">${sub.score} / ${sub.maxScore} Marks · ${sub.accuracyPercent}% Acc</span>
-                    </div>
-                    <div class="w-full h-4 rounded-full bg-slate-200/80 overflow-hidden">
-                      <div
-                        class="h-full rounded-full bg-gradient-to-r ${barGrad}"
-                        style="width: ${pct}%"
-                      ></div>
-                    </div>
-                  </div>
-                `;
-                })
-                .join('')}
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div id="d3-cbt-subject-accuracy" class="w-full min-h-[210px]"></div>
+              <div id="d3-cbt-improvement-trend" class="w-full min-h-[210px]"></div>
             </div>
           </section>
         </div>
@@ -1510,6 +1522,32 @@ export class CBTTestEngineModule {
         solutionImg: q.solutionImg,
       };
     });
+  }
+
+  private mountHistoryD3Charts(): void {
+    if (!this.containerEl) return;
+    const submissions = dataStore.getTestSubmissions();
+    const activeSub =
+      submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
+      this.lastSubmission ??
+      submissions[0];
+
+    const accEl = this.containerEl.querySelector<HTMLElement>(
+      '#d3-cbt-subject-accuracy'
+    );
+    if (accEl) {
+      renderD3SubjectAccuracyChart(
+        accEl,
+        activeSub ? [activeSub] : submissions
+      );
+    }
+
+    const trendEl = this.containerEl.querySelector<HTMLElement>(
+      '#d3-cbt-improvement-trend'
+    );
+    if (trendEl) {
+      renderD3ImprovementTrendGraph(trendEl, submissions);
+    }
   }
 
   private prepareExamPaper(mode: CBTEngineMode): void {

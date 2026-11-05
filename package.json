@@ -18,6 +18,8 @@
     "@pmndrs/uikit": "^1.0.64",
     "@preact/signals-core": "^1.14.0",
     "@sparkjsdev/spark": "^2.1.0",
+    "@types/d3": "^7.4.3",
+    "d3": "^7.9.2",
     "firebase": "^13.2.0",
     "lit": "^3.3.1",
     "openai": "^6.7.0",

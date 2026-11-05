@@ -896,5 +896,243 @@ export function selectInfinitePracticeEqualByChapter(
   };
 }
 
+/**
+ * Evaluates whether a student is at risk of losing their study streak and returns
+ * a real-time Firebase notification payload.
+ */
+export function evaluateStreakRiskStatus(params: {
+  uid: string;
+  studentName: string;
+  currentStreak: number;
+  lastActiveDate: string;
+  todayIso: string;
+  completedTasksToday: number;
+  currentHour24?: number;
+}): {
+  riskLevel: 'SAFE' | 'WARNING' | 'CRITICAL';
+  hoursRemaining: number;
+  statusHeadline: string;
+  notificationPayload: {
+    uid: string;
+    studentName: string;
+    currentStreak: number;
+    riskLevel: 'SAFE' | 'WARNING' | 'CRITICAL';
+    hoursRemaining: number;
+    title: string;
+    message: string;
+    actionHref: string;
+  };
+} {
+  const safeHour = Math.max(0, Math.min(23, Math.floor(params.currentHour24 ?? 19)));
+  const hoursRemaining = Math.max(1, 24 - safeHour);
+  const safeStreak = Math.max(1, Math.floor(params.currentStreak || 1));
+  const isCompletedToday =
+    params.completedTasksToday > 0 || params.lastActiveDate === params.todayIso;
+
+  if (isCompletedToday) {
+    return {
+      riskLevel: 'SAFE',
+      hoursRemaining,
+      statusHeadline: `🔥 ${safeStreak}-Day Streak Protected Today`,
+      notificationPayload: {
+        uid: params.uid,
+        studentName: params.studentName,
+        currentStreak: safeStreak,
+        riskLevel: 'SAFE',
+        hoursRemaining,
+        title: `🔥 ${safeStreak}-Day Study Streak Protected!`,
+        message: `Awesome work ${params.studentName}! You completed ${Math.max(1, params.completedTasksToday)} task(s) today. Complete one more backlog micro-task to boost your rank!`,
+        actionHref: '/planner.html',
+      },
+    };
+  }
+
+  const riskLevel: 'WARNING' | 'CRITICAL' = hoursRemaining <= 5 ? 'CRITICAL' : 'WARNING';
+  const statusHeadline =
+    riskLevel === 'CRITICAL'
+      ? `⚠️ URGENT: ${hoursRemaining}h Left Before Your ${safeStreak}-Day Streak Resets!`
+      : `⚡ Streak Alert: Complete 1 Task Within ${hoursRemaining}h to Keep ${safeStreak}-Day Streak`;
+
+  return {
+    riskLevel,
+    hoursRemaining,
+    statusHeadline,
+    notificationPayload: {
+      uid: params.uid,
+      studentName: params.studentName,
+      currentStreak: safeStreak,
+      riskLevel,
+      hoursRemaining,
+      title:
+        riskLevel === 'CRITICAL'
+          ? `🚨 Streak at Risk! Only ${hoursRemaining}h Left (${safeStreak}-Day Streak)`
+          : `⚡ Don't Lose Your ${safeStreak}-Day Study Streak!`,
+      message: `${params.studentName}, you haven't logged a completed study task today. Finish 1 daily task or 15-min PYQ sprint in the next ${hoursRemaining} hours to advance to Day ${safeStreak + 1}!`,
+      actionHref: '/planner.html',
+    },
+  };
+}
+
+/**
+ * Aggregates mock test submissions into chronological D3 trend points and
+ * subject-wise accuracy metrics for the D3.js Performance & Test History charts.
+ */
+export function computePerformanceTrendsForD3(
+  submissions: Array<{
+    testId: string;
+    title?: string;
+    score: number;
+    maxScore?: number;
+    accuracyPercent?: number;
+    correctCount: number;
+    wrongCount: number;
+    timestamp?: string;
+    subjectBreakdown: Record<string, SubjectScoreBreakdown>;
+  }>
+): {
+  chronologicalTrend: Array<{
+    index: number;
+    testId: string;
+    shortLabel: string;
+    title: string;
+    dateLabel: string;
+    accuracyPercent: number;
+    scorePercent: number;
+    score: number;
+    maxScore: number;
+  }>;
+  subjectAggregates: Array<{
+    subject: SubjectName;
+    avgAccuracy: number;
+    totalCorrect: number;
+    totalWrong: number;
+    totalUnattempted: number;
+    totalScore: number;
+    totalMaxScore: number;
+    attemptsCount: number;
+  }>;
+  overallImprovementDelta: number;
+} {
+  const attemptedSubmissions = submissions.filter(
+    (s) => (s.correctCount || 0) + (s.wrongCount || 0) > 0 || (s.score || 0) !== 0
+  );
+  const effectiveList =
+    attemptedSubmissions.length >= 2 ? attemptedSubmissions : submissions;
+
+  const sorted = [...effectiveList].sort((a, b) => {
+    const tA = a.timestamp ? Date.parse(a.timestamp) : 0;
+    const tB = b.timestamp ? Date.parse(b.timestamp) : 0;
+    return tA - tB;
+  });
+
+  const chronologicalTrend = sorted.map((sub, idx) => {
+    const maxScore = Math.max(4, sub.maxScore ?? 24);
+    const attempted = sub.correctCount + sub.wrongCount;
+    const accuracyPercent =
+      sub.accuracyPercent !== undefined
+        ? Math.max(0, Math.min(100, Math.round(sub.accuracyPercent)))
+        : attempted > 0
+          ? Math.round((sub.correctCount / attempted) * 100)
+          : 0;
+    const scorePercent = Math.max(0, Math.min(100, Math.round((sub.score / maxScore) * 100)));
+    const rawDate = sub.timestamp ? new Date(sub.timestamp) : null;
+    const dateLabel =
+      rawDate && !Number.isNaN(rawDate.getTime())
+        ? rawDate.toLocaleDateString('en-IN', { month: 'short', day: 'numeric' })
+        : `Test #${idx + 1}`;
+
+    return {
+      index: idx + 1,
+      testId: sub.testId,
+      shortLabel: `T${idx + 1}`,
+      title: sub.title || `Mock Test #${idx + 1}`,
+      dateLabel,
+      accuracyPercent,
+      scorePercent,
+      score: sub.score,
+      maxScore,
+    };
+  });
+
+  const subjectMap = new Map<
+    SubjectName,
+    {
+      accSum: number;
+      count: number;
+      correct: number;
+      wrong: number;
+      unattempted: number;
+      score: number;
+      maxScore: number;
+    }
+  >();
+
+  const allSubjects: SubjectName[] = ['Physics', 'Chemistry', 'Math', 'Biology'];
+  for (const s of allSubjects) {
+    subjectMap.set(s, {
+      accSum: 0,
+      count: 0,
+      correct: 0,
+      wrong: 0,
+      unattempted: 0,
+      score: 0,
+      maxScore: 0,
+    });
+  }
+
+  for (const sub of sorted) {
+    for (const key of Object.keys(sub.subjectBreakdown || {})) {
+      const sb = sub.subjectBreakdown[key];
+      if (!sb) continue;
+      const subjectKey = sb.subject as SubjectName;
+      const entry = subjectMap.get(subjectKey);
+      if (!entry) continue;
+      entry.accSum += sb.accuracyPercent;
+      entry.count += 1;
+      entry.correct += sb.correct;
+      entry.wrong += sb.wrong;
+      entry.unattempted += sb.unattempted;
+      entry.score += sb.score;
+      entry.maxScore += sb.maxScore;
+    }
+  }
+
+  const subjectAggregates = allSubjects
+    .map((subject) => {
+      const entry = subjectMap.get(subject)!;
+      const attempted = entry.correct + entry.wrong;
+      const avgAccuracy =
+        attempted > 0
+          ? Math.round((entry.correct / attempted) * 100)
+          : entry.count > 0
+            ? Math.round(entry.accSum / entry.count)
+            : 0;
+      return {
+        subject,
+        avgAccuracy,
+        totalCorrect: entry.correct,
+        totalWrong: entry.wrong,
+        totalUnattempted: entry.unattempted,
+        totalScore: entry.score,
+        totalMaxScore: entry.maxScore,
+        attemptsCount: entry.count,
+      };
+    })
+    .filter((item) => item.attemptsCount > 0 || item.subject !== 'Biology');
+
+  const overallImprovementDelta =
+    chronologicalTrend.length >= 2
+      ? chronologicalTrend[chronologicalTrend.length - 1].accuracyPercent -
+        chronologicalTrend[0].accuracyPercent
+      : 0;
+
+  return {
+    chronologicalTrend,
+    subjectAggregates,
+    overallImprovementDelta,
+  };
+}
+
+
 
 

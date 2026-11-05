@@ -11,6 +11,8 @@ export default defineConfig({
         study: resolve(__dirname, 'study.html'),
         mentorship: resolve(__dirname, 'mentorship.html'),
         test: resolve(__dirname, 'test.html'),
+        testHistory: resolve(__dirname, 'test-history.html'),
+        planner: resolve(__dirname, 'planner.html'),
         admin: resolve(__dirname, 'admin.html'),
         player: resolve(__dirname, 'player.html'),
         live: resolve(__dirname, 'live.html'),
@@ -19,3 +21,4 @@ export default defineConfig({
     },
   },
 });
+

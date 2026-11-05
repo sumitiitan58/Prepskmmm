@@ -16,6 +16,7 @@ export class StudyVaultModule {
 
   // In-App Secure PDF Viewer Modal State
   private previewMaterial: StudyMaterialItem | null = null;
+  private editingMaterial: StudyMaterialItem | null = null;
   private currentPageIndex = 0;
   private zoomPercent = 100;
 
@@ -215,6 +216,8 @@ export class StudyVaultModule {
 
           <!-- In-App Secure PDF Viewer Modal -->
           ${this.renderSecurePdfModal()}
+          <!-- Edit PDF Study Material Modal -->
+          ${this.renderEditMaterialModal()}
         </div>
       `;
 
@@ -393,21 +396,30 @@ export class StudyVaultModule {
                         </div>
                       </div>
 
-                      <!-- Right: Compact Action Buttons (Preview & Download) -->
+                      <!-- Right: Compact Action Buttons (Preview, Edit PDF & Download) -->
                       <div class="flex items-center gap-2 shrink-0 self-end sm:self-center">
                         <button
                           type="button"
                           data-action="preview-material"
                           data-material-id="${mat.id}"
-                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors"
+                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#4F46E5] hover:bg-indigo-700 text-white text-[11px] font-bold transition-colors cursor-pointer"
                         >
                           Preview
                         </button>
                         <button
                           type="button"
+                          data-action="open-edit-material"
+                          data-material-id="${mat.id}"
+                          data-testid="edit-pdf-material-btn"
+                          class="min-h-[34px] px-2.5 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 text-[11px] font-bold transition-colors cursor-pointer"
+                        >
+                          ✏️ Edit PDF
+                        </button>
+                        <button
+                          type="button"
                           data-action="download-material"
                           data-material-id="${mat.id}"
-                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors"
+                          class="min-h-[34px] px-3 py-1 rounded-lg bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-800 text-[11px] font-bold transition-colors cursor-pointer"
                         >
                           ⬇ PDF
                         </button>
@@ -423,6 +435,8 @@ export class StudyVaultModule {
 
         <!-- In-App Secure PDF Viewer Modal -->
         ${this.renderSecurePdfModal()}
+        <!-- Edit PDF Study Material Modal -->
+        ${this.renderEditMaterialModal()}
       </div>
     `;
 
@@ -504,6 +518,15 @@ export class StudyVaultModule {
 
               <button
                 type="button"
+                data-action="open-edit-material"
+                data-material-id="${mat.id}"
+                class="min-h-[36px] px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-xs font-bold text-amber-800 hover:bg-amber-100"
+              >
+                ✏️ Edit PDF
+              </button>
+
+              <button
+                type="button"
                 data-action="pdf-fullscreen"
                 class="min-h-[36px] px-3 py-1.5 rounded-xl bg-white border border-[#E2E8F0] text-xs font-semibold text-slate-700 hover:bg-slate-100"
               >
@@ -553,6 +576,131 @@ export class StudyVaultModule {
     `;
   }
 
+  private renderEditMaterialModal(): string {
+    if (!this.editingMaterial) return '';
+    const mat = this.editingMaterial;
+    const classes = dataStore.getClasses();
+    const subjects = dataStore.getSubjects();
+    const sections = dataStore.getVaultSections();
+
+    return `
+      <div
+        id="edit-pdf-material-modal"
+        data-testid="edit-pdf-material-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Edit PDF Study Material"
+        class="fixed inset-0 z-50 bg-slate-900/65 backdrop-blur-sm flex items-center justify-center p-4"
+      >
+        <div class="bg-white border border-[#E2E8F0] rounded-2xl max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div>
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-amber-600">
+                ✏️ Edit & Update Study Vault PDF · Synced to Firebase
+              </span>
+              <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
+                Update PDF Title, Section & Document Pages
+              </h3>
+            </div>
+            <button
+              type="button"
+              data-action="close-edit-material"
+              class="min-h-[34px] px-3 py-1 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+            >
+              Close ✕
+            </button>
+          </div>
+
+          <form id="study-vault-edit-pdf-form" class="space-y-3.5">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">PDF Title</label>
+              <input
+                id="edit-pdf-title"
+                type="text"
+                required
+                value="${this.escapeHtml(mat.title)}"
+                class="w-full min-h-[40px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs sm:text-sm font-bold text-slate-900"
+              />
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Vault Section</label>
+                <select
+                  id="edit-pdf-section"
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
+                >
+                  ${sections
+                    .map(
+                      (sec) =>
+                        `<option value="${this.escapeHtml(sec)}" ${mat.section === sec ? 'selected' : ''}>${this.escapeHtml(sec)}</option>`
+                    )
+                    .join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Class / Cohort</label>
+                <select
+                  id="edit-pdf-class"
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
+                >
+                  ${classes
+                    .map(
+                      (c) =>
+                        `<option value="${c.id}" ${mat.classId === c.id ? 'selected' : ''}>${this.escapeHtml(c.name)}</option>`
+                    )
+                    .join('')}
+                </select>
+              </div>
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Subject</label>
+                <select
+                  id="edit-pdf-subject"
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-semibold text-slate-800"
+                >
+                  ${subjects
+                    .map(
+                      (s) =>
+                        `<option value="${s.id}" ${mat.subjectId === s.id ? 'selected' : ''}>${this.escapeHtml(s.name)}</option>`
+                    )
+                    .join('')}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">
+                PDF Content / Formula & Notes Pages (Separate pages with a blank line "---")
+              </label>
+              <textarea
+                id="edit-pdf-pages"
+                rows="6"
+                class="w-full px-3.5 py-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-xs text-slate-800"
+              >${this.escapeHtml(mat.summaryPages.join('\n---\n'))}</textarea>
+            </div>
+
+            <div class="flex items-center justify-end gap-2 pt-2">
+              <button
+                type="button"
+                data-action="close-edit-material"
+                class="min-h-[40px] px-4 py-2 rounded-xl bg-slate-100 text-slate-700 text-xs font-bold"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                data-testid="save-edited-pdf-btn"
+                class="min-h-[40px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-extrabold shadow-sm"
+              >
+                💾 Save Updated PDF to Firebase
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    `;
+  }
+
   private triggerMaterialDownload(mat: StudyMaterialItem): void {
     const content = [
       `====================================================================`,
@@ -590,6 +738,50 @@ export class StudyVaultModule {
         refocused.focus();
         refocused.setSelectionRange(this.searchQuery.length, this.searchQuery.length);
       }
+    });
+
+    const editForm = this.containerEl.querySelector<HTMLFormElement>(
+      '#study-vault-edit-pdf-form'
+    );
+    editForm?.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!this.editingMaterial) return;
+      const title =
+        editForm.querySelector<HTMLInputElement>('#edit-pdf-title')?.value.trim() ||
+        this.editingMaterial.title;
+      const section =
+        editForm.querySelector<HTMLSelectElement>('#edit-pdf-section')?.value ||
+        this.editingMaterial.section;
+      const classId =
+        editForm.querySelector<HTMLSelectElement>('#edit-pdf-class')?.value ||
+        this.editingMaterial.classId;
+      const subjectId =
+        editForm.querySelector<HTMLSelectElement>('#edit-pdf-subject')?.value ||
+        this.editingMaterial.subjectId;
+      const rawPages =
+        editForm.querySelector<HTMLTextAreaElement>('#edit-pdf-pages')?.value || '';
+      const summaryPages = rawPages
+        .split(/\n---\n/)
+        .map((p) => p.trim())
+        .filter(Boolean);
+
+      await dataStore.updateMaterial(this.editingMaterial.id, {
+        title,
+        section,
+        classId,
+        subjectId,
+        summaryPages:
+          summaryPages.length > 0 ? summaryPages : this.editingMaterial.summaryPages,
+      });
+
+      if (this.previewMaterial && this.previewMaterial.id === this.editingMaterial.id) {
+        this.previewMaterial =
+          dataStore.getMaterials().find((m) => m.id === this.editingMaterial?.id) ||
+          null;
+      }
+      this.editingMaterial = null;
+      this.callbacks.onShowToast(`Updated PDF "${title}" in Firebase Study Vault!`);
+      this.rerender();
     });
 
     this.containerEl.querySelectorAll<HTMLElement>('[data-action]').forEach((el) => {
@@ -643,6 +835,20 @@ export class StudyVaultModule {
               this.zoomPercent = 100;
               this.rerender();
             }
+            break;
+          }
+          case 'open-edit-material': {
+            const id = el.dataset.materialId;
+            const found = dataStore.getMaterials().find((m) => m.id === id);
+            if (found) {
+              this.editingMaterial = found;
+              this.rerender();
+            }
+            break;
+          }
+          case 'close-edit-material': {
+            this.editingMaterial = null;
+            this.rerender();
             break;
           }
           case 'download-material': {
