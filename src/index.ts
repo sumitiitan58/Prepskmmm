@@ -127,6 +127,23 @@ class PrepskmPlatformApp {
   }
 
   private detectInitialPage(): PageId {
+    const params = new URLSearchParams(window.location.search);
+    const queryPage = params.get('page') as PageId | null;
+    if (
+      queryPage &&
+      [
+        'home',
+        'planner',
+        'study',
+        'test',
+        'test-history',
+        'mentorship',
+        'player',
+        'admin',
+      ].includes(queryPage)
+    ) {
+      return queryPage;
+    }
     const bodyPage = document.body.dataset.page;
     const path = window.location.pathname.toLowerCase();
     if (bodyPage === 'planner' || path.includes('planner.html')) return 'planner';
@@ -226,7 +243,7 @@ class PrepskmPlatformApp {
     }[] = [
       {
         id: 'home',
-        label: 'Home & Syllabus',
+        label: 'Home & All-in-One Hub',
         shortLabel: 'Home',
         href: '/index.html',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 10.5L12 3l9 7.5V21a1 1 0 01-1 1h-5v-6H9v6H4a1 1 0 01-1-1V10.5z"/></svg>`,
@@ -236,7 +253,7 @@ class PrepskmPlatformApp {
         id: 'planner',
         label: 'To-Do & Planner',
         shortLabel: 'Planner',
-        href: '/planner.html',
+        href: '/index.html?page=planner',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/></svg>`,
         accentDot: 'bg-violet-500',
       },
@@ -244,15 +261,15 @@ class PrepskmPlatformApp {
         id: 'study',
         label: 'Study Material Vault',
         shortLabel: 'Study Vault',
-        href: '/study.html',
+        href: '/index.html?page=study',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>`,
         accentDot: 'bg-emerald-500',
       },
       {
         id: 'test',
-        label: 'CBT & Mock Engine',
-        shortLabel: 'CBT Test',
-        href: '/test.html',
+        label: 'Official Mock Tests',
+        shortLabel: 'Mock Test',
+        href: '/index.html?page=test',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>`,
         accentDot: 'bg-amber-500',
       },
@@ -260,7 +277,7 @@ class PrepskmPlatformApp {
         id: 'test-history',
         label: 'Test Analytics',
         shortLabel: 'History',
-        href: '/test-history.html',
+        href: '/index.html?page=test-history',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M7 12l3-3 3 3 4-4M8 21l4-4 4 4M3 4h18M4 4h16v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4z"/></svg>`,
         accentDot: 'bg-cyan-500',
       },
@@ -268,7 +285,7 @@ class PrepskmPlatformApp {
         id: 'mentorship',
         label: 'Lectures & Mentorship',
         shortLabel: 'Lectures',
-        href: '/mentorship.html',
+        href: '/index.html?page=mentorship',
         svgIcon: `<svg class="w-4 h-4 sm:w-5 sm:h-5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"/></svg>`,
         accentDot: 'bg-rose-500',
       },
@@ -1552,8 +1569,47 @@ class PrepskmPlatformApp {
         const targetPage = link.dataset.shellNav as PageId;
         if (!targetPage) return;
         e.preventDefault();
-        window.history.pushState({}, '', link.getAttribute('href') || '/index.html');
+        const unifiedHref =
+          targetPage === 'home' ? '/index.html' : `/index.html?page=${targetPage}`;
+        window.history.pushState({}, '', unifiedHref);
         this.navigateToPage(targetPage);
+      });
+    });
+
+    // Unify all internal links (/test.html, /study.html, /mentorship.html, /planner.html, /player.html, /admin.html) inside index.html
+    this.rootEl.querySelectorAll<HTMLAnchorElement>('a[href^="/"]').forEach((anchor) => {
+      if (anchor.hasAttribute('data-shell-nav')) return;
+      anchor.addEventListener('click', (e) => {
+        const rawHref = anchor.getAttribute('href') || '';
+        if (!rawHref.startsWith('/')) return;
+        try {
+          const parsed = new URL(rawHref, window.location.origin);
+          const p = parsed.pathname.toLowerCase();
+          let targetPage: PageId | null = (parsed.searchParams.get('page') as PageId) || null;
+          if (!targetPage) {
+            if (p.includes('planner.html')) targetPage = 'planner';
+            else if (p.includes('study.html')) targetPage = 'study';
+            else if (p.includes('test-history.html')) targetPage = 'test-history';
+            else if (p.includes('test.html') || p.includes('cbt-test.html')) targetPage = 'test';
+            else if (p.includes('mentorship.html')) targetPage = 'mentorship';
+            else if (p.includes('player.html')) targetPage = 'player';
+            else if (p.includes('admin.html')) targetPage = 'admin';
+            else if (p === '/' || p.includes('index.html')) targetPage = 'home';
+          }
+          if (targetPage) {
+            e.preventDefault();
+            parsed.pathname = '/index.html';
+            if (targetPage === 'home') {
+              parsed.searchParams.delete('page');
+            } else {
+              parsed.searchParams.set('page', targetPage);
+            }
+            window.history.pushState({}, '', `${parsed.pathname}${parsed.search}`);
+            this.navigateToPage(targetPage);
+          }
+        } catch {
+          // Ignore malformed URLs
+        }
       });
     });
 

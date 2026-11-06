@@ -7,7 +7,7 @@ import {
 } from '../constants';
 import { dataStore } from '../services/firebaseService';
 import type { VideoRoadmapItem } from '../types';
-import { formatDuration } from '../utils/examLogic';
+import { formatDuration, parseDurationToSeconds } from '../utils/examLogic';
 import { downloadFormulaSheetFile } from '../utils/qrGenerator';
 
 export interface PlayerCallbacks {
@@ -47,8 +47,19 @@ export class PlayerModule {
     this.activeVideo = dataStore.getVideoById(vidParam);
     const modeParam = params.get('mode');
     this.isLandscapeMode = modeParam !== 'vertical';
+    this.totalDurationSeconds = parseDurationToSeconds(
+      this.activeVideo.duration,
+      LECTURE_TOTAL_DURATION_SECONDS
+    );
     const saved = dataStore.getLectureProgress();
-    this.currentTimeSeconds = saved.lastPositionSeconds ?? 525;
+    if (this.hasRealVideoFile(this.activeVideo)) {
+      this.currentTimeSeconds = 0;
+    } else {
+      this.currentTimeSeconds = Math.min(
+        this.totalDurationSeconds,
+        saved.lastPositionSeconds ?? 525
+      );
+    }
     this.rerender();
     this.drawLectureCanvasFrame();
     if (this.isPlaying) {
@@ -671,6 +682,23 @@ export class PlayerModule {
     realVideoEl?.addEventListener('click', () => {
       this.togglePlay();
     });
+    realVideoEl?.addEventListener('loadedmetadata', () => {
+      if (
+        realVideoEl.duration &&
+        Number.isFinite(realVideoEl.duration) &&
+        realVideoEl.duration > 0
+      ) {
+        const exactSec = Math.max(1, Math.round(realVideoEl.duration));
+        this.totalDurationSeconds = exactSec;
+        this.activeVideo.duration = formatDuration(exactSec);
+        const scrubberEl =
+          this.containerEl?.querySelector<HTMLInputElement>('#player-scrubber');
+        if (scrubberEl) {
+          scrubberEl.max = String(exactSec);
+        }
+        this.updateLiveTimeDom();
+      }
+    });
     realVideoEl?.addEventListener('timeupdate', () => {
       this.currentTimeSeconds = realVideoEl.currentTime;
       this.updateLiveTimeDom();
@@ -786,6 +814,10 @@ export class PlayerModule {
             const vidId = el.dataset.videoId;
             if (vidId) {
               this.activeVideo = dataStore.getVideoById(vidId);
+              this.totalDurationSeconds = parseDurationToSeconds(
+                this.activeVideo.duration,
+                LECTURE_TOTAL_DURATION_SECONDS
+              );
               this.currentTimeSeconds = 0;
               this.isPlaying = true;
               const nextUrl = new URL(window.location.href);
@@ -793,7 +825,9 @@ export class PlayerModule {
               window.history.pushState({}, '', nextUrl.toString());
               this.lastTickMs = performance.now();
               this.startLoop();
-              this.callbacks.onShowToast(`Now Playing: ${this.activeVideo.title}`);
+              this.callbacks.onShowToast(
+                `Now Playing: ${this.activeVideo.title} (${this.activeVideo.duration})`
+              );
               this.rerender();
             }
             break;

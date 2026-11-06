@@ -235,20 +235,137 @@ export class HomePageModule {
           </div>
 
           <div class="grid grid-cols-2 sm:flex sm:flex-row lg:flex-col gap-2.5 shrink-0 relative z-10">
-            <a
-              href="/mentorship.html"
-              class="min-h-[42px] px-4 py-2.5 rounded-xl vermilion-cta-btn text-xs font-extrabold inline-flex items-center justify-center gap-2"
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="mentorship"
+              class="min-h-[42px] px-4 py-2.5 rounded-xl vermilion-cta-btn text-xs font-extrabold inline-flex items-center justify-center gap-2 cursor-pointer"
             >
               <span>Video Batches &amp; Lectures</span>
               <span>→</span>
-            </a>
-            <a
-              href="/test.html"
-              class="min-h-[42px] px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5"
+            </button>
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="test"
+              class="min-h-[42px] px-4 py-2.5 rounded-xl bg-white hover:bg-indigo-50 text-indigo-700 border border-indigo-200 shadow-xs text-xs font-extrabold inline-flex items-center justify-center gap-2 transition-all hover:-translate-y-0.5 cursor-pointer"
             >
-              <span>Attempt Mock Test</span>
+              <span>Attempt Official Mock Test</span>
               <span>→</span>
-            </a>
+            </button>
+          </div>
+        </section>
+
+        <!-- ALL-IN-ONE MAIN WORKSPACE HUB INSIDE INDEX.HTML -->
+        <section
+          aria-label="Unified All-in-One Main Hub inside index.html"
+          data-testid="unified-index-hub-deck"
+          class="bento-widget-card p-4 sm:p-5 space-y-3"
+        >
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="px-2.5 py-0.5 rounded-lg bg-indigo-600 text-white text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                ALL-IN-ONE WORKSPACE · INDEX.HTML
+              </span>
+              <h2 class="text-xs sm:text-sm font-extrabold text-slate-900">
+                Complete Preparation Suite — Access Every Module Directly Here
+              </h2>
+            </div>
+            <span class="text-[11px] font-mono-tabular text-slate-500 font-semibold">
+              Instant SPA Switching · Zero Reloads
+            </span>
+          </div>
+
+          <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="test"
+              data-testid="hub-card-mock-test"
+              class="p-3 rounded-xl bg-gradient-to-br from-indigo-50/90 to-white hover:from-indigo-100/80 border border-indigo-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">📝</span>
+                <span class="px-1.5 py-0.5 rounded bg-indigo-600 text-white font-mono-tabular text-[9px] font-extrabold">NTA CBT</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">Official Mock Test</div>
+              <div class="text-[10px] text-slate-500">Instructions + Live Timer</div>
+            </button>
+
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="study"
+              data-testid="hub-card-study-vault"
+              class="p-3 rounded-xl bg-gradient-to-br from-emerald-50/90 to-white hover:from-emerald-100/80 border border-emerald-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">📚</span>
+                <span class="px-1.5 py-0.5 rounded bg-emerald-600 text-white font-mono-tabular text-[9px] font-extrabold">PDF VAULT</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">Study Material &amp; PDFs</div>
+              <div class="text-[10px] text-slate-500">Exact Uploaded PDF Preview</div>
+            </button>
+
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="mentorship"
+              data-testid="hub-card-mentorship"
+              class="p-3 rounded-xl bg-gradient-to-br from-rose-50/90 to-white hover:from-rose-100/80 border border-rose-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">🎬</span>
+                <span class="px-1.5 py-0.5 rounded bg-rose-600 text-white font-mono-tabular text-[9px] font-extrabold">HD VIDEO</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">Lectures &amp; 1:1 Chat</div>
+              <div class="text-[10px] text-slate-500">Exact Video &amp; Duration</div>
+            </button>
+
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="planner"
+              data-testid="hub-card-planner"
+              class="p-3 rounded-xl bg-gradient-to-br from-violet-50/90 to-white hover:from-violet-100/80 border border-violet-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">⚡</span>
+                <span class="px-1.5 py-0.5 rounded bg-violet-600 text-white font-mono-tabular text-[9px] font-extrabold">+75 XP</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">To-Do &amp; Study Planner</div>
+              <div class="text-[10px] text-slate-500">Daily Goals &amp; Calendar</div>
+            </button>
+
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="test-history"
+              data-testid="hub-card-test-history"
+              class="p-3 rounded-xl bg-gradient-to-br from-cyan-50/90 to-white hover:from-cyan-100/80 border border-cyan-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">📊</span>
+                <span class="px-1.5 py-0.5 rounded bg-cyan-600 text-white font-mono-tabular text-[9px] font-extrabold">REPORTS</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">Test History &amp; Key</div>
+              <div class="text-[10px] text-slate-500">Scorecards &amp; Solutions</div>
+            </button>
+
+            <button
+              type="button"
+              data-action="nav-page"
+              data-page="admin"
+              data-testid="hub-card-admin"
+              class="p-3 rounded-xl bg-gradient-to-br from-amber-50/90 to-white hover:from-amber-100/80 border border-amber-200 text-left space-y-1 transition-all hover:-translate-y-0.5 cursor-pointer"
+            >
+              <div class="flex items-center justify-between">
+                <span class="text-base">🛡️</span>
+                <span class="px-1.5 py-0.5 rounded bg-amber-600 text-white font-mono-tabular text-[9px] font-extrabold">STUDIO</span>
+              </div>
+              <div class="text-xs font-extrabold text-slate-900">Admin Upload Studio</div>
+              <div class="text-[10px] text-slate-500">Upload PDFs, Videos &amp; Mocks</div>
+            </button>
           </div>
         </section>
 
@@ -1521,6 +1638,16 @@ export class HomePageModule {
 
       el.addEventListener('click', async () => {
         switch (action) {
+          case 'nav-page': {
+            const targetPage = el.dataset.page as PageId | undefined;
+            if (targetPage) {
+              const nextUrl =
+                targetPage === 'home' ? '/index.html' : `/index.html?page=${targetPage}`;
+              window.history.pushState({}, '', nextUrl);
+              this.callbacks.onNavigatePage(targetPage);
+            }
+            break;
+          }
           case 'quick-complete-daily-task': {
             const user = dataStore.getUser();
             const subjects = getSubjectsForExam(user.targetExam);

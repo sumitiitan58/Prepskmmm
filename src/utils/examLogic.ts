@@ -39,6 +39,26 @@ export function formatDuration(totalSeconds: number, forceHours = false): string
 }
 
 /**
+ * Parses a MM:SS or HH:MM:SS duration string into total seconds.
+ */
+export function parseDurationToSeconds(durationStr?: string | null, fallbackSeconds = 1725): number {
+  if (!durationStr || typeof durationStr !== 'string') return fallbackSeconds;
+  const trimmed = durationStr.trim();
+  if (!trimmed) return fallbackSeconds;
+  const parts = trimmed.split(':').map((p) => Number(p.trim()));
+  if (parts.some((n) => Number.isNaN(n) || n < 0)) return fallbackSeconds;
+  if (parts.length === 2) {
+    return Math.max(1, parts[0] * 60 + parts[1]);
+  }
+  if (parts.length === 3) {
+    return Math.max(1, parts[0] * 3600 + parts[1] * 60 + parts[2]);
+  }
+  const single = Number(trimmed);
+  if (!Number.isNaN(single) && single > 0) return Math.round(single);
+  return fallbackSeconds;
+}
+
+/**
  * Returns valid subjects for the selected target exam.
  */
 export function getSubjectsForExam(exam: TargetExam): SubjectName[] {

@@ -17,6 +17,7 @@ import {
   evaluateStreakLifecycle,
   evaluateStreakRiskStatus,
   formatDuration,
+  parseDurationToSeconds,
   generateAIStudyDiagnosis,
   generateChapterPnCQuestions,
   generatePersonalizedStudyPlan,
@@ -519,4 +520,12 @@ test('computeStreakMicroAnimationState returns visual celebration state when dai
   assert.equal(goalCrushed.progressPercent, 100);
   assert.ok(goalCrushed.headline.includes('Daily Goal Crushed!'));
 });
+
+test('parseDurationToSeconds converts MM:SS and HH:MM:SS video durations to exact seconds', () => {
+  assert.equal(parseDurationToSeconds('00:08'), 8);
+  assert.equal(parseDurationToSeconds('02:15'), 135);
+  assert.equal(parseDurationToSeconds('28:45'), 1725);
+  assert.equal(parseDurationToSeconds('01:05:10'), 3910);
+});
+
 

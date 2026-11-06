@@ -30,7 +30,7 @@ export interface CBTTestEngineCallbacks {
   onShowToast: (message: string) => void;
 }
 
-type CBTViewStage = 'hub' | 'exam' | 'history' | 'submitted';
+type CBTViewStage = 'hub' | 'instructions' | 'exam' | 'history' | 'submitted';
 type CBTEngineMode = 'MOCK' | 'INFINITE_PRACTICE';
 
 export class CBTTestEngineModule {
@@ -39,6 +39,8 @@ export class CBTTestEngineModule {
 
   private stage: CBTViewStage = 'hub';
   private engineMode: CBTEngineMode = 'MOCK';
+  private isInstructionsConsentChecked = true;
+  private isInExamInstructionsModalOpen = false;
 
   // Configuration State
   private selectedExam: TargetExam = 'JEE';
@@ -137,11 +139,16 @@ export class CBTTestEngineModule {
         this.prepareExamPaper('MOCK');
         this.stage = 'exam';
       } else {
-        this.engineMode = 'INFINITE_PRACTICE';
-        this.prepareExamPaper('INFINITE_PRACTICE');
+        this.engineMode = 'MOCK';
+        this.prepareExamPaper('MOCK');
         this.stage = 'exam';
       }
-    } else if (this.stage !== 'exam' && this.stage !== 'submitted' && this.stage !== 'history') {
+    } else if (
+      this.stage !== 'exam' &&
+      this.stage !== 'instructions' &&
+      this.stage !== 'submitted' &&
+      this.stage !== 'history'
+    ) {
       // Never auto-open the exam paper underneath the hub cards on /test.html
       this.stage = 'hub';
     }
@@ -194,14 +201,21 @@ export class CBTTestEngineModule {
   public rerender(): void {
     if (!this.containerEl) return;
 
-    // 1. DEDICATED FULL-SCREEN EXAM PAGE (Opened only when user launches Mock Test or Infinite Practice!)
+    // 1. DEDICATED FULL-SCREEN EXAM PAGE (Opened after confirming NTA Instructions)
     if (this.stage === 'exam') {
       this.containerEl.innerHTML = this.renderDedicatedExamStage();
       this.bindEvents();
       return;
     }
 
-    // 2. TEST HISTORY, PERFORMANCE GRAPHS & ROW-BY-ROW SOLUTIONS VIEW
+    // 2. OFFICIAL NTA GENERAL INSTRUCTIONS SCREEN (Shown before Mock Test begins)
+    if (this.stage === 'instructions') {
+      this.containerEl.innerHTML = this.renderInstructionsStage();
+      this.bindEvents();
+      return;
+    }
+
+    // 3. TEST HISTORY, PERFORMANCE GRAPHS & ROW-BY-ROW SOLUTIONS VIEW
     if (this.stage === 'history' || this.stage === 'submitted') {
       this.containerEl.innerHTML = `
         <div class="space-y-6 pb-12" data-testid="cbt-history-page">
@@ -214,7 +228,7 @@ export class CBTTestEngineModule {
       return;
     }
 
-    // 3. DEFAULT HUB VIEW (Choose Mock Test OR Infinite Practice OR Test History — no active paper cluttered below!)
+    // 4. DEFAULT HUB VIEW (Official Mock Test Hub & Test History)
     this.containerEl.innerHTML = `
       <div class="space-y-6 pb-12" data-testid="cbt-test-hub-page">
         ${this.renderTopHubBanner()}
@@ -261,10 +275,10 @@ export class CBTTestEngineModule {
               }
             </div>
             <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">
-              Mock Test Hub, Infinite Practice & Test History
+              Official NTA Mock Test Portal &amp; Test Analytics
             </h1>
             <p class="text-xs text-indigo-100 max-w-2xl">
-              Every Mock Test & Infinite Practice launches in its own dedicated full-screen exam page. Inspect your previous tests, performance graphs & row-by-row answer keys anytime.
+              Attempt full-length &amp; part-syllabus Official NTA Mock Tests with authentic Question Palette instructions, live timer, and instant row-by-row answer key analysis.
             </p>
           </div>
 
@@ -273,49 +287,228 @@ export class CBTTestEngineModule {
               type="button"
               data-action="switch-engine-mode"
               data-mode="MOCK"
-              class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all ${
-                !isHistoryActive && this.engineMode === 'MOCK'
+              class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
+                !isHistoryActive
                   ? 'bg-white text-[#4F46E5] shadow-md'
                   : 'bg-white/15 text-white hover:bg-white/25'
               }"
             >
-              🎯 1. Official Mock Test
-            </button>
-            <button
-              type="button"
-              data-action="switch-engine-mode"
-              data-mode="INFINITE_PRACTICE"
-              class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all ${
-                !isHistoryActive && this.engineMode === 'INFINITE_PRACTICE'
-                  ? 'bg-[#10B981] text-white shadow-md'
-                  : 'bg-white/15 text-white hover:bg-white/25'
-              }"
-            >
-              ♾️ 2. Infinite Practice
+              🎯 Official Mock Tests
             </button>
             <button
               type="button"
               data-action="open-test-history"
               data-testid="open-test-history-btn"
-              class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all ${
+              class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
                 isHistoryActive
                   ? 'bg-amber-400 text-slate-950 shadow-md'
                   : 'bg-white/15 text-white hover:bg-white/25'
               }"
             >
-              📊 Test History & Solutions (${submissions.length})
+              📊 Test History &amp; Solutions (${submissions.length})
             </button>
             <button
               type="button"
               data-action="share-invite-test"
               data-testid="invite-friend-test-btn"
-              class="min-h-[42px] px-3.5 py-2 rounded-2xl bg-slate-900/40 hover:bg-slate-900/60 border border-white/30 text-xs font-extrabold text-white transition-all"
+              class="min-h-[42px] px-3.5 py-2 rounded-2xl bg-slate-900/40 hover:bg-slate-900/60 border border-white/30 text-xs font-extrabold text-white transition-all cursor-pointer"
             >
               🔗 Invite Friend
             </button>
           </div>
         </div>
       </section>
+    `;
+  }
+
+  private renderInstructionsStage(): string {
+    const user = dataStore.getUser();
+    const durationMins = Math.max(10, this.totalQuestionCount * 2);
+    const maxMarks = this.totalQuestionCount * 4;
+    const subjectsList = Array.from(this.selectedSubjects);
+
+    return `
+      <div class="space-y-6 pb-12" data-testid="nta-mock-instructions-screen">
+        <!-- Official NTA Header Bar -->
+        <header class="bg-white border-2 border-indigo-200 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div class="space-y-1.5">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="px-3 py-1 rounded-full bg-indigo-600 text-white text-[11px] font-mono-tabular font-extrabold uppercase tracking-wider">
+                📋 OFFICIAL NTA CBT GENERAL INSTRUCTIONS
+              </span>
+              <span class="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-mono-tabular font-extrabold">
+                ${this.selectedExam} · ${this.selectedClassYear}
+              </span>
+            </div>
+            <h1 class="text-lg sm:text-2xl font-extrabold text-slate-900">
+              ${this.escapeHtml(this.selectedMockSeriesTitle)}
+            </h1>
+            <p class="text-xs text-slate-600">
+              Please read the following examination instructions, marking scheme, and Question Palette symbol legend carefully before starting the Mock Test.
+            </p>
+          </div>
+
+          <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 shrink-0">
+            <img
+              src="${user.photoURL}"
+              alt="${this.escapeHtml(user.name)}"
+              referrerpolicy="no-referrer"
+              class="w-11 h-11 rounded-full object-cover border-2 border-indigo-200"
+            />
+            <div>
+              <div class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-indigo-600">
+                Candidate Name
+              </div>
+              <div class="text-sm font-extrabold text-slate-900">${this.escapeHtml(user.name)}</div>
+              <div class="text-[11px] font-mono-tabular text-slate-500">${this.escapeHtml(user.email || 'Candidate ID: PREPSKM-2027')}</div>
+            </div>
+          </div>
+        </header>
+
+        <!-- Key Paper Metrics Strip -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Total Duration</div>
+            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-indigo-600 mt-0.5">${durationMins} Minutes</div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Total Questions</div>
+            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-slate-900 mt-0.5">${this.totalQuestionCount} Questions</div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Maximum Marks</div>
+            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-emerald-600 mt-0.5">${maxMarks} Marks</div>
+          </div>
+          <div class="bg-white border border-slate-200 rounded-2xl p-4">
+            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Subjects Included</div>
+            <div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1">${subjectsList.join(', ')}</div>
+          </div>
+        </div>
+
+        <!-- Detailed Instructions Document Card -->
+        <section class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-8 shadow-sm space-y-6">
+          ${this.renderNtaInstructionsBodyHtml(durationMins, maxMarks)}
+
+          <!-- Candidate Declaration & Launch Bar -->
+          <div class="pt-5 border-t-2 border-slate-100 space-y-4">
+            <label
+              for="nta-instructions-consent-checkbox"
+              class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex items-start gap-3 cursor-pointer"
+            >
+              <input
+                id="nta-instructions-consent-checkbox"
+                data-testid="nta-instructions-consent-checkbox"
+                type="checkbox"
+                ${this.isInstructionsConsentChecked ? 'checked' : ''}
+                class="mt-1 w-4 h-4 rounded border-indigo-300 accent-indigo-600 shrink-0 cursor-pointer"
+              />
+              <span class="text-xs text-slate-800 leading-relaxed font-medium">
+                <strong>Candidate Declaration:</strong> I have read and understood all the instructions. All computer hardware allotted to me are in proper working condition. I declare that I am not in possession of / not wearing / not carrying any prohibited gadget like mobile phone, bluetooth devices etc. into the Examination Hall.
+              </span>
+            </label>
+
+            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                data-action="back-to-test-hub"
+                class="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold cursor-pointer"
+              >
+                ← Back to Mock Test Hub
+              </button>
+
+              <button
+                type="button"
+                data-action="confirm-start-mock-exam"
+                data-testid="confirm-start-mock-btn"
+                class="w-full sm:w-auto min-h-[46px] px-7 py-3 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-sm font-extrabold shadow-md transition-all cursor-pointer"
+              >
+                I am Ready to Begin · Start Mock Test Now →
+              </button>
+            </div>
+          </div>
+        </section>
+      </div>
+    `;
+  }
+
+  private renderNtaInstructionsBodyHtml(durationMins: number, maxMarks: number): string {
+    return `
+      <div class="space-y-6 text-xs sm:text-sm text-slate-700 leading-relaxed">
+        <!-- 1. General Instructions -->
+        <div class="space-y-2.5">
+          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
+            1. General Examination Instructions
+          </h2>
+          <ol class="list-decimal list-inside space-y-1.5 text-xs sm:text-sm">
+            <li>Total duration of this Mock Examination is <strong>${durationMins} minutes</strong> (${this.totalQuestionCount} questions · Max Marks: <strong>${maxMarks}</strong>).</li>
+            <li>The countdown clock in the top-right corner displays the remaining time available for you to complete the examination. When the timer reaches zero, the examination will <strong>end automatically</strong>.</li>
+            <li>The Question Palette displayed on the right side of screen shows the status of each question using one of the following <strong>5 official NTA symbols</strong>:</li>
+          </ol>
+
+          <!-- Official 5 NTA Palette Status Badges -->
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2" data-testid="nta-palette-legend-grid">
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+              <span class="w-9 h-9 rounded-xl bg-slate-100 border border-slate-300 text-slate-700 font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">01</span>
+              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT visited</strong> the question yet.</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+              <span class="w-9 h-9 rounded-xl bg-[#EF4444] text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">02</span>
+              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT answered</strong> the question.</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+              <span class="w-9 h-9 rounded-xl bg-[#10B981] text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">03</span>
+              <span class="text-xs font-semibold text-slate-800">You have <strong>Answered</strong> the question.</span>
+            </div>
+            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
+              <span class="w-9 h-9 rounded-xl bg-purple-600 text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">04</span>
+              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT answered</strong> the question, but have <strong>Marked it for Review</strong>.</span>
+            </div>
+            <div class="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center gap-3 md:col-span-2">
+              <span class="w-9 h-9 rounded-xl bg-purple-600 text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0 relative">
+                05
+                <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#10B981] text-white text-[9px] flex items-center justify-center border border-white">✓</span>
+              </span>
+              <span class="text-xs font-semibold text-slate-900">
+                The question(s) <strong>"Answered and Marked for Review"</strong> WILL be considered for evaluation.
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- 2. Navigating & Answering -->
+        <div class="space-y-2">
+          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
+            2. Navigating &amp; Answering Procedure
+          </h2>
+          <ul class="list-disc list-inside space-y-1.5 text-xs sm:text-sm">
+            <li>Click on the question number in the Question Palette at the right of your screen to go to that numbered question directly.</li>
+            <li>Click on <strong>Save &amp; Next</strong> to save your answer for the current question and then go to the next question.</li>
+            <li>Click on <strong>Mark for Review &amp; Next</strong> to save your answer for the current question, mark it for review, and then go to the next question.</li>
+            <li>To deselect your chosen answer for a Multiple Choice Question (MCQ), click on the <strong>Clear Response</strong> button.</li>
+          </ul>
+        </div>
+
+        <!-- 3. Marking Scheme -->
+        <div class="space-y-2">
+          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
+            3. Official NTA Marking Scheme (${this.selectedExam})
+          </h2>
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+            <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
+              <div class="text-xs font-extrabold text-emerald-800">+4 Marks (Correct Answer)</div>
+              <p class="text-[11px] text-emerald-700 mt-0.5">Awarded for every correct MCQ or Numerical Value (NAT) response.</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
+              <div class="text-xs font-extrabold text-rose-800">-1 Mark (Negative Marking)</div>
+              <p class="text-[11px] text-rose-700 mt-0.5">Deducted for every incorrect response.</p>
+            </div>
+            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+              <div class="text-xs font-extrabold text-slate-800">0 Marks (Unattempted)</div>
+              <p class="text-[11px] text-slate-600 mt-0.5">No marks deducted if a question is left unattempted.</p>
+            </div>
+          </div>
+        </div>
+      </div>
     `;
   }
 
@@ -329,10 +522,6 @@ export class CBTTestEngineModule {
       'Class 10',
       'Class 9',
     ];
-
-    if (this.engineMode === 'INFINITE_PRACTICE') {
-      return this.renderInfinitePracticeConfig(classYears);
-    }
 
     const validSubjects = getSubjectsForExam(this.selectedExam);
     const submissions = dataStore.getTestSubmissions();
@@ -1086,12 +1275,20 @@ export class CBTTestEngineModule {
               .join('')}
           </div>
 
-          <!-- Countdown Timer, Invite Friend, Mobile/Tablet Drawer Toggle & Submit -->
+          <!-- Countdown Timer, Instructions Modal Button, Invite Friend, Mobile/Tablet Drawer Toggle & Submit -->
           <div class="flex items-center gap-2">
             <button
               type="button"
+              data-action="toggle-in-exam-instructions"
+              data-testid="in-exam-instructions-btn"
+              class="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-extrabold inline-flex items-center gap-1 cursor-pointer"
+            >
+              📋 Instructions
+            </button>
+            <button
+              type="button"
               data-action="share-invite-test"
-              class="hidden md:inline-flex min-h-[38px] px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold items-center gap-1"
+              class="hidden md:inline-flex min-h-[38px] px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold items-center gap-1 cursor-pointer"
             >
               🔗 Invite Friend
             </button>
@@ -1109,7 +1306,7 @@ export class CBTTestEngineModule {
               type="button"
               data-action="submit-cbt-paper"
               data-testid="submit-cbt-test-btn"
-              class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition-colors"
+              class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
             >
               Submit Test
             </button>
@@ -1413,13 +1610,51 @@ export class CBTTestEngineModule {
               <button
                 type="button"
                 data-action="submit-cbt-paper"
-                class="w-full min-h-[42px] rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-colors"
+                class="w-full min-h-[42px] rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-colors cursor-pointer"
               >
                 Final Submit & View Solutions Row-by-Row →
               </button>
             </div>
           </aside>
         </div>
+
+        ${
+          this.isInExamInstructionsModalOpen
+            ? `
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label="In-Exam NTA Instructions Modal"
+            data-testid="in-exam-instructions-modal"
+            class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
+          >
+            <div class="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full max-h-[88vh] overflow-y-auto p-6 shadow-2xl space-y-4">
+              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                <div>
+                  <span class="text-[11px] font-mono-tabular font-extrabold uppercase tracking-wider text-indigo-600">
+                    📋 OFFICIAL NTA MOCK TEST INSTRUCTIONS
+                  </span>
+                  <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
+                    ${this.escapeHtml(this.selectedMockSeriesTitle)}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  data-action="toggle-in-exam-instructions"
+                  class="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-extrabold cursor-pointer"
+                >
+                  Close Instructions ✕
+                </button>
+              </div>
+              ${this.renderNtaInstructionsBodyHtml(
+                Math.max(10, Math.round(this.initialDurationSeconds / 60)),
+                this.activeQuestions.length * 4
+              )}
+            </div>
+          </div>
+        `
+            : ''
+        }
       </div>
     `;
   }
@@ -1937,39 +2172,27 @@ ${355 + lines.length}
     );
   }
 
+  private openInstructionsBeforeExam(): void {
+    this.engineMode = 'MOCK';
+    this.isInstructionsConsentChecked = true;
+    this.stage = 'instructions';
+    this.rerender();
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+
   private startExam(): void {
-    const currentUser = dataStore.getUser();
-    if (currentUser.isGuest) {
-      this.callbacks.onShowToast(
-        'Sign Up Required: Please sign up with your Gmail before starting a Mock Test!'
-      );
-      window.dispatchEvent(
-        new CustomEvent('prepskm:open-auth-modal', {
-          detail: {
-            reason:
-              'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and save your All-India Rank!',
-          },
-        })
-      );
-      return;
-    }
-
-    this.prepareExamPaper(this.engineMode);
+    this.engineMode = 'MOCK';
+    this.prepareExamPaper('MOCK');
     this.stage = 'exam';
+    this.isInExamInstructionsModalOpen = false;
 
-    // Update URL so active Mock Test / Infinite Practice lives on its own dedicated page view
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.delete('tab');
-    nextUrl.searchParams.set(
-      'session',
-      this.engineMode === 'INFINITE_PRACTICE' ? 'infinite' : 'mock'
-    );
+    nextUrl.searchParams.set('session', 'mock');
     window.history.pushState({}, '', nextUrl.toString());
 
     this.callbacks.onShowToast(
-      this.engineMode === 'INFINITE_PRACTICE'
-        ? `Infinite Practice started in dedicated exam page: ${this.activeQuestions.length} questions (${Object.keys(this.activePerChapterCounts).length} chapters)`
-        : `${this.selectedExam} (${this.selectedClassYear}) Mock Test opened in dedicated exam page (${this.activeQuestions.length} Qs)`
+      `${this.selectedExam} (${this.selectedClassYear}) Mock Test started (${this.activeQuestions.length} Qs)`
     );
     this.rerender();
   }
@@ -2129,7 +2352,30 @@ ${355 + lines.length}
             if (title) this.selectedMockSeriesTitle = title;
             this.totalQuestionCount = count;
             this.engineMode = 'MOCK';
+            this.openInstructionsBeforeExam();
+            break;
+          }
+          case 'back-to-test-hub': {
+            this.stage = 'hub';
+            this.rerender();
+            break;
+          }
+          case 'confirm-start-mock-exam': {
+            const consentEl = this.containerEl?.querySelector<HTMLInputElement>(
+              '#nta-instructions-consent-checkbox'
+            );
+            if (consentEl && !consentEl.checked) {
+              this.callbacks.onShowToast(
+                'Please check the Candidate Declaration box to confirm you have read the instructions.'
+              );
+              return;
+            }
             this.startExam();
+            break;
+          }
+          case 'toggle-in-exam-instructions': {
+            this.isInExamInstructionsModalOpen = !this.isInExamInstructionsModalOpen;
+            this.rerender();
             break;
           }
           case 'exit-exam-to-hub': {
@@ -2263,7 +2509,7 @@ ${355 + lines.length}
             break;
           }
           case 'start-cbt-exam': {
-            this.startExam();
+            this.openInstructionsBeforeExam();
             break;
           }
           case 'select-mcq-option': {

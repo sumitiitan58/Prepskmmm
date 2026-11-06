@@ -6,6 +6,7 @@ import {
   uploadFileToStorage,
 } from '../services/firebaseService';
 import type { StudentClassYear, SubjectName, TargetExam } from '../types';
+import { formatDuration } from '../utils/examLogic';
 
 export interface AdminCommandCallbacks {
   onShowToast: (message: string) => void;
@@ -55,10 +56,12 @@ export class AdminCommandModule {
   // Video Lecture Real File Uploader State
   private pendingVideoFile: File | null = null;
   private pendingVideoObjectUrl: string | null = null;
+  private pendingVideoDurationFormatted: string | null = null;
   private pendingVideoThumbDataUrl: string | null = null;
 
   // PDF Real File Uploader State
   private pendingPdfFile: File | null = null;
+  private pendingPdfObjectUrl: string | null = null;
   private pendingPdfDataUrl: string | null = null;
 
   // Custom Logo Uploader State
@@ -792,12 +795,12 @@ export class AdminCommandModule {
                 />
               </div>
               <div>
-                <label class="block text-xs font-bold text-slate-700 mb-1">Duration (MM:SS)</label>
+                <label class="block text-xs font-bold text-slate-700 mb-1">Duration (Auto-Detected from Video)</label>
                 <input
                   id="vid-upload-duration"
                   type="text"
-                  value="28:45"
-                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-mono-tabular"
+                  value="${this.escapeHtml(this.pendingVideoDurationFormatted || '28:45')}"
+                  class="w-full min-h-[40px] px-3 py-2 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-mono-tabular font-bold text-[#4F46E5]"
                 />
               </div>
             </div>
@@ -814,8 +817,8 @@ export class AdminCommandModule {
                   accept="video/*"
                   class="text-[11px] text-slate-600 w-full"
                 />
-                <div class="text-[10px] text-slate-500">
-                  ${this.pendingVideoFile ? `Selected: ${this.escapeHtml(this.pendingVideoFile.name)}` : 'Or uses built-in DRM stream'}
+                <div id="vid-file-status-text" class="text-[10px] text-slate-500">
+                  ${this.pendingVideoFile ? `Selected: ${this.escapeHtml(this.pendingVideoFile.name)} (${this.escapeHtml(this.pendingVideoDurationFormatted || 'Ready')})` : 'Auto-detects exact video duration on upload'}
                 </div>
               </div>
 
@@ -833,6 +836,23 @@ export class AdminCommandModule {
                   ${this.pendingVideoThumbDataUrl ? 'Custom Thumbnail Ready ✓' : 'Uses default HD cover if empty'}
                 </div>
               </div>
+            </div>
+
+            <!-- Live Uploaded Video Preview & Exact Duration Verification -->
+            <div id="admin-live-video-preview-container" class="${this.pendingVideoObjectUrl ? 'block' : 'hidden'} p-3 rounded-xl bg-slate-900 border border-slate-800 space-y-2">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-[11px] font-extrabold text-emerald-400">
+                  🎬 Live Video Preview (Exact Uploaded File)
+                </span>
+                <span id="admin-video-detected-duration-badge" data-testid="admin-video-detected-duration-badge" class="px-2 py-0.5 rounded bg-indigo-500/30 border border-indigo-400/40 text-white text-[11px] font-mono-tabular font-bold">
+                  Exact Duration: ${this.escapeHtml(this.pendingVideoDurationFormatted || 'Detecting...')}
+                </span>
+              </div>
+              ${
+                this.pendingVideoObjectUrl
+                  ? `<video data-testid="admin-live-video-preview" src="${this.pendingVideoObjectUrl}" controls preload="metadata" class="w-full max-h-48 rounded-lg bg-black"></video>`
+                  : ''
+              }
             </div>
 
             <div>
@@ -876,7 +896,7 @@ export class AdminCommandModule {
                     <div class="min-w-0">
                       <div class="text-xs font-extrabold text-slate-900 truncate">${this.escapeHtml(v.title)}</div>
                       <div class="text-[11px] text-slate-500">
-                        Section: <strong class="text-[#4F46E5]">${this.escapeHtml(v.section || 'Strategy Roadmaps')}</strong> · Uploaded by: <strong class="text-[#10B981]">${this.escapeHtml(v.mentorName || 'Sumit Kumar')}</strong>
+                        Duration: <strong class="font-mono-tabular text-slate-900">${this.escapeHtml(v.duration)}</strong> · Section: <strong class="text-[#4F46E5]">${this.escapeHtml(v.section || 'Strategy Roadmaps')}</strong> · Uploaded by: <strong class="text-[#10B981]">${this.escapeHtml(v.mentorName || 'Sumit Kumar')}</strong>
                       </div>
                     </div>
                   </div>
@@ -1730,7 +1750,7 @@ export class AdminCommandModule {
               </div>
             </div>
 
-            <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-1.5">
+            <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-2">
               <label for="mat-pdf-file" class="block text-xs font-extrabold text-[#4F46E5] cursor-pointer">
                 5. Choose PDF File from Device (.pdf)
               </label>
@@ -1740,8 +1760,25 @@ export class AdminCommandModule {
                 accept=".pdf,application/pdf"
                 class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#4F46E5] file:text-white"
               />
-              <div class="text-[11px] text-slate-500">
-                ${this.pendingPdfFile ? `Ready to upload: ${this.escapeHtml(this.pendingPdfFile.name)}` : 'Select any PDF file or publish directly with instant Firebase sync.'}
+              <div id="mat-pdf-file-status" class="text-[11px] text-slate-600 font-semibold">
+                ${this.pendingPdfFile ? `✓ Ready to upload & preview: ${this.escapeHtml(this.pendingPdfFile.name)}` : 'Select any PDF file from your device — the exact PDF will appear in live preview below and in the Study Vault.'}
+              </div>
+
+              <!-- Live Embedded PDF Preview inside Admin Uploader -->
+              <div id="admin-live-pdf-preview-container" class="${this.pendingPdfObjectUrl || this.pendingPdfDataUrl ? 'block' : 'hidden'} pt-2 space-y-1.5">
+                <div class="flex items-center justify-between">
+                  <span class="text-[11px] font-extrabold text-[#059669]">
+                    📄 Live Uploaded PDF Preview (Exact Document)
+                  </span>
+                  <span class="text-[10px] font-bold text-slate-500">
+                    Students will see this exact PDF in Preview
+                  </span>
+                </div>
+                ${
+                  this.pendingPdfObjectUrl || this.pendingPdfDataUrl
+                    ? `<iframe data-testid="admin-live-pdf-preview" src="${this.pendingPdfObjectUrl || this.pendingPdfDataUrl}" title="Live Uploaded PDF Preview" class="w-full h-64 rounded-xl border border-indigo-200 bg-white shadow-inner"></iframe>`
+                    : ''
+                }
               </div>
             </div>
 
@@ -2552,8 +2589,70 @@ export class AdminCommandModule {
       const file = vidFileInput.files?.[0];
       if (!file) return;
       this.pendingVideoFile = file;
-      this.pendingVideoObjectUrl = URL.createObjectURL(file);
-      this.callbacks.onShowToast(`Selected video file: "${file.name}"`);
+      const objUrl = URL.createObjectURL(file);
+      this.pendingVideoObjectUrl = objUrl;
+
+      const statusEl = this.containerEl?.querySelector<HTMLElement>(
+        '#vid-file-status-text'
+      );
+      if (statusEl) {
+        statusEl.textContent = `Selected: ${file.name} (Detecting exact duration...)`;
+      }
+
+      const previewContainer = this.containerEl?.querySelector<HTMLElement>(
+        '#admin-live-video-preview-container'
+      );
+      if (previewContainer) {
+        previewContainer.classList.remove('hidden');
+        previewContainer.classList.add('block');
+        previewContainer.innerHTML = `
+          <div class="flex items-center justify-between gap-2">
+            <span class="text-[11px] font-extrabold text-emerald-400">
+              🎬 Live Video Preview (${this.escapeHtml(file.name)})
+            </span>
+            <span id="admin-video-detected-duration-badge" data-testid="admin-video-detected-duration-badge" class="px-2 py-0.5 rounded bg-indigo-500/30 border border-indigo-400/40 text-white text-[11px] font-mono-tabular font-bold">
+              Detecting duration...
+            </span>
+          </div>
+          <video data-testid="admin-live-video-preview" src="${objUrl}" controls preload="metadata" class="w-full max-h-48 rounded-lg bg-black"></video>
+        `;
+      }
+
+      // Inspect exact video duration from file metadata
+      const probeVideo = document.createElement('video');
+      probeVideo.preload = 'metadata';
+      probeVideo.onloadedmetadata = () => {
+        if (Number.isFinite(probeVideo.duration) && probeVideo.duration > 0) {
+          const exactSeconds = Math.max(1, Math.round(probeVideo.duration));
+          const formatted = formatDuration(exactSeconds);
+          this.pendingVideoDurationFormatted = formatted;
+          const durInput =
+            this.containerEl?.querySelector<HTMLInputElement>(
+              '#vid-upload-duration'
+            );
+          if (durInput) {
+            durInput.value = formatted;
+          }
+          const badgeEl = this.containerEl?.querySelector<HTMLElement>(
+            '#admin-video-detected-duration-badge'
+          );
+          if (badgeEl) {
+            badgeEl.textContent = `Exact Duration: ${formatted}`;
+          }
+          if (statusEl) {
+            statusEl.textContent = `Selected: ${file.name} · Exact Duration: ${formatted}`;
+          }
+          this.callbacks.onShowToast(
+            `Video "${file.name}" ready — Exact duration detected: ${formatted}`
+          );
+        } else {
+          this.callbacks.onShowToast(`Selected video file: "${file.name}"`);
+        }
+      };
+      probeVideo.onerror = () => {
+        this.callbacks.onShowToast(`Selected video file: "${file.name}"`);
+      };
+      probeVideo.src = objUrl;
     });
 
     const vidThumbInput =
@@ -2600,9 +2699,11 @@ export class AdminCommandModule {
           .querySelector<HTMLInputElement>('#vid-upload-tag')
           ?.value.trim() || `${section} · JEE & NEET`;
       const duration =
+        this.pendingVideoDurationFormatted ||
         uploadVideoForm
           .querySelector<HTMLInputElement>('#vid-upload-duration')
-          ?.value.trim() || '25:00';
+          ?.value.trim() ||
+        '25:00';
       const description =
         uploadVideoForm
           .querySelector<HTMLTextAreaElement>('#vid-upload-desc')
@@ -2610,11 +2711,13 @@ export class AdminCommandModule {
 
       let videoUrl = this.pendingVideoObjectUrl || '';
       if (this.pendingVideoFile) {
-        videoUrl = await uploadFileToStorage(
-          `videos/${Date.now()}_${this.pendingVideoFile.name}`,
-          this.pendingVideoFile,
-          this.pendingVideoObjectUrl || ''
-        );
+        videoUrl =
+          this.pendingVideoObjectUrl ||
+          (await uploadFileToStorage(
+            `videos/${Date.now()}_${this.pendingVideoFile.name}`,
+            this.pendingVideoFile,
+            this.pendingVideoObjectUrl || ''
+          ));
       }
 
       let thumbnailUrl = this.pendingVideoThumbDataUrl || LECTURE_COVER_PATH;
@@ -2637,9 +2740,11 @@ export class AdminCommandModule {
       });
 
       this.pendingVideoFile = null;
+      this.pendingVideoObjectUrl = null;
+      this.pendingVideoDurationFormatted = null;
       this.pendingVideoThumbDataUrl = null;
       this.callbacks.onShowToast(
-        `Published video "${added.title}" in ${added.section} (By ${added.mentorName})!`
+        `Published video "${added.title}" (${added.duration}) in ${added.section}!`
       );
       this.rerender();
     });
@@ -2890,11 +2995,46 @@ export class AdminCommandModule {
       const file = pdfFileInput.files?.[0];
       if (!file) return;
       this.pendingPdfFile = file;
+      const objUrl = URL.createObjectURL(file);
+      this.pendingPdfObjectUrl = objUrl;
+
+      const statusEl =
+        this.containerEl?.querySelector<HTMLElement>('#mat-pdf-file-status');
+      if (statusEl) {
+        statusEl.textContent = `✓ Ready to upload & preview: ${file.name}`;
+      }
+
+      const updateLivePdfIframe = (srcUrl: string) => {
+        const previewBox = this.containerEl?.querySelector<HTMLElement>(
+          '#admin-live-pdf-preview-container'
+        );
+        if (previewBox) {
+          previewBox.classList.remove('hidden');
+          previewBox.classList.add('block');
+          previewBox.innerHTML = `
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-extrabold text-[#059669]">
+                📄 Live Uploaded PDF Preview (${this.escapeHtml(file.name)})
+              </span>
+              <span class="text-[10px] font-bold text-slate-500">
+                Exact PDF rendered in preview
+              </span>
+            </div>
+            <iframe data-testid="admin-live-pdf-preview" src="${srcUrl}" title="Live Uploaded PDF Preview" class="w-full h-64 rounded-xl border border-indigo-200 bg-white shadow-inner"></iframe>
+          `;
+        }
+      };
+
+      // Immediately show live preview using Object URL
+      updateLivePdfIframe(objUrl);
+
       const reader = new FileReader();
       reader.onload = () => {
         if (typeof reader.result === 'string') {
           this.pendingPdfDataUrl = reader.result;
-          this.callbacks.onShowToast(`Loaded PDF file: "${file.name}"`);
+          this.callbacks.onShowToast(
+            `Loaded exact PDF "${file.name}" for live preview & vault!`
+          );
         }
       };
       reader.readAsDataURL(file);
@@ -2928,12 +3068,15 @@ export class AdminCommandModule {
         dataStore.addCustomVaultSection(customSec);
       }
 
-      let pdfUrl = `/materials/${Date.now()}.pdf`;
-      if (this.pendingPdfFile) {
+      let pdfUrl =
+        this.pendingPdfDataUrl ||
+        this.pendingPdfObjectUrl ||
+        `/materials/${Date.now()}.pdf`;
+      if (this.pendingPdfFile && !this.pendingPdfDataUrl && !this.pendingPdfObjectUrl) {
         pdfUrl = await uploadFileToStorage(
           `materials/${Date.now()}_${this.pendingPdfFile.name}`,
           this.pendingPdfFile,
-          this.pendingPdfDataUrl || pdfUrl
+          pdfUrl
         );
       }
 
@@ -2945,9 +3088,10 @@ export class AdminCommandModule {
         pdfUrl,
       });
       this.pendingPdfFile = null;
+      this.pendingPdfObjectUrl = null;
       this.pendingPdfDataUrl = null;
       this.callbacks.onShowToast(
-        `Published PDF "${title}" to ${section} Vault (Synced to Firebase)!`
+        `Published PDF "${title}" to ${section} Vault (Exact PDF synced)!`
       );
       this.rerender();
     });

@@ -12,6 +12,7 @@ import type {
 import {
   canStudentInitiateMentorCall,
   formatDuration,
+  parseDurationToSeconds,
 } from '../utils/examLogic';
 
 export interface MentorshipHubCallbacks {
@@ -152,9 +153,27 @@ export class MentorshipHubModule {
 
   public mount(container: HTMLElement): void {
     this.containerEl = container;
+    const customVids = dataStore.getVideos();
     const videos = this.getCombinedLecturesCatalog();
-    if (!this.activeVideo || !videos.some((v) => v.id === this.activeVideo.id)) {
+    if (
+      customVids.length > 0 &&
+      (!this.activeVideo || this.activeVideo.id === DEFAULT_PW_LECTURE_FALLBACK.id)
+    ) {
+      this.activeVideo = customVids[0];
+    } else if (!this.activeVideo || !videos.some((v) => v.id === this.activeVideo.id)) {
       this.activeVideo = videos[0] ?? DEFAULT_PW_LECTURE_FALLBACK;
+    } else {
+      const fresh = videos.find((v) => v.id === this.activeVideo.id);
+      if (fresh) this.activeVideo = fresh;
+    }
+    this.totalDurationSec = parseDurationToSeconds(
+      this.activeVideo.duration,
+      2060
+    );
+    if (this.hasRealVideoSource(this.activeVideo)) {
+      this.currentTimeSec = 0;
+    } else if (this.currentTimeSec > this.totalDurationSec) {
+      this.currentTimeSec = 0;
     }
     this.rerender();
     this.drawPrivacyStreamFrame();
@@ -1600,8 +1619,25 @@ export class MentorshipHubModule {
       '#real-html5-video-player'
     );
     realVideoEl?.addEventListener('loadedmetadata', () => {
-      if (realVideoEl.duration && Number.isFinite(realVideoEl.duration)) {
-        this.totalDurationSec = Math.max(10, Math.round(realVideoEl.duration));
+      if (
+        realVideoEl.duration &&
+        Number.isFinite(realVideoEl.duration) &&
+        realVideoEl.duration > 0
+      ) {
+        const exactSec = Math.max(1, Math.round(realVideoEl.duration));
+        this.totalDurationSec = exactSec;
+        this.activeVideo.duration = formatDuration(exactSec);
+        const timeEl = this.containerEl?.querySelector('#privacy-time-label');
+        if (timeEl) {
+          timeEl.textContent = `${formatDuration(this.currentTimeSec)} / ${
+            this.activeVideo.duration
+          }`;
+        }
+        const scrub =
+          this.containerEl?.querySelector<HTMLInputElement>('#privacy-scrubber');
+        if (scrub) {
+          scrub.max = String(exactSec);
+        }
       }
     });
     realVideoEl?.addEventListener('timeupdate', () => {
@@ -1861,11 +1897,17 @@ export class MentorshipHubModule {
               if (found.mentorId) {
                 this.activeMentorId = found.mentorId;
               }
-              this.currentTimeSec = 120;
+              this.totalDurationSec = parseDurationToSeconds(
+                found.duration,
+                2060
+              );
+              this.currentTimeSec = this.hasRealVideoSource(found)
+                ? 0
+                : Math.min(120, Math.floor(this.totalDurationSec * 0.1));
               this.isPlaying = true;
               this.lastTick = performance.now();
               this.startPlaybackLoop();
-              this.callbacks.onShowToast(`Playing "${found.title}" inline`);
+              this.callbacks.onShowToast(`Playing "${found.title}" (${found.duration})`);
               this.rerender();
               this.drawPrivacyStreamFrame();
             }

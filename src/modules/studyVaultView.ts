@@ -35,6 +35,9 @@ export class StudyVaultModule {
   // In-App Secure PDF Viewer Modal State
   private previewMaterial: StudyMaterialItem | null = null;
   private editingMaterial: StudyMaterialItem | null = null;
+  private pendingEditPdfDataUrl: string | null = null;
+  private pendingEditPdfObjectUrl: string | null = null;
+  private pdfBlobUrlCache: Map<string, string> = new Map();
   private currentPageIndex = 0;
   private zoomPercent = 100;
 
@@ -994,9 +997,51 @@ export class StudyVaultModule {
     `;
   }
 
+  private isRealUploadedPdf(pdfUrl?: string | null): boolean {
+    if (!pdfUrl) return false;
+    return (
+      pdfUrl.startsWith('blob:') ||
+      pdfUrl.startsWith('data:application/pdf') ||
+      pdfUrl.startsWith('http://') ||
+      pdfUrl.startsWith('https://')
+    );
+  }
+
+  private getPlayablePdfPreviewUrl(mat: StudyMaterialItem): string {
+    const rawUrl = mat.pdfUrl || '';
+    if (rawUrl.startsWith('blob:') || rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) {
+      return rawUrl;
+    }
+    if (rawUrl.startsWith('data:application/pdf')) {
+      const cached = this.pdfBlobUrlCache.get(mat.id);
+      if (cached) return cached;
+      try {
+        const commaIdx = rawUrl.indexOf(',');
+        if (commaIdx > -1) {
+          const base64 = rawUrl.slice(commaIdx + 1);
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          const blobUrl = URL.createObjectURL(blob);
+          this.pdfBlobUrlCache.set(mat.id, blobUrl);
+          return blobUrl;
+        }
+      } catch {
+        return rawUrl;
+      }
+      return rawUrl;
+    }
+    return rawUrl;
+  }
+
   private renderSecurePdfModal(): string {
     if (!this.previewMaterial) return '';
     const mat = this.previewMaterial;
+    const hasUploadedPdf = this.isRealUploadedPdf(mat.pdfUrl);
+    const playablePdfUrl = hasUploadedPdf ? this.getPlayablePdfPreviewUrl(mat) : '';
     const pages = mat.summaryPages.length > 0 ? mat.summaryPages : ['Page 1 content'];
     const currentPageText = pages[this.currentPageIndex] ?? pages[0];
 
@@ -1015,7 +1060,7 @@ export class StudyVaultModule {
           <div class="px-4 sm:px-6 py-3.5 bg-[#F8FAFC] border-b border-[#E2E8F0] flex flex-wrap items-center justify-between gap-3">
             <div class="min-w-0">
               <div class="text-[11px] font-bold uppercase tracking-wider text-[#4F46E5]">
-                prepskm.in Secure In-App PDF Reader · ${this.escapeHtml(mat.section)}
+                prepskm.in Secure In-App PDF Reader · ${this.escapeHtml(mat.section)} ${hasUploadedPdf ? '· ✓ Exact Uploaded PDF' : ''}
               </div>
               <h3 class="text-sm sm:text-base font-bold text-slate-900 truncate max-w-md">
                 ${this.escapeHtml(mat.title)}
@@ -1023,6 +1068,9 @@ export class StudyVaultModule {
             </div>
 
             <div class="flex flex-wrap items-center gap-2">
+              ${
+                !hasUploadedPdf
+                  ? `
               <div class="inline-flex items-center rounded-xl bg-white border border-[#E2E8F0] p-0.5">
                 <button
                   type="button"
@@ -1066,6 +1114,13 @@ export class StudyVaultModule {
                   Next →
                 </button>
               </div>
+              `
+                  : `
+              <span class="px-2.5 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-[#059669] text-xs font-extrabold">
+                📄 Exact Uploaded PDF Document
+              </span>
+              `
+              }
 
               ${
                 dataStore.isMasterAdmin()
@@ -1100,19 +1155,34 @@ export class StudyVaultModule {
             </div>
           </div>
 
-          <div class="flex-1 overflow-y-auto p-6 sm:p-10 bg-slate-100 flex justify-center">
-            <div
-              class="bg-white border border-[#E2E8F0] rounded-xl shadow-md p-6 sm:p-10 w-full max-w-2xl transition-all"
-              style="font-size: ${Math.round((14 * this.zoomPercent) / 100)}px"
-            >
-              <div class="flex items-center justify-between pb-4 mb-5 border-b border-slate-200 text-xs text-slate-400 font-mono-tabular">
-                <span>prepskm.in Verified Study Material</span>
-                <span>Watermark: ${this.escapeHtml(dataStore.getUser().email)}</span>
+          <div class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center">
+            ${
+              hasUploadedPdf
+                ? `
+              <div class="w-full flex flex-col gap-2">
+                <iframe
+                  src="${playablePdfUrl}"
+                  data-testid="real-uploaded-pdf-iframe"
+                  title="${this.escapeHtml(mat.title)}"
+                  class="w-full h-[68vh] min-h-[460px] rounded-xl border border-[#E2E8F0] bg-white shadow-md"
+                ></iframe>
               </div>
-              <pre class="whitespace-pre-wrap font-mono text-slate-800 leading-relaxed">${this.escapeHtml(
-                currentPageText
-              )}</pre>
-            </div>
+              `
+                : `
+              <div
+                class="bg-white border border-[#E2E8F0] rounded-xl shadow-md p-6 sm:p-10 w-full max-w-2xl transition-all"
+                style="font-size: ${Math.round((14 * this.zoomPercent) / 100)}px"
+              >
+                <div class="flex items-center justify-between pb-4 mb-5 border-b border-slate-200 text-xs text-slate-400 font-mono-tabular">
+                  <span>prepskm.in Verified Study Material</span>
+                  <span>Watermark: ${this.escapeHtml(dataStore.getUser().email)}</span>
+                </div>
+                <pre class="whitespace-pre-wrap font-mono text-slate-800 leading-relaxed">${this.escapeHtml(
+                  currentPageText
+                )}</pre>
+              </div>
+              `
+            }
           </div>
 
           <div class="px-6 py-3 bg-[#F8FAFC] border-t border-[#E2E8F0] flex items-center justify-between">
@@ -1225,13 +1295,28 @@ export class StudyVaultModule {
               </div>
             </div>
 
+            <div class="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-1.5">
+              <label for="edit-pdf-file-input" class="block text-xs font-extrabold text-[#4F46E5] cursor-pointer">
+                Upload / Replace Actual PDF File (.pdf)
+              </label>
+              <input
+                id="edit-pdf-file-input"
+                type="file"
+                accept=".pdf,application/pdf"
+                class="w-full text-xs text-slate-600 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-[#4F46E5] file:text-white"
+              />
+              <div class="text-[11px] text-slate-500">
+                Select a PDF file from your device to show that exact PDF in the Preview reader.
+              </div>
+            </div>
+
             <div>
               <label class="block text-xs font-bold text-slate-700 mb-1">
                 PDF Content / Formula & Notes Pages (Separate pages with a blank line "---")
               </label>
               <textarea
                 id="edit-pdf-pages"
-                rows="6"
+                rows="5"
                 class="w-full px-3.5 py-2.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono text-xs text-slate-800"
               >${this.escapeHtml(mat.summaryPages.join('\n---\n'))}</textarea>
             </div>
@@ -1259,6 +1344,17 @@ export class StudyVaultModule {
   }
 
   private triggerMaterialDownload(mat: StudyMaterialItem): void {
+    const cleanFilename = `${mat.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.pdf`;
+    if (this.isRealUploadedPdf(mat.pdfUrl)) {
+      const a = document.createElement('a');
+      a.href = this.getPlayablePdfPreviewUrl(mat);
+      a.download = cleanFilename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      return;
+    }
+
     const content = [
       `====================================================================`,
       `PREPSKM.IN — OFFICIAL STUDY MATERIAL VAULT`,
@@ -1274,7 +1370,7 @@ export class StudyVaultModule {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${mat.title.toLowerCase().replace(/[^a-z0-9]+/g, '_')}.pdf`;
+    a.download = cleanFilename;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -1295,6 +1391,22 @@ export class StudyVaultModule {
         refocused.focus();
         refocused.setSelectionRange(this.searchQuery.length, this.searchQuery.length);
       }
+    });
+
+    const editPdfFileInput =
+      this.containerEl.querySelector<HTMLInputElement>('#edit-pdf-file-input');
+    editPdfFileInput?.addEventListener('change', () => {
+      const file = editPdfFileInput.files?.[0];
+      if (!file) return;
+      this.pendingEditPdfObjectUrl = URL.createObjectURL(file);
+      const reader = new FileReader();
+      reader.onload = () => {
+        if (typeof reader.result === 'string') {
+          this.pendingEditPdfDataUrl = reader.result;
+          this.callbacks.onShowToast(`Loaded exact PDF "${file.name}" for update!`);
+        }
+      };
+      reader.readAsDataURL(file);
     });
 
     const editForm = this.containerEl.querySelector<HTMLFormElement>(
@@ -1322,11 +1434,20 @@ export class StudyVaultModule {
         .map((p) => p.trim())
         .filter(Boolean);
 
+      const newPdfUrl =
+        this.pendingEditPdfDataUrl ||
+        this.pendingEditPdfObjectUrl ||
+        this.editingMaterial.pdfUrl;
+      if (this.pendingEditPdfDataUrl || this.pendingEditPdfObjectUrl) {
+        this.pdfBlobUrlCache.delete(this.editingMaterial.id);
+      }
+
       await dataStore.updateMaterial(this.editingMaterial.id, {
         title,
         section,
         classId,
         subjectId,
+        pdfUrl: newPdfUrl,
         summaryPages:
           summaryPages.length > 0 ? summaryPages : this.editingMaterial.summaryPages,
       });
@@ -1337,6 +1458,8 @@ export class StudyVaultModule {
           null;
       }
       this.editingMaterial = null;
+      this.pendingEditPdfDataUrl = null;
+      this.pendingEditPdfObjectUrl = null;
       this.callbacks.onShowToast(`Updated PDF "${title}" in Firebase Study Vault!`);
       this.rerender();
     });
@@ -1352,7 +1475,7 @@ export class StudyVaultModule {
               window.history.pushState(
                 {},
                 '',
-                `/study.html?section=${encodeURIComponent(sec)}`
+                `/index.html?page=study&section=${encodeURIComponent(sec)}`
               );
               this.rerender();
               window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -1361,7 +1484,7 @@ export class StudyVaultModule {
           }
           case 'close-section-view': {
             this.activeOpenedSection = null;
-            window.history.pushState({}, '', '/study.html');
+            window.history.pushState({}, '', '/index.html?page=study');
             this.rerender();
             window.scrollTo({ top: 0, behavior: 'smooth' });
             break;
