@@ -6,22 +6,12 @@ import {
   calculateDailyGoalProgress,
   calculateLeaderboardCompositePoints,
   calculateMentorshipPrice,
-  calculateMonthlyStudentLevel,
   calculatePollPercentages,
-  calculateStudentXp,
-  calculateSyllabusProgress,
-  computePerformanceTrendsForD3,
-  computeStreakMicroAnimationState,
   computeUpdatedStreak,
   evaluateCBTSubmission,
-  evaluateStreakLifecycle,
-  evaluateStreakRiskStatus,
   formatDuration,
-  parseDurationToSeconds,
   generateAIStudyDiagnosis,
-  generateChapterPnCQuestions,
   generatePersonalizedStudyPlan,
-  getCurrentWeekKey,
   getSubjectsForExam,
   getValidInfinitePracticeCounts,
   rankLeaderboardEntries,
@@ -30,20 +20,18 @@ import {
   summarizePaletteStatuses,
 } from './examLogic';
 import {
-  CBT_QUESTION_BANK,
-  DEFAULT_PW_LECTURE_FALLBACK,
-  DEFAULT_USER,
-  DEFAULT_VAULT_SECTIONS,
-  INITIAL_CHAPTERS,
-  INITIAL_LEADERBOARD,
-  INITIAL_MATERIALS,
-  INITIAL_MENTORS,
-  INITIAL_TASKS,
-  INITIAL_TEST_SUBMISSIONS,
-  INITIAL_VIDEOS,
-  SYLLABUS_TOPICS,
-} from '../constants';
-import type { CBTQuestion, LeaderboardEntry, StudyTask, TestSubmission } from '../types';
+  buildOfflineStudyMaterialRecord,
+  computeLectureOfflineCacheStatus,
+  selectLectureCompanionMaterials,
+} from './lectureOfflineCache';
+import {
+  buildSequentialMockStream,
+  extractIsolatedOptionLetterFromAnswer,
+  generateAutomatedResultsSummaryAndPathway,
+  isolateOptionLettersOnly,
+} from './examLogic';
+import { CBT_QUESTION_BANK, INITIAL_CHAPTERS, INITIAL_MATERIALS, INITIAL_TASKS } from '../constants';
+import type { CBTQuestion, LeaderboardEntry } from '../types';
 
 test('formatDuration formats MM:SS and HH:MM:SS accurately', () => {
   assert.equal(formatDuration(0), '00:00');
@@ -176,39 +164,11 @@ test('generatePersonalizedStudyPlan prioritizes Weak subjects with highest weekl
   );
 });
 
-test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single user as Rank #1 and hide Guest users from signed-up users', () => {
+test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank Top 10 accurately', () => {
   const pts = calculateLeaderboardCompositePoints(80, 50, 5);
   assert.equal(pts, 1910);
 
-  // Single user on the platform -> must be Rank #1!
-  const soloEntries: LeaderboardEntry[] = [
-    {
-      uid: 'u_solo',
-      name: 'Sumit Kumar',
-      targetExam: 'JEE',
-      taskCompletionRate: 100,
-      bestMockScore: 24,
-      currentStreak: 1,
-      compositePoints: 1600,
-      isGuest: false,
-    },
-  ];
-  const soloRanked = rankLeaderboardEntries(soloEntries, 'u_solo');
-  assert.equal(soloRanked.top10.length, 1);
-  assert.equal(soloRanked.top10[0].rank, 1);
-  assert.equal(soloRanked.currentUserRank, 1);
-
-  const mixedEntries: LeaderboardEntry[] = [
-    {
-      uid: 'guest_aspirant',
-      name: 'Guest Student',
-      targetExam: 'JEE',
-      taskCompletionRate: 100,
-      bestMockScore: 60,
-      currentStreak: 5,
-      compositePoints: 3000,
-      isGuest: true,
-    },
+  const sampleEntries: LeaderboardEntry[] = [
     {
       uid: 'u2',
       name: 'Riya',
@@ -217,7 +177,6 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
       bestMockScore: 56,
       currentStreak: 12,
       compositePoints: 2460,
-      isGuest: false,
     },
     {
       uid: 'u1',
@@ -227,20 +186,13 @@ test('calculateLeaderboardCompositePoints and rankLeaderboardEntries rank single
       bestMockScore: 50,
       currentStreak: 5,
       compositePoints: 1910,
-      isGuest: false,
     },
   ];
 
-  // When signed-up user u1 views leaderboard, guest_aspirant is filtered out!
-  const rankedForSignedUp = rankLeaderboardEntries(mixedEntries, 'u1');
-  assert.equal(rankedForSignedUp.totalParticipants, 2);
-  assert.equal(rankedForSignedUp.top10[0].uid, 'u2');
-  assert.equal(rankedForSignedUp.currentUserRank, 2);
-
-  // When guest_aspirant views leaderboard, they see their own rank alongside signed-up users!
-  const rankedForGuest = rankLeaderboardEntries(mixedEntries, 'guest_aspirant');
-  assert.equal(rankedForGuest.totalParticipants, 3);
-  assert.equal(rankedForGuest.currentUserRank, 1);
+  const ranked = rankLeaderboardEntries(sampleEntries, 'u1');
+  assert.equal(ranked.top10[0].uid, 'u2');
+  assert.equal(ranked.top10[0].rank, 1);
+  assert.equal(ranked.currentUserRank, 2);
 });
 
 test('calculateBacklogKillerPlan computes daily extra quota and generates micro-tasks', () => {
@@ -296,27 +248,7 @@ test('generateAIStudyDiagnosis flags low-accuracy chapters for immediate revisio
 });
 
 test('calculateDailyGoalProgress computes SVG ring circumference and dashoffset dynamically', () => {
-  const sampleTasks: StudyTask[] = [
-    {
-      taskId: 't1',
-      uid: 'u1',
-      title: 'Solve 15 Rotational PYQs',
-      subject: 'Physics',
-      type: 'Today',
-      isCompleted: true,
-      timestamp: 1000,
-    },
-    {
-      taskId: 't2',
-      uid: 'u1',
-      title: 'Revise Nernst Equation',
-      subject: 'Chemistry',
-      type: 'Today',
-      isCompleted: true,
-      timestamp: 2000,
-    },
-  ];
-  const progress = calculateDailyGoalProgress(sampleTasks, 4, 36);
+  const progress = calculateDailyGoalProgress(INITIAL_TASKS, 4, 36);
   assert.equal(progress.completedCount, 2);
   assert.equal(progress.dailyGoalTarget, 4);
   assert.equal(progress.percentage, 50);
@@ -348,184 +280,87 @@ test('getValidInfinitePracticeCounts and selectInfinitePracticeEqualByChapter en
   }
 });
 
-test('evaluateStreakRiskStatus flags CRITICAL when near midnight with 0 tasks today and SAFE when task completed', () => {
-  const criticalRisk = evaluateStreakRiskStatus({
-    uid: 'u1',
-    studentName: 'Sumit Kumar',
-    currentStreak: 6,
-    lastActiveDate: '2026-11-03',
-    todayIso: '2026-11-04',
-    completedTasksToday: 0,
-    currentHour24: 21,
+test('buildOfflineStudyMaterialRecord generates offline HTML and revision summary points', () => {
+  const sampleMaterial = INITIAL_MATERIALS[0];
+  const record = buildOfflineStudyMaterialRecord(sampleMaterial, '2026-11-06T12:00:00.000Z');
+  assert.equal(record.id, sampleMaterial.id);
+  assert.equal(record.title, sampleMaterial.title);
+  assert.equal(record.cachedAt, '2026-11-06T12:00:00.000Z');
+  assert.ok(record.offlineHtmlDocument.includes('Served from Service Worker Offline Cache'));
+  assert.ok(
+    record.offlineHtmlDocument.includes(sampleMaterial.title.replace(/&/g, '&amp;'))
+  );
+  assert.ok(record.offlineSummaryPoints.length >= 1);
+});
+
+test('computeLectureOfflineCacheStatus calculates cached material coverage accurately', () => {
+  const materials = INITIAL_MATERIALS.slice(0, 4);
+  const status = computeLectureOfflineCacheStatus({
+    swSupported: true,
+    swActive: true,
+    isOnline: false,
+    cachedMaterialIds: [materials[0].id, materials[1].id, materials[0].id],
+    availableMaterials: materials,
+    lastSyncedAt: '2026-11-06T12:00:00.000Z',
   });
-  assert.equal(criticalRisk.riskLevel, 'CRITICAL');
-  assert.equal(criticalRisk.hoursRemaining, 3);
-  assert.ok(criticalRisk.notificationPayload.title.includes('Streak at Risk'));
+  assert.equal(status.swSupported, true);
+  assert.equal(status.swActive, true);
+  assert.equal(status.isOnline, false);
+  assert.equal(status.cachedCount, 2);
+  assert.equal(status.totalAvailableCount, 4);
+  assert.equal(status.coveragePercent, 50);
+  assert.equal(status.cachedMaterialIds.length, 2);
+});
 
-  const safeStatus = evaluateStreakRiskStatus({
-    uid: 'u1',
-    studentName: 'Sumit Kumar',
-    currentStreak: 7,
-    lastActiveDate: '2026-11-04',
-    todayIso: '2026-11-04',
-    completedTasksToday: 2,
-    currentHour24: 21,
+test('selectLectureCompanionMaterials prioritizes subject-matched materials for the active lecture', () => {
+  const matched = selectLectureCompanionMaterials(INITIAL_MATERIALS, {
+    topicTag: 'Physics',
+    section: 'Chapter Lectures',
+    title: 'Rotational Mechanics Masterclass',
+    classCohort: 'JEE',
   });
-  assert.equal(safeStatus.riskLevel, 'SAFE');
+  assert.ok(matched.length >= 2);
 });
 
-test('computePerformanceTrendsForD3 computes chronological improvement delta and subject accuracy aggregates', () => {
-  const fixtureSubmissions: TestSubmission[] = [
-    {
-      testId: 't_1',
-      uid: 'u1',
-      score: 11,
-      maxScore: 24,
-      accuracyPercent: 60,
-      correctCount: 3,
-      wrongCount: 2,
-      timeTaken: 1200,
-      timestamp: '2026-10-27T17:00:00Z',
-      subjectBreakdown: {
-        Physics: { subject: 'Physics', score: 8, maxScore: 8, correct: 2, wrong: 0, unattempted: 0, accuracyPercent: 100 },
-      },
-    },
-    {
-      testId: 't_2',
-      uid: 'u1',
-      score: 19,
-      maxScore: 24,
-      accuracyPercent: 83,
-      correctCount: 5,
-      wrongCount: 1,
-      timeTaken: 1100,
-      timestamp: '2026-11-03T16:30:00Z',
-      subjectBreakdown: {
-        Physics: { subject: 'Physics', score: 8, maxScore: 8, correct: 2, wrong: 0, unattempted: 0, accuracyPercent: 100 },
-      },
-    },
-  ];
-  const trends = computePerformanceTrendsForD3(fixtureSubmissions);
-  assert.equal(trends.chronologicalTrend.length, 2);
-  assert.equal(trends.chronologicalTrend[0].accuracyPercent, 60);
-  assert.equal(trends.chronologicalTrend[1].accuracyPercent, 83);
-  assert.equal(trends.overallImprovementDelta, 23);
-  const phy = trends.subjectAggregates.find((s) => s.subject === 'Physics');
-  assert.ok(phy);
-  assert.ok(phy.avgAccuracy >= 75);
+test('isolateOptionLettersOnly strips all accompanying text and retains strictly A, B, C, D', () => {
+  const stripped = isolateOptionLettersOnly([
+    '(A) (1/3) M g sin θ',
+    'Option B: (2/5) M g sin θ',
+    'C. (1/2) M g sin θ',
+    'd) (2/7) M g sin θ',
+  ]);
+  assert.deepEqual(stripped, ['A', 'B', 'C', 'D']);
+
+  const fallback = isolateOptionLettersOnly(['24 N', '48 N', '12 N', '0 N']);
+  assert.deepEqual(fallback, ['A', 'B', 'C', 'D']);
+
+  assert.equal(
+    extractIsolatedOptionLetterFromAnswer('(B) 5 Faradays', [
+      '(A) 3 Faradays',
+      '(B) 5 Faradays',
+      '(C) 7 Faradays',
+      '(D) 2 Faradays',
+    ]),
+    'B'
+  );
+  assert.equal(extractIsolatedOptionLetterFromAnswer('2'), 'C');
 });
 
-test('calculateSyllabusProgress computes subject completion percentages and remaining topics for Google Tasks', () => {
-  const completed = ['syl_phy_kinematics_nlm', 'syl_phy_rotational', 'syl_chem_bonding_periodic'];
-  const jeeProgress = calculateSyllabusProgress(SYLLABUS_TOPICS, completed, 'JEE');
-  assert.equal(jeeProgress.targetExam, 'JEE');
-  assert.equal(jeeProgress.subjects.length, 3);
-  const phy = jeeProgress.subjects.find((s) => s.subject === 'Physics');
-  assert.ok(phy);
-  assert.equal(phy.completedTopics, 2);
-  assert.equal(phy.totalTopics, 6);
-  assert.equal(phy.completionPercent, 33);
-  assert.equal(jeeProgress.overallCompleted, 3);
-  assert.equal(jeeProgress.remainingTopics.length, jeeProgress.overallTotal - 3);
-});
+test('buildSequentialMockStream structures mock tests sequentially and generateAutomatedResultsSummaryAndPathway builds 3-step pathway', () => {
+  const stream = buildSequentialMockStream('JEE', 'Class 12', ['Sequential Mock #01']);
+  assert.equal(stream.length, 4);
+  assert.equal(stream[0].sequenceNumber, 1);
+  assert.equal(stream[1].sequenceNumber, 2);
 
-test('calculateStudentXp awards +75 XP per completed task and getCurrentWeekKey returns ISO week', () => {
-  assert.equal(calculateStudentXp(0), 0);
-  assert.equal(calculateStudentXp(1), 75);
-  assert.equal(calculateStudentXp(4), 300);
-  assert.equal(calculateStudentXp(3, 50), 275);
-  const wk = getCurrentWeekKey('2026-11-04');
-  assert.match(wk, /^2026-W\d{2}$/);
-});
-
-test('evaluateStreakLifecycle extends streak on consecutive days and ends/resets to 0 on missed day', () => {
-  const extended = evaluateStreakLifecycle(3, '2026-11-03', '2026-11-04', 2);
-  assert.equal(extended.currentStreak, 4);
-  assert.equal(extended.status, 'EXTENDED');
-
-  const endedMissedDay = evaluateStreakLifecycle(5, '2026-11-01', '2026-11-04', 0);
-  assert.equal(endedMissedDay.currentStreak, 0);
-  assert.equal(endedMissedDay.status, 'ENDED_RESET');
-});
-
-test('calculateMonthlyStudentLevel promotes Rank #1 to #20 by +1 level each month', () => {
-  const rank1 = calculateMonthlyStudentLevel(1, 1, 2);
-  assert.equal(rank1.level, 3);
-  assert.equal(rank1.eligibleForMonthlyPromotion, true);
-  assert.equal(rank1.nextLevelAfterMonth, 4);
-
-  const rank25 = calculateMonthlyStudentLevel(2, 25, 0);
-  assert.equal(rank25.level, 2);
-  assert.equal(rank25.eligibleForMonthlyPromotion, false);
-  assert.equal(rank25.nextLevelAfterMonth, 2);
-});
-
-test('generateChapterPnCQuestions builds 100 P&C questions per chapter and returns multiples of selected chapters', () => {
-  const selectedThree = SYLLABUS_TOPICS.slice(0, 3);
-  const pncSet = generateChapterPnCQuestions(selectedThree, 5);
-  assert.equal(pncSet.chapterPoolSize, 100);
-  assert.equal(pncSet.questionsPerChapter, 5);
-  assert.equal(pncSet.totalQuestions, 15);
-  assert.equal(pncSet.questions.length, 15);
-
-  const fullSingleChapter = generateChapterPnCQuestions([SYLLABUS_TOPICS[0]], 100);
-  assert.equal(fullSingleChapter.questions.length, 100);
-});
-
-test('production launch constants start with clean empty state, Google Classroom section, and no PW branding', () => {
-  assert.equal(DEFAULT_USER.isGuest, true);
-  assert.equal(INITIAL_TASKS.length, 0);
-  assert.equal(INITIAL_MATERIALS.length, 0);
-  assert.equal(INITIAL_VIDEOS.length, 0);
-  assert.equal(INITIAL_TEST_SUBMISSIONS.length, 0);
-  assert.equal(INITIAL_LEADERBOARD.length, 0);
-  assert.equal(INITIAL_MENTORS.length, 1);
-  assert.equal(INITIAL_MENTORS[0].email.toLowerCase(), 'sumit586kumar@gmail.com');
-  assert.ok(DEFAULT_VAULT_SECTIONS.includes('Google Classroom'));
-  assert.ok(!DEFAULT_PW_LECTURE_FALLBACK.title.includes('PW'));
-});
-
-test('computeStreakMicroAnimationState returns visual celebration state when daily tasks are completed', () => {
-  const idleState = computeStreakMicroAnimationState({
-    completedTodayCount: 0,
-    dailyGoalTarget: 4,
-    currentStreak: 0,
-    streakIncremented: false,
+  const summary = generateAutomatedResultsSummaryAndPathway({
+    examType: 'JEE',
+    classYear: 'Class 12',
+    score: 28,
+    maxScore: 40,
+    accuracyPercent: 78,
+    correctCount: 7,
+    wrongCount: 2,
   });
-  assert.equal(idleState.shouldAnimate, false);
-  assert.equal(idleState.xpAwarded, 0);
-
-  const firstTaskDone = computeStreakMicroAnimationState({
-    completedTodayCount: 1,
-    dailyGoalTarget: 4,
-    currentStreak: 3,
-    streakIncremented: true,
-    taskTitle: 'Solve 25 Rotational Mechanics PYQs',
-  });
-  assert.equal(firstTaskDone.shouldAnimate, true);
-  assert.equal(firstTaskDone.isDailyGoalReached, false);
-  assert.equal(firstTaskDone.xpAwarded, 75);
-  assert.equal(firstTaskDone.progressPercent, 25);
-  assert.ok(firstTaskDone.headline.includes('Streak Ignited!'));
-
-  const goalCrushed = computeStreakMicroAnimationState({
-    completedTodayCount: 4,
-    dailyGoalTarget: 4,
-    currentStreak: 5,
-    streakIncremented: false,
-    taskTitle: 'Revise Electrostatics Formula Sheet',
-  });
-  assert.equal(goalCrushed.shouldAnimate, true);
-  assert.equal(goalCrushed.isDailyGoalReached, true);
-  assert.equal(goalCrushed.progressPercent, 100);
-  assert.ok(goalCrushed.headline.includes('Daily Goal Crushed!'));
+  assert.ok(summary.headline.includes('78%'));
+  assert.equal(summary.pathwaySteps.length, 3);
 });
-
-test('parseDurationToSeconds converts MM:SS and HH:MM:SS video durations to exact seconds', () => {
-  assert.equal(parseDurationToSeconds('00:08'), 8);
-  assert.equal(parseDurationToSeconds('02:15'), 135);
-  assert.equal(parseDurationToSeconds('28:45'), 1725);
-  assert.equal(parseDurationToSeconds('01:05:10'), 3910);
-});
-
-

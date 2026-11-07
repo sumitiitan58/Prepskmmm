@@ -1,4 +1,9 @@
+import * as d3 from 'd3';
 import { CBT_QUESTION_BANK, getCohortTheme } from '../constants';
+import {
+  generateResultsAISummaryWithAI,
+  resolveResultsDoubtWithAI,
+} from '../services/aiAssistantService';
 import { dataStore } from '../services/firebaseService';
 import type {
   AdminQuestionItem,
@@ -12,25 +17,25 @@ import type {
   TestSubmission,
 } from '../types';
 import {
+  buildSequentialMockStream,
   evaluateCBTSubmission,
+  extractIsolatedOptionLetterFromAnswer,
   formatDuration,
   generateAIStudyDiagnosis,
-  generateChapterPnCQuestions,
+  generateAutomatedResultsSummaryAndPathway,
   getSubjectsForExam,
   getValidInfinitePracticeCounts,
+  isolateOptionLettersOnly,
   selectAutoBalancedQuestions,
+  selectInfinitePracticeEqualByChapter,
   summarizePaletteStatuses,
 } from '../utils/examLogic';
-import {
-  renderD3ImprovementTrendGraph,
-  renderD3SubjectAccuracyChart,
-} from './d3Visualizations';
 
 export interface CBTTestEngineCallbacks {
   onShowToast: (message: string) => void;
 }
 
-type CBTViewStage = 'hub' | 'instructions' | 'exam' | 'history' | 'submitted';
+type CBTViewStage = 'hub' | 'exam' | 'history' | 'submitted';
 type CBTEngineMode = 'MOCK' | 'INFINITE_PRACTICE';
 
 export class CBTTestEngineModule {
@@ -39,8 +44,6 @@ export class CBTTestEngineModule {
 
   private stage: CBTViewStage = 'hub';
   private engineMode: CBTEngineMode = 'MOCK';
-  private isInstructionsConsentChecked = true;
-  private isInExamInstructionsModalOpen = false;
 
   // Configuration State
   private selectedExam: TargetExam = 'JEE';
@@ -53,11 +56,11 @@ export class CBTTestEngineModule {
   private totalQuestionCount = 10;
   private selectedMockSeriesTitle = 'All-India Full Syllabus NTA Major Mock #14';
 
-  // Infinite Practice Equal-Per-Chapter State (Backed by Dynamic Syllabus Chapters & 100 P&C Pool/Chapter)
+  // Infinite Practice Equal-Per-Chapter State
   private selectedChapterIds: Set<string> = new Set([
-    'syl_phy_rot',
-    'syl_phy_elec',
-    'syl_chem_goc',
+    'ch_rotational',
+    'ch_electrostatics',
+    'ch_goc',
   ]);
   private infiniteTotalCount = 6;
   private activePerChapterCounts: Record<string, number> = {};
@@ -73,10 +76,27 @@ export class CBTTestEngineModule {
   private timerIntervalId: number | null = null;
   private isPaletteDrawerOpen = false;
 
-  // Post-Submission & Test History State
+  // Post-Submission, Test History & AI Results State
   private lastSubmission: TestSubmission | null = null;
   private selectedHistoryTestId: string | null = null;
   private historySubjectFilter: SubjectName | 'ALL' = 'ALL';
+  private aiSummaryOverride: {
+    executiveSummary: string;
+    strengths: string[];
+    focusAreas: string[];
+    personalizedPathway: {
+      step: number;
+      subject: string;
+      actionTitle: string;
+      detail: string;
+      timeEstimate: string;
+    }[];
+  } | null = null;
+  private isGeneratingAISummary = false;
+  private activeDoubtQuestionNumber: number | null = null;
+  private activeDoubtExplanation: string = '';
+  private activeDoubtQuery: string = '';
+  private isResolvingDoubt = false;
 
   constructor(callbacks: CBTTestEngineCallbacks) {
     this.callbacks = callbacks;
@@ -112,44 +132,17 @@ export class CBTTestEngineModule {
       this.selectedMockSeriesTitle = titleParam;
     }
 
-    const user = dataStore.getUser();
     if (tabParam === 'history') {
       this.stage = 'history';
     } else if (
-      (sessionParam === 'mock' || sessionParam === 'infinite') &&
-      this.activeQuestions.length === 0
+      sessionParam === 'mock' &&
+      this.activeQuestions.length === 0 &&
+      !dataStore.getUser().isGuest
     ) {
-      if (user.isGuest) {
-        this.stage = 'hub';
-        setTimeout(() => {
-          this.callbacks.onShowToast(
-            'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests!'
-          );
-          window.dispatchEvent(
-            new CustomEvent('prepskm:open-auth-modal', {
-              detail: {
-                reason:
-                  'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and track your All-India Rank!',
-              },
-            })
-          );
-        }, 120);
-      } else if (sessionParam === 'mock') {
-        this.engineMode = 'MOCK';
-        this.prepareExamPaper('MOCK');
-        this.stage = 'exam';
-      } else {
-        this.engineMode = 'MOCK';
-        this.prepareExamPaper('MOCK');
-        this.stage = 'exam';
-      }
-    } else if (
-      this.stage !== 'exam' &&
-      this.stage !== 'instructions' &&
-      this.stage !== 'submitted' &&
-      this.stage !== 'history'
-    ) {
-      // Never auto-open the exam paper underneath the hub cards on /test.html
+      this.engineMode = 'MOCK';
+      this.prepareExamPaper('MOCK');
+      this.stage = 'exam';
+    } else if (this.stage !== 'exam' && this.stage !== 'submitted' && this.stage !== 'history') {
       this.stage = 'hub';
     }
   }
@@ -170,52 +163,59 @@ export class CBTTestEngineModule {
 
   private buildCombinedQuestionPool(): CBTQuestion[] {
     const adminQuestions: AdminQuestionItem[] = dataStore.getAdminQuestions();
-    const mappedAdmin: CBTQuestion[] = adminQuestions.map((aq, idx) => ({
-      id: aq.id,
-      number: 100 + idx,
-      subject: aq.subjectName,
-      type: aq.type === 'NUMERICAL' ? 'NAT' : 'MCQ',
-      topic: aq.chapterName || `${aq.subjectName} Concept Problem`,
-      classId: aq.classId,
-      chapterId: aq.chapterId,
-      prompt: aq.prompt,
-      equationBlock: aq.equationBlock,
-      questionImg: aq.questionImg,
-      solutionImg: aq.solutionImg,
-      options: aq.options ?? [
-        'Option A (See Question Image)',
-        'Option B (See Question Image)',
-        'Option C (See Question Image)',
-        'Option D (See Question Image)',
-      ],
-      correctAnswer:
+    const mappedAdmin: CBTQuestion[] = adminQuestions.map((aq, idx) => {
+      const isolatedOpts = isolateOptionLettersOnly(aq.options);
+      const rawCorrect =
         aq.type === 'MCQ' && aq.options
           ? aq.options[Number(aq.correctVal) || 0] ?? aq.correctVal
-          : aq.correctVal,
-      solution: aq.solutionText,
-    }));
+          : aq.correctVal;
+      return {
+        id: aq.id,
+        number: 100 + idx,
+        subject: aq.subjectName,
+        type: aq.type === 'NUMERICAL' ? 'NAT' : 'MCQ',
+        topic: aq.chapterName || `${aq.subjectName} Concept Problem`,
+        classId: aq.classId,
+        chapterId: aq.chapterId,
+        prompt: aq.prompt,
+        equationBlock: aq.equationBlock,
+        questionImg: aq.questionImg,
+        solutionImg: aq.solutionImg,
+        options: isolatedOpts,
+        correctAnswer:
+          aq.type === 'NUMERICAL'
+            ? aq.correctVal
+            : extractIsolatedOptionLetterFromAnswer(rawCorrect, aq.options),
+        solution: aq.solutionText,
+      };
+    });
 
-    return [...mappedAdmin, ...CBT_QUESTION_BANK];
+    const normalizedBank: CBTQuestion[] = CBT_QUESTION_BANK.map((q) => {
+      if (q.type === 'NAT') return q;
+      return {
+        ...q,
+        options: isolateOptionLettersOnly(q.options),
+        correctAnswer: extractIsolatedOptionLetterFromAnswer(
+          q.correctAnswer,
+          q.options
+        ),
+      };
+    });
+
+    return [...mappedAdmin, ...normalizedBank];
   }
 
   public rerender(): void {
     if (!this.containerEl) return;
 
-    // 1. DEDICATED FULL-SCREEN EXAM PAGE (Opened after confirming NTA Instructions)
+    // 1. DEDICATED FULL-SCREEN EXAM PAGE
     if (this.stage === 'exam') {
       this.containerEl.innerHTML = this.renderDedicatedExamStage();
       this.bindEvents();
       return;
     }
 
-    // 2. OFFICIAL NTA GENERAL INSTRUCTIONS SCREEN (Shown before Mock Test begins)
-    if (this.stage === 'instructions') {
-      this.containerEl.innerHTML = this.renderInstructionsStage();
-      this.bindEvents();
-      return;
-    }
-
-    // 3. TEST HISTORY, PERFORMANCE GRAPHS & ROW-BY-ROW SOLUTIONS VIEW
+    // 2. TEST HISTORY, AI PERFORMANCE SUMMARIES, PERSONALIZED STUDY PATHWAY, AI DOUBT SOLVER & SOLUTIONS VIEW
     if (this.stage === 'history' || this.stage === 'submitted') {
       this.containerEl.innerHTML = `
         <div class="space-y-6 pb-12" data-testid="cbt-history-page">
@@ -223,12 +223,12 @@ export class CBTTestEngineModule {
           ${this.renderTestHistoryAndAnalyticsStage()}
         </div>
       `;
-      this.mountHistoryD3Charts();
       this.bindEvents();
+      this.renderD3HistoryCharts();
       return;
     }
 
-    // 4. DEFAULT HUB VIEW (Official Mock Test Hub & Test History)
+    // 3. DEFAULT SEQUENTIAL MOCK STREAM HUB VIEW (No Custom Mock Builder)
     this.containerEl.innerHTML = `
       <div class="space-y-6 pb-12" data-testid="cbt-test-hub-page">
         ${this.renderTopHubBanner()}
@@ -247,53 +247,30 @@ export class CBTTestEngineModule {
     return `
       <section
         aria-label="CBT Mode & Test History Switcher"
-        class="rounded-3xl bg-gradient-to-r from-[#4F46E5] via-indigo-600 to-violet-600 p-5 sm:p-6 text-white shadow-md"
+        class="rounded-3xl bg-gradient-to-r from-[#7C3AED] via-[#9333EA] to-[#DB2777] px-5 py-4 text-white shadow-md"
       >
-        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div class="space-y-1.5">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/15 text-amber-200 text-[11px] font-extrabold uppercase tracking-wider">
-                ⚡ ${this.escapeHtml(cohortTheme.badgeText)} · CBT Examination Portal
-              </span>
-              ${
-                user.isGuest
-                  ? `
-                <button
-                  type="button"
-                  data-action="prompt-guest-signup"
-                  data-testid="cbt-guest-signup-pill"
-                  class="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-amber-400 hover:bg-amber-300 text-slate-950 text-[11px] font-extrabold shadow-xs cursor-pointer"
-                >
-                  🔒 Guest Mode — Sign Up Required to Start Mock Tests
-                </button>
-              `
-                  : `
-                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-400/20 border border-emerald-300/30 text-emerald-200 text-[11px] font-extrabold">
-                  ✓ Signed In as ${this.escapeHtml(user.name)}
-                </span>
-              `
-              }
-            </div>
-            <h1 class="text-xl sm:text-2xl font-extrabold tracking-tight">
-              Official NTA Mock Test Portal &amp; Test Analytics
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex flex-wrap items-center gap-2 min-w-0">
+            <span class="inline-flex items-center gap-1 px-3 py-1 rounded-full bg-white/20 text-pink-100 text-[10px] font-extrabold uppercase tracking-wider shrink-0">
+              🌸 ${this.escapeHtml(cohortTheme.badgeText)}
+            </span>
+            <h1 class="text-sm sm:text-base font-extrabold tracking-tight truncate">
+              Sequential NTA Mock Test Stream &amp; AI Performance Results
             </h1>
-            <p class="text-xs text-indigo-100 max-w-2xl">
-              Attempt full-length &amp; part-syllabus Official NTA Mock Tests with authentic Question Palette instructions, live timer, and instant row-by-row answer key analysis.
-            </p>
           </div>
 
-          <div class="flex flex-wrap items-center gap-2">
+          <div class="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               data-action="switch-engine-mode"
               data-mode="MOCK"
               class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
                 !isHistoryActive
-                  ? 'bg-white text-[#4F46E5] shadow-md'
+                  ? 'bg-white text-[#7C3AED] shadow-sm'
                   : 'bg-white/15 text-white hover:bg-white/25'
               }"
             >
-              🎯 Official Mock Tests
+              🎯 Sequential Mock Stream
             </button>
             <button
               type="button"
@@ -301,214 +278,23 @@ export class CBTTestEngineModule {
               data-testid="open-test-history-btn"
               class="min-h-[42px] px-4 py-2 rounded-2xl text-xs font-extrabold transition-all cursor-pointer ${
                 isHistoryActive
-                  ? 'bg-amber-400 text-slate-950 shadow-md'
+                  ? 'bg-pink-200 text-purple-950 shadow-sm'
                   : 'bg-white/15 text-white hover:bg-white/25'
               }"
             >
-              📊 Test History &amp; Solutions (${submissions.length})
+              📊 AI Results &amp; History (${submissions.length})
             </button>
             <button
               type="button"
               data-action="share-invite-test"
               data-testid="invite-friend-test-btn"
-              class="min-h-[42px] px-3.5 py-2 rounded-2xl bg-slate-900/40 hover:bg-slate-900/60 border border-white/30 text-xs font-extrabold text-white transition-all cursor-pointer"
+              class="min-h-[42px] px-3.5 py-2 rounded-2xl bg-white/15 hover:bg-white/25 border border-white/30 text-xs font-extrabold text-white transition-all cursor-pointer"
             >
-              🔗 Invite Friend
+              🔗 Invite
             </button>
           </div>
         </div>
       </section>
-    `;
-  }
-
-  private renderInstructionsStage(): string {
-    const user = dataStore.getUser();
-    const durationMins = Math.max(10, this.totalQuestionCount * 2);
-    const maxMarks = this.totalQuestionCount * 4;
-    const subjectsList = Array.from(this.selectedSubjects);
-
-    return `
-      <div class="space-y-6 pb-12" data-testid="nta-mock-instructions-screen">
-        <!-- Official NTA Header Bar -->
-        <header class="bg-white border-2 border-indigo-200 rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div class="space-y-1.5">
-            <div class="flex flex-wrap items-center gap-2">
-              <span class="px-3 py-1 rounded-full bg-indigo-600 text-white text-[11px] font-mono-tabular font-extrabold uppercase tracking-wider">
-                📋 OFFICIAL NTA CBT GENERAL INSTRUCTIONS
-              </span>
-              <span class="px-2.5 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-[11px] font-mono-tabular font-extrabold">
-                ${this.selectedExam} · ${this.selectedClassYear}
-              </span>
-            </div>
-            <h1 class="text-lg sm:text-2xl font-extrabold text-slate-900">
-              ${this.escapeHtml(this.selectedMockSeriesTitle)}
-            </h1>
-            <p class="text-xs text-slate-600">
-              Please read the following examination instructions, marking scheme, and Question Palette symbol legend carefully before starting the Mock Test.
-            </p>
-          </div>
-
-          <div class="flex items-center gap-3 bg-slate-50 border border-slate-200 rounded-2xl px-4 py-3 shrink-0">
-            <img
-              src="${user.photoURL}"
-              alt="${this.escapeHtml(user.name)}"
-              referrerpolicy="no-referrer"
-              class="w-11 h-11 rounded-full object-cover border-2 border-indigo-200"
-            />
-            <div>
-              <div class="text-[10px] font-mono-tabular font-extrabold uppercase tracking-wider text-indigo-600">
-                Candidate Name
-              </div>
-              <div class="text-sm font-extrabold text-slate-900">${this.escapeHtml(user.name)}</div>
-              <div class="text-[11px] font-mono-tabular text-slate-500">${this.escapeHtml(user.email || 'Candidate ID: PREPSKM-2027')}</div>
-            </div>
-          </div>
-        </header>
-
-        <!-- Key Paper Metrics Strip -->
-        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div class="bg-white border border-slate-200 rounded-2xl p-4">
-            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Total Duration</div>
-            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-indigo-600 mt-0.5">${durationMins} Minutes</div>
-          </div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-4">
-            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Total Questions</div>
-            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-slate-900 mt-0.5">${this.totalQuestionCount} Questions</div>
-          </div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-4">
-            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Maximum Marks</div>
-            <div class="text-lg sm:text-xl font-mono-tabular font-extrabold text-emerald-600 mt-0.5">${maxMarks} Marks</div>
-          </div>
-          <div class="bg-white border border-slate-200 rounded-2xl p-4">
-            <div class="text-[10px] font-mono-tabular font-bold uppercase text-slate-500">Subjects Included</div>
-            <div class="text-xs sm:text-sm font-extrabold text-slate-900 mt-1">${subjectsList.join(', ')}</div>
-          </div>
-        </div>
-
-        <!-- Detailed Instructions Document Card -->
-        <section class="bg-white border border-slate-200 rounded-3xl p-5 sm:p-8 shadow-sm space-y-6">
-          ${this.renderNtaInstructionsBodyHtml(durationMins, maxMarks)}
-
-          <!-- Candidate Declaration & Launch Bar -->
-          <div class="pt-5 border-t-2 border-slate-100 space-y-4">
-            <label
-              for="nta-instructions-consent-checkbox"
-              class="p-4 rounded-2xl bg-indigo-50/70 border border-indigo-200 flex items-start gap-3 cursor-pointer"
-            >
-              <input
-                id="nta-instructions-consent-checkbox"
-                data-testid="nta-instructions-consent-checkbox"
-                type="checkbox"
-                ${this.isInstructionsConsentChecked ? 'checked' : ''}
-                class="mt-1 w-4 h-4 rounded border-indigo-300 accent-indigo-600 shrink-0 cursor-pointer"
-              />
-              <span class="text-xs text-slate-800 leading-relaxed font-medium">
-                <strong>Candidate Declaration:</strong> I have read and understood all the instructions. All computer hardware allotted to me are in proper working condition. I declare that I am not in possession of / not wearing / not carrying any prohibited gadget like mobile phone, bluetooth devices etc. into the Examination Hall.
-              </span>
-            </label>
-
-            <div class="flex flex-col sm:flex-row items-center justify-between gap-3">
-              <button
-                type="button"
-                data-action="back-to-test-hub"
-                class="w-full sm:w-auto min-h-[44px] px-5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold cursor-pointer"
-              >
-                ← Back to Mock Test Hub
-              </button>
-
-              <button
-                type="button"
-                data-action="confirm-start-mock-exam"
-                data-testid="confirm-start-mock-btn"
-                class="w-full sm:w-auto min-h-[46px] px-7 py-3 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-sm font-extrabold shadow-md transition-all cursor-pointer"
-              >
-                I am Ready to Begin · Start Mock Test Now →
-              </button>
-            </div>
-          </div>
-        </section>
-      </div>
-    `;
-  }
-
-  private renderNtaInstructionsBodyHtml(durationMins: number, maxMarks: number): string {
-    return `
-      <div class="space-y-6 text-xs sm:text-sm text-slate-700 leading-relaxed">
-        <!-- 1. General Instructions -->
-        <div class="space-y-2.5">
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
-            1. General Examination Instructions
-          </h2>
-          <ol class="list-decimal list-inside space-y-1.5 text-xs sm:text-sm">
-            <li>Total duration of this Mock Examination is <strong>${durationMins} minutes</strong> (${this.totalQuestionCount} questions · Max Marks: <strong>${maxMarks}</strong>).</li>
-            <li>The countdown clock in the top-right corner displays the remaining time available for you to complete the examination. When the timer reaches zero, the examination will <strong>end automatically</strong>.</li>
-            <li>The Question Palette displayed on the right side of screen shows the status of each question using one of the following <strong>5 official NTA symbols</strong>:</li>
-          </ol>
-
-          <!-- Official 5 NTA Palette Status Badges -->
-          <div class="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2" data-testid="nta-palette-legend-grid">
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
-              <span class="w-9 h-9 rounded-xl bg-slate-100 border border-slate-300 text-slate-700 font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">01</span>
-              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT visited</strong> the question yet.</span>
-            </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
-              <span class="w-9 h-9 rounded-xl bg-[#EF4444] text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">02</span>
-              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT answered</strong> the question.</span>
-            </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
-              <span class="w-9 h-9 rounded-xl bg-[#10B981] text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">03</span>
-              <span class="text-xs font-semibold text-slate-800">You have <strong>Answered</strong> the question.</span>
-            </div>
-            <div class="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center gap-3">
-              <span class="w-9 h-9 rounded-xl bg-purple-600 text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">04</span>
-              <span class="text-xs font-semibold text-slate-800">You have <strong>NOT answered</strong> the question, but have <strong>Marked it for Review</strong>.</span>
-            </div>
-            <div class="p-3 rounded-xl bg-emerald-50/70 border border-emerald-200 flex items-center gap-3 md:col-span-2">
-              <span class="w-9 h-9 rounded-xl bg-purple-600 text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0 relative">
-                05
-                <span class="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-[#10B981] text-white text-[9px] flex items-center justify-center border border-white">✓</span>
-              </span>
-              <span class="text-xs font-semibold text-slate-900">
-                The question(s) <strong>"Answered and Marked for Review"</strong> WILL be considered for evaluation.
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <!-- 2. Navigating & Answering -->
-        <div class="space-y-2">
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
-            2. Navigating &amp; Answering Procedure
-          </h2>
-          <ul class="list-disc list-inside space-y-1.5 text-xs sm:text-sm">
-            <li>Click on the question number in the Question Palette at the right of your screen to go to that numbered question directly.</li>
-            <li>Click on <strong>Save &amp; Next</strong> to save your answer for the current question and then go to the next question.</li>
-            <li>Click on <strong>Mark for Review &amp; Next</strong> to save your answer for the current question, mark it for review, and then go to the next question.</li>
-            <li>To deselect your chosen answer for a Multiple Choice Question (MCQ), click on the <strong>Clear Response</strong> button.</li>
-          </ul>
-        </div>
-
-        <!-- 3. Marking Scheme -->
-        <div class="space-y-2">
-          <h2 class="text-sm sm:text-base font-extrabold text-slate-900 uppercase tracking-wide border-b border-slate-100 pb-2">
-            3. Official NTA Marking Scheme (${this.selectedExam})
-          </h2>
-          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
-            <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200">
-              <div class="text-xs font-extrabold text-emerald-800">+4 Marks (Correct Answer)</div>
-              <p class="text-[11px] text-emerald-700 mt-0.5">Awarded for every correct MCQ or Numerical Value (NAT) response.</p>
-            </div>
-            <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200">
-              <div class="text-xs font-extrabold text-rose-800">-1 Mark (Negative Marking)</div>
-              <p class="text-[11px] text-rose-700 mt-0.5">Deducted for every incorrect response.</p>
-            </div>
-            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
-              <div class="text-xs font-extrabold text-slate-800">0 Marks (Unattempted)</div>
-              <p class="text-[11px] text-slate-600 mt-0.5">No marks deducted if a question is left unattempted.</p>
-            </div>
-          </div>
-        </div>
-      </div>
     `;
   }
 
@@ -517,173 +303,82 @@ export class CBTTestEngineModule {
       'Class 12',
       'Class 11',
       'Dropper',
-      'Class 11 Foundation',
-      'Class 10 Foundation',
       'Class 10',
       'Class 9',
     ];
 
-    const validSubjects = getSubjectsForExam(this.selectedExam);
     const submissions = dataStore.getTestSubmissions();
     const cohortTheme = getCohortTheme(this.selectedExam, this.selectedClassYear);
-
-    const mockSeriesCards = [
-      {
-        title: `All-India ${this.selectedExam} (${this.selectedClassYear}) Full Syllabus Major Mock #14`,
-        badge: 'LIVE OFFICIAL NTA PATTERN',
-        questionCount: 10,
-        durationMins: 20,
-        syllabus: 'High-Weightage Physics, Chemistry & Mathematics/Biology PYQ + New Pattern',
-        borderCls: 'border-indigo-200 bg-indigo-50/40',
-      },
-      {
-        title: `${this.selectedClassYear} High-Yield Part Syllabus Rank Booster #15`,
-        badge: 'RANK BOOSTER SERIES',
-        questionCount: 15,
-        durationMins: 30,
-        syllabus: 'Core Mechanics, Electrostatics, Organic Mechanisms & Calculus/Genetics Drill',
-        borderCls: 'border-emerald-200 bg-emerald-50/40',
-      },
-      {
-        title: `Rapid Fire ${this.selectedExam} Speed & Accuracy Sprint #16`,
-        badge: 'SPEED SPRINT',
-        questionCount: 20,
-        durationMins: 40,
-        syllabus: 'Topper Trap MCQs & Numerical Value (NAT) Precision Test',
-        borderCls: 'border-amber-200 bg-amber-50/40',
-      },
-    ];
+    const currentUser = dataStore.getUser();
+    const isGuestVisitor = Boolean(currentUser.isGuest || !currentUser.email);
+    const sequentialStream = buildSequentialMockStream(
+      this.selectedExam,
+      this.selectedClassYear,
+      submissions
+    );
 
     return `
       <div class="space-y-6" data-testid="mock-test-launcher-hub">
-        <!-- Quick-Launch Mock Test Series Cards (Opens in Dedicated Exam Page + Invite Friend) -->
-        <section class="bg-white border border-[#E2E8F0] rounded-3xl p-5 sm:p-6 shadow-sm space-y-5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-lg bg-indigo-50 text-[#4F46E5] text-xs font-extrabold">
-                  ${this.escapeHtml(cohortTheme.label)}
-                </span>
-                <span class="px-2.5 py-0.5 rounded-lg bg-emerald-50 text-[#10B981] text-xs font-extrabold">
-                  Opens in Separate Full-Screen Exam Page
-                </span>
+        ${
+          isGuestVisitor
+            ? `
+          <section
+            data-testid="guest-mock-test-lock"
+            class="rounded-3xl bg-pink-50 border-2 border-pink-200 p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-sm"
+          >
+            <div class="space-y-1">
+              <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-pink-200/80 text-pink-950 text-[10px] font-extrabold uppercase tracking-wider">
+                🔒 Mandatory Google Sign-In Required for CBT Mock Tests
               </div>
-              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 mt-1.5">
-                Featured All-India Mock Tests for ${this.selectedExam} · ${this.selectedClassYear}
+              <h2 class="text-sm sm:text-base font-extrabold text-slate-900">
+                Sign In with Google OAuth to Unlock Sequential Mock Tests &amp; AI Doubt Solving
               </h2>
-              <p class="text-xs text-slate-500">
-                Click "Open Mock in New Exam Page" to enter the dedicated NTA test room, or click "Invite Friend" to share a direct test link.
+              <p class="text-xs text-slate-700">
+                Unauthenticated visitors can browse Study Vault PDFs. Authenticate via Google OAuth to attempt Sequential Mock Tests and receive AI performance summaries.
               </p>
             </div>
-            <button
-              type="button"
-              data-action="open-test-history"
-              class="min-h-[40px] px-4 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-extrabold text-slate-700 shrink-0"
-            >
-              📊 View Previous Tests & Solutions (${submissions.length}) →
-            </button>
-          </div>
-
-          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            ${mockSeriesCards
-              .map(
-                (series) => `
-              <div class="rounded-2xl border ${series.borderCls} p-5 flex flex-col justify-between gap-4 hover:shadow-md transition-all">
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="px-2.5 py-0.5 rounded-md bg-white text-[#4F46E5] text-[10px] font-extrabold uppercase tracking-wider shadow-2xs">
-                      ${series.badge}
-                    </span>
-                    <span class="font-mono-tabular text-xs font-bold text-slate-600">
-                      ${series.durationMins} Mins · ${series.questionCount} Qs
-                    </span>
-                  </div>
-                  <h3 class="text-sm sm:text-base font-extrabold text-slate-900 leading-snug">
-                    ${this.escapeHtml(series.title)}
-                  </h3>
-                  <p class="text-xs text-slate-600 leading-relaxed">
-                    ${this.escapeHtml(series.syllabus)}
-                  </p>
-                </div>
-
-                <div class="pt-3 border-t border-slate-200/70 flex items-center gap-2">
-                  <button
-                    type="button"
-                    data-action="launch-series-mock"
-                    data-title="${this.escapeHtml(series.title)}"
-                    data-count="${series.questionCount}"
-                    class="flex-1 min-h-[40px] px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-[#4F46E5] text-white text-xs font-extrabold transition-colors"
-                  >
-                    Open Mock Page →
-                  </button>
-                  <button
-                    type="button"
-                    data-action="share-invite-test"
-                    data-title="${this.escapeHtml(series.title)}"
-                    class="min-h-[40px] px-3 py-2 rounded-xl bg-white hover:bg-indigo-50 border border-slate-300 text-xs font-bold text-slate-700"
-                    title="Copy Invite Link for Friends"
-                  >
-                    🔗 Invite
-                  </button>
-                </div>
-              </div>
-            `
-              )
-              .join('')}
-          </div>
-        </section>
-
-        <!-- Custom Auto-Balanced NTA Mock Builder -->
-        <section
-          aria-label="CBT Mock Test Configuration"
-          class="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-sm space-y-6"
-        >
-          <div class="space-y-1.5 border-b border-slate-100 pb-4">
-            <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] text-xs font-extrabold uppercase tracking-wider">
-              Custom NTA Mock Builder · Dedicated Exam Room
-            </span>
-            <h2 class="text-lg sm:text-xl font-extrabold text-slate-900">
-              Or Customize Your Own Auto-Balanced NTA Mock Test
-            </h2>
-            <p class="text-xs sm:text-sm text-slate-500">
-              Choose JEE, NEET, Class 9, 10, 11, 12, or Dropper. JEE enforces <strong>80% Single-Choice MCQs + 20% Numerical (NAT)</strong>; NEET enforces <strong>100% MCQs</strong>.
-            </p>
-          </div>
-
-          <!-- Step 1: Class / Cohort Selection -->
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              1. Select Class / Cohort (9th, 10th, 11th, 12th, Dropper)
-            </label>
-            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
-              ${classYears
-                .map((cy) => {
-                  const active = this.selectedClassYear === cy;
-                  return `
-                  <button
-                    type="button"
-                    data-action="select-class-cohort"
-                    data-class="${cy}"
-                    class="min-h-[42px] px-3 py-2 rounded-xl border text-xs font-extrabold transition-all ${
-                      active
-                        ? 'bg-gradient-to-r from-[#4F46E5] to-violet-600 border-transparent text-white shadow-sm'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700 hover:bg-white'
-                    }"
-                  >
-                    ${cy}
-                  </button>
-                `;
-                })
-                .join('')}
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
+              <a
+                href="/study.html"
+                class="min-h-[44px] px-4 py-2 rounded-2xl bg-white hover:bg-pink-100 border border-pink-300 text-xs font-extrabold text-pink-950 inline-flex items-center"
+              >
+                📚 Browse Study Vault
+              </a>
+              <button
+                type="button"
+                data-action="google-signin-unlock-test"
+                data-testid="cbt-google-unlock-btn"
+                class="min-h-[44px] px-4 py-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs font-extrabold shadow-sm transition-colors cursor-pointer"
+              >
+                Sign In with Google →
+              </button>
             </div>
-          </div>
+          </section>
+        `
+            : ''
+        }
 
-          <!-- Step 2: Target Exam Stream -->
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              2. Select Exam Pattern
-            </label>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <!-- Sequential Cohort & Exam Track Selector Bar -->
+        <section class="bg-white border-2 border-[#F3E8FF] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#F3E8FF] pb-4">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-3 py-1 rounded-full bg-purple-100 text-[#7C3AED] text-xs font-extrabold">
+                  ${this.escapeHtml(cohortTheme.label)}
+                </span>
+                <span class="px-3 py-1 rounded-full bg-pink-100 text-[#DB2777] text-xs font-extrabold" data-testid="isolated-options-policy-badge">
+                  ✓ Cropped Uploads Retain Isolated Option Letters (A, B, C, D) Only
+                </span>
+              </div>
+              <h2 class="text-lg sm:text-xl font-extrabold text-slate-900 mt-2">
+                Sequential NTA Mock Test Stream (${this.selectedExam} · ${this.selectedClassYear})
+              </h2>
+              <p class="text-xs text-slate-600 mt-0.5">
+                Mock tests are structured in a clear, verified sequential stream rather than manual custom builders. Complete each stage in order or review AI performance analytics.
+              </p>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2 shrink-0">
               ${(['JEE', 'NEET'] as TargetExam[])
                 .map((exam) => {
                   const active = this.selectedExam === exam;
@@ -692,500 +387,118 @@ export class CBTTestEngineModule {
                     type="button"
                     data-action="select-cbt-exam"
                     data-exam="${exam}"
-                    class="min-h-[54px] p-4 rounded-xl border text-left transition-all flex items-center justify-between ${
+                    class="min-h-[44px] px-4 py-2 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer ${
                       active
-                        ? 'bg-indigo-50/70 border-[#4F46E5] ring-2 ring-[#4F46E5]/15'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white'
+                        ? 'bg-gradient-to-r from-[#7C3AED] to-[#DB2777] border-transparent text-white shadow-sm'
+                        : 'bg-[#FDF2F8] border-[#F5D0FE] text-slate-700 hover:bg-white'
                     }"
                   >
-                    <div>
-                      <div class="text-sm font-bold text-slate-900">
-                        ${exam === 'JEE' ? 'JEE Main / Advanced Pattern' : 'NEET UG Medical Pattern'}
-                      </div>
-                      <div class="text-xs text-slate-500 mt-0.5">
-                        ${
-                          exam === 'JEE'
-                            ? '80% Single-Choice MCQ + 20% Numerical Value (NAT)'
-                            : '100% Single-Choice MCQ (Physics, Chemistry, Biology)'
-                        }
-                      </div>
-                    </div>
-                    <span class="w-5 h-5 rounded-full border flex items-center justify-center ${
-                      active ? 'border-[#4F46E5] bg-[#4F46E5] text-white' : 'border-slate-300'
-                    }">
-                      ${active ? '✓' : ''}
-                    </span>
+                    ${exam} Track
                   </button>
                 `;
                 })
                 .join('')}
-            </div>
-          </div>
-
-          <!-- Step 3: Subject Selection -->
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              3. Include Subjects
-            </label>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              ${validSubjects
-                .map((sub) => {
-                  const checked = this.selectedSubjects.has(sub);
-                  return `
-                  <button
-                    type="button"
-                    data-action="toggle-cbt-subject"
-                    data-subject="${sub}"
-                    class="min-h-[46px] px-4 py-3 rounded-xl border text-left flex items-center justify-between transition-all ${
-                      checked
-                        ? 'bg-emerald-50/70 border-[#10B981] text-slate-900 font-bold'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-600'
-                    }"
-                  >
-                    <span class="text-xs sm:text-sm">${sub}</span>
-                    <span class="px-2 py-0.5 rounded text-[11px] font-bold ${
-                      checked ? 'bg-[#10B981] text-white' : 'bg-slate-200 text-slate-600'
-                    }">
-                      ${checked ? 'Included' : 'Excluded'}
-                    </span>
-                  </button>
-                `;
-                })
-                .join('')}
-            </div>
-          </div>
-
-          <!-- Step 4: Total Questions Count -->
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              4. Number of Questions
-            </label>
-            <div class="grid grid-cols-3 gap-3">
-              ${[5, 10, 15]
-                .map((cnt) => {
-                  const active = this.totalQuestionCount === cnt;
-                  const mcqCnt =
-                    this.selectedExam === 'JEE' ? cnt - Math.round(cnt * 0.2) : cnt;
-                  const natCnt =
-                    this.selectedExam === 'JEE' ? Math.round(cnt * 0.2) : 0;
-                  return `
-                  <button
-                    type="button"
-                    data-action="select-cbt-count"
-                    data-count="${cnt}"
-                    class="min-h-[52px] p-3 rounded-xl border text-center transition-all ${
-                      active
-                        ? 'bg-[#4F46E5] border-[#4F46E5] text-white font-bold shadow-sm'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700 hover:bg-white'
-                    }"
-                  >
-                    <div class="text-sm font-mono-tabular font-bold">${cnt} Questions</div>
-                    <div class="text-[11px] ${active ? 'text-indigo-100' : 'text-slate-500'}">
-                      ${mcqCnt} MCQ${natCnt > 0 ? ` + ${natCnt} NAT` : ''}
-                    </div>
-                  </button>
-                `;
-                })
-                .join('')}
-            </div>
-          </div>
-
-          <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="text-xs text-slate-500 font-mono-tabular">
-              Marking: <strong class="text-[#10B981]">+4 Correct</strong> · <strong class="text-[#EF4444]">-1 Wrong</strong> · <strong>0 Unattempted</strong>
-            </div>
-            <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
               <button
                 type="button"
-                data-action="share-invite-test"
-                class="min-h-[48px] px-4 py-3 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-extrabold"
+                data-action="open-test-history"
+                class="min-h-[44px] px-4 py-2 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-xs font-extrabold text-[#7C3AED] shrink-0 cursor-pointer"
               >
-                🔗 Invite Friend
-              </button>
-              <button
-                type="button"
-                data-action="start-cbt-exam"
-                data-testid="launch-dedicated-mock-btn"
-                class="flex-1 sm:flex-initial min-h-[48px] px-6 py-3 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-sm font-extrabold shadow-sm transition-colors"
-              >
-                Launch Dedicated ${this.selectedExam} (${this.selectedClassYear}) Mock Page →
+                📊 AI Results &amp; Solutions (${submissions.length}) →
               </button>
             </div>
           </div>
-        </section>
-      </div>
-    `;
-  }
 
-  private getAvailableInfiniteChapters(): {
-    id: string;
-    name: string;
-    subject: SubjectName;
-    weightageLabel: string;
-    adminQuestionCount: number;
-  }[] {
-    const adminQuestions = dataStore.getAdminQuestions();
-    const adminCountByChapter = new Map<string, number>();
-    for (const aq of adminQuestions) {
-      const key = (aq.chapterName || '').toLowerCase().trim();
-      if (key) {
-        adminCountByChapter.set(key, (adminCountByChapter.get(key) ?? 0) + 1);
-      }
-      if (aq.chapterId) {
-        adminCountByChapter.set(
-          aq.chapterId,
-          (adminCountByChapter.get(aq.chapterId) ?? 0) + 1
-        );
-      }
-    }
-
-    const chapters: {
-      id: string;
-      name: string;
-      subject: SubjectName;
-      weightageLabel: string;
-      adminQuestionCount: number;
-    }[] = [];
-    const existingNames = new Set<string>();
-
-    // 1. First include chapters from Admin-uploaded questions (so any chapter where Admin added questions is top-priority)
-    for (const aq of adminQuestions) {
-      const chName = (aq.chapterName || '').trim();
-      const norm = chName.toLowerCase();
-      if (chName && !existingNames.has(norm)) {
-        existingNames.add(norm);
-        const chId = aq.chapterId || `adm_ch_${norm.replace(/[^a-z0-9]+/g, '_')}`;
-        chapters.push({
-          id: chId,
-          name: chName,
-          subject: aq.subjectName,
-          weightageLabel: 'Admin Question Bank',
-          adminQuestionCount: adminCountByChapter.get(norm) ?? 1,
-        });
-      }
-    }
-
-    // 2. Include chapters created by Admin in dataStore.getChapters()
-    const allSubjects = dataStore.getSubjects();
-    for (const ch of dataStore.getChapters()) {
-      const norm = ch.name.toLowerCase().trim();
-      if (norm && !existingNames.has(norm)) {
-        existingNames.add(norm);
-        const subObj = allSubjects.find((s) => s.id === ch.subjectId);
-        const subName: SubjectName =
-          subObj?.name === 'Chemistry' ||
-          subObj?.name === 'Math' ||
-          subObj?.name === 'Biology'
-            ? subObj.name
-            : 'Physics';
-        chapters.push({
-          id: ch.id,
-          name: ch.name,
-          subject: subName,
-          weightageLabel: 'Admin Chapter Bank',
-          adminQuestionCount:
-            adminCountByChapter.get(norm) ??
-            adminCountByChapter.get(ch.id) ??
-            0,
-        });
-      }
-    }
-
-    // 3. Include Admin-configured syllabus chapters for the active exam stream
-    const syllabusTopics = dataStore.getSyllabusTopics(this.selectedExam);
-    for (const t of syllabusTopics) {
-      const norm = t.chapterName.toLowerCase().trim();
-      if (norm && !existingNames.has(norm)) {
-        existingNames.add(norm);
-        chapters.push({
-          id: t.id,
-          name: t.chapterName,
-          subject: t.subject,
-          weightageLabel: t.weightageLabel,
-          adminQuestionCount:
-            adminCountByChapter.get(norm) ??
-            adminCountByChapter.get(t.id) ??
-            0,
-        });
-      }
-    }
-
-    return chapters;
-  }
-
-  private renderInfinitePracticeConfig(classYears: StudentClassYear[]): string {
-    const availableChapters = this.getAvailableInfiniteChapters();
-    const validIds = new Set(availableChapters.map((c) => c.id));
-    for (const id of Array.from(this.selectedChapterIds)) {
-      if (!validIds.has(id)) {
-        this.selectedChapterIds.delete(id);
-      }
-    }
-    if (this.selectedChapterIds.size === 0 && availableChapters.length > 0) {
-      availableChapters
-        .slice(0, Math.min(3, availableChapters.length))
-        .forEach((c) => this.selectedChapterIds.add(c.id));
-    }
-
-    const selectedChapterCount = Math.max(1, this.selectedChapterIds.size);
-    const validMultiples = getValidInfinitePracticeCounts(selectedChapterCount);
-
-    if (!validMultiples.includes(this.infiniteTotalCount)) {
-      this.infiniteTotalCount = validMultiples[1] ?? validMultiples[0];
-    }
-    const questionsPerChapter = Math.max(
-      1,
-      Math.round(this.infiniteTotalCount / selectedChapterCount)
-    );
-
-    return `
-      <div class="max-w-5xl mx-auto">
-        <section
-          aria-label="Infinite Practice Configuration"
-          data-testid="infinite-practice-config-section"
-          class="bg-white border border-[#E2E8F0] rounded-3xl p-6 sm:p-8 shadow-sm space-y-6"
-        >
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div class="space-y-1">
-              <div class="flex flex-wrap items-center gap-2">
-                <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 text-[#10B981] text-xs font-extrabold uppercase tracking-wider">
-                  Infinite Practice · Direct Chapter Matrix (No Subject Lock)
-                </span>
-                <span class="px-2.5 py-0.5 rounded-md bg-indigo-50 text-[#4F46E5] text-xs font-extrabold">
-                  Admin Question Chapters + 100 P&amp;C Bank / Chapter
-                </span>
-              </div>
-              <h2 class="text-xl sm:text-2xl font-extrabold text-slate-900">
-                Select Chapters Directly &amp; Practice in Multiples of Selected Chapters
-              </h2>
-              <p class="text-xs sm:text-sm text-slate-600">
-                Pick any chapters from the Admin-curated chapter bank below (<strong>${selectedChapterCount} chapter${selectedChapterCount > 1 ? 's' : ''} selected</strong>). Question sets are strictly multiples of <strong>${selectedChapterCount}</strong> (${validMultiples.slice(0, 5).join(', ')}...).
-              </p>
-            </div>
-
-            <div class="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-50 to-emerald-50 border border-indigo-200 text-center shrink-0">
-              <div class="text-[10px] font-extrabold text-slate-500 uppercase">Chapter Multiple Formula</div>
-              <div data-testid="infinite-multiplier-summary" class="text-lg font-mono-tabular font-extrabold text-[#4F46E5]">
-                ${selectedChapterCount} Ch × ${questionsPerChapter} Q = ${this.infiniteTotalCount} Qs
-              </div>
-              <div class="text-[10px] font-bold text-emerald-700 mt-0.5">
-                Bank: ${selectedChapterCount * 100} Admin &amp; P&amp;C Qs
-              </div>
-            </div>
+          <!-- Class Cohort Pills -->
+          <div class="flex flex-wrap items-center gap-2">
+            <span class="text-xs font-extrabold text-slate-500 mr-1">Class Cohort:</span>
+            ${classYears
+              .map((cy) => {
+                const active = this.selectedClassYear === cy;
+                return `
+                <button
+                  type="button"
+                  data-action="select-class-cohort"
+                  data-class="${cy}"
+                  class="min-h-[42px] px-3.5 py-2 rounded-2xl border text-xs font-extrabold transition-all cursor-pointer ${
+                    active
+                      ? 'bg-[#7C3AED] border-[#7C3AED] text-white shadow-2xs'
+                      : 'bg-[#FDF2F8] border-[#F5D0FE] text-slate-700 hover:bg-white'
+                  }"
+                >
+                  ${cy}
+                </button>
+              `;
+              })
+              .join('')}
           </div>
 
-          <!-- Step 1: Class / Cohort & Exam Stream Selection -->
-          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4">
-            <div class="lg:col-span-8 space-y-2">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                1. Choose Class / Target Cohort
-              </label>
-              <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                ${classYears
-                  .slice(0, 4)
-                  .map((cy) => {
-                    const active = this.selectedClassYear === cy;
-                    return `
-                    <button
-                      type="button"
-                      data-action="select-class-cohort"
-                      data-class="${cy}"
-                      class="min-h-[40px] px-3 py-2 rounded-xl border text-xs font-extrabold transition-all ${
-                        active
-                          ? 'bg-[#10B981] border-[#10B981] text-white shadow-xs'
-                          : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700 hover:bg-white'
-                      }"
-                    >
-                      ${cy}
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
+          <!-- SEQUENTIAL MOCK TEST STREAM CARDS -->
+          <div class="space-y-4 pt-2" data-testid="sequential-mock-stream">
+            ${sequentialStream
+              .map((item) => {
+                const statusBadge =
+                  item.status === 'COMPLETED'
+                    ? `<span class="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-extrabold">✓ COMPLETED</span>`
+                    : item.status === 'UNLOCKED_NEXT'
+                      ? `<span class="px-3 py-1 rounded-full bg-pink-100 text-[#DB2777] text-[11px] font-extrabold animate-pulse">★ UP NEXT IN STREAM</span>`
+                      : `<span class="px-3 py-1 rounded-full bg-purple-100 text-[#7C3AED] text-[11px] font-extrabold">SEQUENTIAL STAGE 0${item.sequenceNumber}</span>`;
 
-            <div class="lg:col-span-4 space-y-2">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                Exam Stream
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                ${(['JEE', 'NEET'] as TargetExam[])
-                  .map((exam) => {
-                    const active = this.selectedExam === exam;
-                    return `
-                    <button
-                      type="button"
-                      data-action="select-cbt-exam"
-                      data-exam="${exam}"
-                      class="min-h-[40px] px-3 py-2 rounded-xl border text-xs font-extrabold transition-all ${
-                        active
-                          ? 'bg-[#4F46E5] border-[#4F46E5] text-white shadow-xs'
-                          : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700 hover:bg-white'
-                      }"
-                    >
-                      ${exam} Track
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 2: Direct Row & Column Chapter Selector (No Subject Filter Lock — Choose Any Admin-Added Chapters) -->
-          <div class="space-y-3">
-            <div class="flex flex-wrap items-center justify-between gap-2">
-              <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-                2. Select Chapters with Admin-Uploaded Questions (${selectedChapterCount} of ${availableChapters.length} Chapters Selected)
-              </label>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button
-                  type="button"
-                  data-action="quick-select-chapter-count"
-                  data-count="1"
-                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700 cursor-pointer"
+                return `
+                <article
+                  data-testid="sequential-mock-card"
+                  class="rounded-3xl border-2 ${
+                    item.status === 'UNLOCKED_NEXT'
+                      ? 'border-[#DB2777] bg-gradient-to-r from-[#FDF2F8] via-white to-[#F5F3FF]'
+                      : 'border-[#F3E8FF] bg-white'
+                  } p-5 sm:p-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4 hover:shadow-md transition-all"
                 >
-                  1 Chapter
-                </button>
-                <button
-                  type="button"
-                  data-action="quick-select-chapter-count"
-                  data-count="2"
-                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700 cursor-pointer"
-                >
-                  2 Chapters
-                </button>
-                <button
-                  type="button"
-                  data-action="quick-select-chapter-count"
-                  data-count="4"
-                  class="px-2.5 py-1 rounded-lg bg-[#F8FAFC] hover:bg-indigo-50 border border-[#E2E8F0] text-[11px] font-bold text-slate-700 cursor-pointer"
-                >
-                  4 Chapters
-                </button>
-                <button
-                  type="button"
-                  data-action="quick-select-chapter-count"
-                  data-count="${availableChapters.length}"
-                  class="px-2.5 py-1 rounded-lg bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-[11px] font-extrabold text-[#4F46E5] cursor-pointer"
-                >
-                  Select All (${availableChapters.length} Ch)
-                </button>
-              </div>
-            </div>
-
-            <!-- Structured Row & Column Matrix of Chapters -->
-            <div
-              data-testid="infinite-chapters-row-col-grid"
-              class="rounded-2xl border border-[#E2E8F0] bg-[#F8FAFC] overflow-hidden"
-            >
-              <!-- Matrix Column Header Bar -->
-              <div class="hidden sm:grid sm:grid-cols-12 gap-2 px-4 py-2.5 bg-slate-900 text-white text-[10px] font-mono-tabular uppercase tracking-wider font-extrabold">
-                <div class="col-span-1">#</div>
-                <div class="col-span-5">Chapter Name</div>
-                <div class="col-span-3">Weightage / Source</div>
-                <div class="col-span-2">Question Bank</div>
-                <div class="col-span-1 text-right">Pick</div>
-              </div>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 p-3">
-                ${availableChapters
-                  .map((ch, idx) => {
-                    const checked = this.selectedChapterIds.has(ch.id);
-                    const totalBankCount = 100 + ch.adminQuestionCount;
-                    return `
-                    <button
-                      type="button"
-                      data-action="toggle-infinite-chapter"
-                      data-chapter-id="${ch.id}"
-                      data-testid="infinite-chapter-btn-${ch.id}"
-                      class="min-h-[60px] p-3 rounded-xl border text-left flex items-center justify-between gap-2.5 transition-all cursor-pointer ${
-                        checked
-                          ? 'bg-indigo-50/95 border-[#4F46E5] text-slate-900 shadow-2xs ring-1 ring-[#4F46E5]/25'
-                          : 'bg-white border-[#E2E8F0] text-slate-600 hover:border-slate-300'
-                      }"
-                    >
-                      <div class="flex items-center gap-2.5 min-w-0">
-                        <span class="w-6 h-6 rounded-lg bg-slate-100 text-slate-700 font-mono-tabular text-[11px] font-extrabold flex items-center justify-center shrink-0">
-                          ${String(idx + 1).padStart(2, '0')}
+                  <div class="flex items-start gap-4 min-w-0">
+                    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#7C3AED] to-[#DB2777] text-white font-mono-tabular text-sm font-extrabold flex items-center justify-center shrink-0 shadow-sm">
+                      0${item.sequenceNumber}
+                    </div>
+                    <div class="space-y-1.5 min-w-0">
+                      <div class="flex flex-wrap items-center gap-2">
+                        ${statusBadge}
+                        <span class="px-2.5 py-0.5 rounded-full bg-[#FDF2F8] border border-[#F5D0FE] text-[10px] font-extrabold text-[#7C3AED] uppercase tracking-wider">
+                          ${this.escapeHtml(item.badge)}
                         </span>
-                        <div class="min-w-0">
-                          <div class="text-xs font-extrabold text-slate-900 truncate">${this.escapeHtml(ch.name)}</div>
-                          <div class="flex flex-wrap items-center gap-1.5 mt-1">
-                            <span class="text-[10px] font-bold text-[#4F46E5]">${this.escapeHtml(ch.weightageLabel)}</span>
-                            <span class="text-[10px] text-slate-300">·</span>
-                            <span class="text-[10px] font-mono-tabular font-semibold text-emerald-700">${totalBankCount} Qs Added</span>
-                          </div>
-                        </div>
+                        <span class="font-mono-tabular text-xs font-bold text-slate-600">
+                          ⏱ ${item.durationMins} Mins · ${item.questionCount} Qs
+                        </span>
                       </div>
-                      <span class="w-5 h-5 rounded-md flex items-center justify-center text-xs font-bold shrink-0 ${
-                        checked ? 'bg-[#4F46E5] text-white' : 'border border-slate-300 bg-white'
-                      }">
-                        ${checked ? '✓' : ''}
-                      </span>
-                    </button>
-                  `;
-                  })
-                  .join('')}
-              </div>
-            </div>
-          </div>
-
-          <!-- Step 3: Total Question Count (Multiples of Selected Chapters K Only) -->
-          <div class="space-y-2">
-            <label class="block text-xs font-bold uppercase tracking-wider text-slate-500">
-              3. Question Set Size — Multiples of ${selectedChapterCount} Selected Chapter${selectedChapterCount > 1 ? 's' : ''} (${validMultiples.slice(0, 6).join(', ')}...)
-            </label>
-            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5" data-testid="infinite-multiple-options">
-              ${validMultiples
-                .slice(0, 8)
-                .map((totalQ) => {
-                  const perCh = Math.round(totalQ / selectedChapterCount);
-                  const active = this.infiniteTotalCount === totalQ;
-                  return `
-                  <button
-                    type="button"
-                    data-action="select-infinite-multiple"
-                    data-total="${totalQ}"
-                    data-testid="infinite-multiple-btn-${totalQ}"
-                    class="min-h-[54px] p-3 rounded-xl border text-center transition-all cursor-pointer ${
-                      active
-                        ? 'bg-gradient-to-r from-[#10B981] to-teal-600 border-transparent text-white font-extrabold shadow-sm'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] text-slate-700 hover:bg-white'
-                    }"
-                  >
-                    <div class="text-sm font-mono-tabular font-extrabold">${totalQ} Questions</div>
-                    <div class="text-[11px] ${active ? 'text-emerald-100' : 'text-slate-500'}">
-                      ${perCh} Q × ${selectedChapterCount} Ch (Multiple)
+                      <h3 class="text-base sm:text-lg font-extrabold text-slate-900 leading-snug">
+                        ${this.escapeHtml(item.title)}
+                      </h3>
+                      <p class="text-xs text-slate-600 leading-relaxed">
+                        ${this.escapeHtml(item.syllabus)}
+                      </p>
                     </div>
-                  </button>
-                `;
-                })
-                .join('')}
-            </div>
-          </div>
+                  </div>
 
-          <div class="pt-4 border-t border-slate-100 flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="text-xs text-slate-600">
-              Draws <strong>${questionsPerChapter} unique questions</strong> from each of the <strong>${selectedChapterCount} selected chapters</strong> (total <strong>${this.infiniteTotalCount} questions</strong>, a strict multiple of ${selectedChapterCount}) + awards a downloadable <strong>Achievement Certificate</strong>.
-            </div>
-            <div class="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-              <button
-                type="button"
-                data-action="share-invite-test"
-                class="min-h-[48px] px-4 py-3 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-slate-700 text-xs font-extrabold cursor-pointer"
-              >
-                🔗 Invite Friend
-              </button>
-              <button
-                type="button"
-                data-action="start-cbt-exam"
-                data-testid="launch-infinite-session-btn"
-                class="flex-1 sm:flex-initial min-h-[48px] px-6 py-3 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-sm font-extrabold shadow-sm transition-colors cursor-pointer"
-              >
-                Start Chapter Multiple Practice (${this.infiniteTotalCount} Qs) →
-              </button>
-            </div>
+                  <div class="flex flex-wrap items-center gap-2.5 shrink-0 pt-2 lg:pt-0">
+                    <button
+                      type="button"
+                      data-action="share-invite-test"
+                      data-title="${this.escapeHtml(item.title)}"
+                      class="min-h-[46px] px-4 py-2.5 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-xs font-extrabold text-slate-700 cursor-pointer"
+                    >
+                      🔗 Invite
+                    </button>
+                    <button
+                      type="button"
+                      data-action="launch-series-mock"
+                      data-testid="launch-sequential-mock-btn"
+                      data-title="${this.escapeHtml(item.title)}"
+                      data-count="${item.questionCount}"
+                      class="min-h-[46px] px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] hover:opacity-95 text-white text-xs sm:text-sm font-extrabold shadow-sm transition-all cursor-pointer"
+                    >
+                      ${item.status === 'COMPLETED' ? 'Re-Attempt Stage 0' + item.sequenceNumber + ' →' : 'Start Sequential Mock 0' + item.sequenceNumber + ' →'}
+                    </button>
+                  </div>
+                </article>
+              `;
+              })
+              .join('')}
           </div>
         </section>
       </div>
@@ -1203,6 +516,7 @@ export class CBTTestEngineModule {
     if (!currentQ) return '';
 
     const currentAnswer = this.responses[currentQ.id] ?? '';
+    const isolatedOptions = isolateOptionLettersOnly(currentQ.options);
     const paletteSummary = summarizePaletteStatuses(
       this.activeQuestions.map((q) => q.id),
       this.statusMap
@@ -1214,30 +528,22 @@ export class CBTTestEngineModule {
 
     return `
       <div class="space-y-4 pb-14" data-testid="dedicated-exam-screen">
-        <!-- Dedicated Full-Screen Exam Top Header (No Mode Switcher Clutter!) -->
-        <header class="bg-white border border-[#E2E8F0] rounded-2xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
+        <!-- Dedicated Full-Screen Exam Top Header -->
+        <header class="bg-white border-2 border-[#F3E8FF] rounded-3xl p-4 shadow-sm flex flex-wrap items-center justify-between gap-3">
           <div class="flex items-center gap-3">
             <button
               type="button"
               data-action="exit-exam-to-hub"
               data-testid="exit-exam-to-hub-btn"
-              class="min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-extrabold text-slate-700"
+              class="min-h-[42px] px-3.5 py-2 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-xs font-extrabold text-slate-700 cursor-pointer"
             >
-              ← Exit to Hub
+              ← Exit to Stream
             </button>
-            <span class="px-2.5 py-1 rounded-lg ${
-              this.engineMode === 'INFINITE_PRACTICE'
-                ? 'bg-emerald-50 text-[#10B981]'
-                : 'bg-indigo-50 text-[#4F46E5]'
-            } text-xs font-extrabold">
-              ${this.engineMode === 'INFINITE_PRACTICE' ? '♾️ Infinite Practice' : `🎯 ${this.selectedExam}`} · ${this.selectedClassYear}
+            <span class="px-3 py-1 rounded-full bg-purple-100 text-[#7C3AED] text-xs font-extrabold">
+              🎯 ${this.selectedExam} · ${this.selectedClassYear}
             </span>
             <div class="hidden sm:block text-xs font-bold text-slate-700 truncate max-w-xs">
-              ${
-                this.engineMode === 'INFINITE_PRACTICE'
-                  ? `${this.selectedChapterIds.size} Chapters Equal Split`
-                  : this.escapeHtml(this.selectedMockSeriesTitle)
-              }
+              ${this.escapeHtml(this.selectedMockSeriesTitle)}
             </div>
           </div>
 
@@ -1247,10 +553,10 @@ export class CBTTestEngineModule {
               type="button"
               data-action="filter-exam-subject"
               data-subject="ALL"
-              class="min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+              class="min-h-[40px] px-3.5 py-1.5 rounded-2xl text-xs font-extrabold transition-colors cursor-pointer ${
                 this.activeSubjectFilter === 'ALL'
-                  ? 'bg-[#4F46E5] text-white'
-                  : 'bg-[#F8FAFC] text-slate-600 hover:bg-slate-100'
+                  ? 'bg-[#7C3AED] text-white'
+                  : 'bg-[#FDF2F8] text-slate-600 hover:bg-pink-100'
               }"
             >
               All (${this.activeQuestions.length})
@@ -1262,10 +568,10 @@ export class CBTTestEngineModule {
                 type="button"
                 data-action="filter-exam-subject"
                 data-subject="${sub}"
-                class="min-h-[36px] px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                class="min-h-[40px] px-3.5 py-1.5 rounded-2xl text-xs font-extrabold transition-colors cursor-pointer ${
                   this.activeSubjectFilter === sub
-                    ? 'bg-[#4F46E5] text-white'
-                    : 'bg-[#F8FAFC] text-slate-600 hover:bg-slate-100'
+                    ? 'bg-[#7C3AED] text-white'
+                    : 'bg-[#FDF2F8] text-slate-600 hover:bg-pink-100'
                 }"
               >
                 ${sub}
@@ -1275,30 +581,15 @@ export class CBTTestEngineModule {
               .join('')}
           </div>
 
-          <!-- Countdown Timer, Instructions Modal Button, Invite Friend, Mobile/Tablet Drawer Toggle & Submit -->
+          <!-- Countdown Timer, Invite Friend, Mobile/Tablet Drawer Toggle & Submit -->
           <div class="flex items-center gap-2">
-            <button
-              type="button"
-              data-action="toggle-in-exam-instructions"
-              data-testid="in-exam-instructions-btn"
-              class="min-h-[38px] px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-900 text-xs font-extrabold inline-flex items-center gap-1 cursor-pointer"
-            >
-              📋 Instructions
-            </button>
-            <button
-              type="button"
-              data-action="share-invite-test"
-              class="hidden md:inline-flex min-h-[38px] px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold items-center gap-1 cursor-pointer"
-            >
-              🔗 Invite Friend
-            </button>
-            <div class="px-3 py-1.5 rounded-xl bg-slate-900 text-white font-mono-tabular text-xs sm:text-sm font-bold">
+            <div class="px-3.5 py-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white font-mono-tabular text-xs sm:text-sm font-extrabold">
               ⏱ <span id="cbt-live-timer">${formatDuration(this.remainingSeconds, true)}</span>
             </div>
             <button
               type="button"
               data-action="toggle-palette-drawer"
-              class="lg:hidden min-h-[38px] px-3 py-1.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] text-xs font-bold text-slate-700"
+              class="lg:hidden min-h-[42px] px-3 py-1.5 rounded-2xl bg-[#FDF2F8] border border-[#F5D0FE] text-xs font-bold text-slate-700"
             >
               Palette (${paletteSummary.answered}/${this.activeQuestions.length})
             </button>
@@ -1306,7 +597,7 @@ export class CBTTestEngineModule {
               type="button"
               data-action="submit-cbt-paper"
               data-testid="submit-cbt-test-btn"
-              class="min-h-[38px] px-4 py-1.5 rounded-xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-bold shadow-sm transition-colors cursor-pointer"
+              class="min-h-[42px] px-4 py-2 rounded-2xl bg-[#10B981] hover:bg-emerald-600 text-white text-xs font-extrabold shadow-sm transition-colors cursor-pointer"
             >
               Submit Test
             </button>
@@ -1314,7 +605,7 @@ export class CBTTestEngineModule {
         </header>
 
         <!-- Mobile/Tablet Swipeable Question Number Strip -->
-        <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar bg-white border border-[#E2E8F0] rounded-2xl p-2.5 shadow-2xs">
+        <div class="flex lg:hidden items-center gap-1.5 overflow-x-auto no-scrollbar bg-white border border-[#F3E8FF] rounded-2xl p-2.5 shadow-2xs">
           ${this.activeQuestions
             .map((q, idx) => {
               const st = this.statusMap[q.id] ?? 'not_visited';
@@ -1332,8 +623,8 @@ export class CBTTestEngineModule {
                   type="button"
                   data-action="jump-to-question"
                   data-index="${idx}"
-                  class="w-8 h-8 shrink-0 rounded-lg font-mono-tabular text-xs font-bold flex items-center justify-center ${badgeCls} ${
-                    isCurrent ? 'ring-2 ring-slate-900 ring-offset-1' : ''
+                  class="w-9 h-9 shrink-0 rounded-xl font-mono-tabular text-xs font-bold flex items-center justify-center ${badgeCls} ${
+                    isCurrent ? 'ring-2 ring-[#7C3AED] ring-offset-1' : ''
                   }"
                 >
                   ${q.number}
@@ -1348,16 +639,16 @@ export class CBTTestEngineModule {
           <!-- Left 8 Cols: Single-Question Viewport -->
           <section
             aria-label="Active Question Viewport"
-            class="lg:col-span-8 bg-white border border-[#E2E8F0] rounded-2xl p-5 sm:p-6 shadow-sm flex flex-col justify-between min-h-[460px]"
+            class="lg:col-span-8 bg-white border-2 border-[#F3E8FF] rounded-3xl p-5 sm:p-6 shadow-sm flex flex-col justify-between min-h-[460px]"
           >
             <div class="space-y-5">
               <!-- Question Meta Header -->
-              <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
+              <div class="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-[#F3E8FF]">
                 <div class="flex items-center gap-2">
-                  <span class="px-2.5 py-1 rounded-lg bg-slate-900 text-white font-mono-tabular text-xs font-bold">
+                  <span class="px-3 py-1 rounded-xl bg-[#7C3AED] text-white font-mono-tabular text-xs font-bold">
                     Q.${currentQ.number}
                   </span>
-                  <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-[#4F46E5] text-xs font-bold">
+                  <span class="px-3 py-1 rounded-xl bg-[#FDF2F8] text-[#DB2777] text-xs font-extrabold">
                     ${currentQ.subject}
                   </span>
                   <span class="text-xs text-slate-500 font-medium">
@@ -1367,33 +658,32 @@ export class CBTTestEngineModule {
                 <div class="flex items-center gap-2 font-mono-tabular text-xs">
                   <span class="px-2 py-0.5 rounded bg-emerald-50 text-[#10B981] font-bold">+4</span>
                   <span class="px-2 py-0.5 rounded bg-red-50 text-[#EF4444] font-bold">-1</span>
-                  <span class="px-2 py-0.5 rounded bg-slate-100 text-slate-700 font-semibold">${currentQ.type}</span>
+                  <span class="px-2 py-0.5 rounded bg-purple-50 text-[#7C3AED] font-bold">${currentQ.type}</span>
                 </div>
               </div>
 
-              <!-- Question Viewport: Enlarged Question Image (No Cluttered Text Above Image) -->
-              <div class="space-y-3" data-testid="cbt-question-display">
+              <!-- Question Prompt OR Large Clean Cropped Image -->
+              <div class="space-y-3">
                 ${
                   currentQ.questionImg
                     ? `
-                  <div class="rounded-2xl overflow-hidden border-2 border-indigo-200 bg-white p-2 sm:p-4 shadow-xs">
+                  <div class="rounded-2xl overflow-hidden border border-[#F5D0FE] bg-[#FFF9FB] p-3">
                     <img
                       src="${currentQ.questionImg}"
                       alt="Question Diagram"
-                      data-testid="cbt-enlarged-question-image"
                       referrerpolicy="no-referrer"
-                      class="w-full max-h-[420px] sm:max-h-[480px] mx-auto object-contain rounded-xl"
+                      class="max-h-[420px] w-full mx-auto object-contain rounded-xl"
                     />
                   </div>
                 `
                     : `
-                  <p class="text-sm sm:text-base font-medium text-slate-900 leading-relaxed">
+                  <p class="text-sm sm:text-base font-semibold text-slate-900 leading-relaxed">
                     ${this.escapeHtml(currentQ.prompt)}
                   </p>
                   ${
                     currentQ.equationBlock
                       ? `
-                    <div class="p-3.5 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] font-mono-tabular text-xs sm:text-sm text-indigo-950 overflow-x-auto">
+                    <div class="p-3.5 rounded-2xl bg-[#FDF2F8] border border-[#F5D0FE] font-mono-tabular text-xs sm:text-sm text-purple-950 overflow-x-auto">
                       ${this.escapeHtml(currentQ.equationBlock)}
                     </div>
                   `
@@ -1403,71 +693,55 @@ export class CBTTestEngineModule {
                 }
               </div>
 
-              <!-- MCQ Options (Compact Single Row A B C D) OR Virtual Numerical Keypad -->
+              <!-- MCQ Options: STRICTLY ISOLATED OPTION LETTERS ONLY (A, B, C, D) WITH ACCOMPANYING TEXT STRIPPED -->
               ${
-                currentQ.type === 'MCQ' && currentQ.options
+                currentQ.type === 'MCQ'
                   ? `
-                <div class="space-y-3 pt-2">
-                  ${
-                    !currentQ.questionImg
-                      ? `
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs text-slate-700 bg-[#F8FAFC] p-3 rounded-xl border border-[#E2E8F0]">
-                      ${currentQ.options
-                        .map((opt, idx) => {
-                          const optLetter = ['A', 'B', 'C', 'D'][idx] ?? 'A';
-                          return `<div class="flex items-start gap-2"><span class="font-mono-tabular font-extrabold text-[#4F46E5]">(${optLetter})</span><span>${this.escapeHtml(opt)}</span></div>`;
-                        })
-                        .join('')}
-                    </div>
-                  `
-                      : ''
-                  }
-                  <div class="space-y-1.5">
-                    <span class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
-                      Select Option (Single Compact Row A · B · C · D)
-                    </span>
-                    <div
-                      data-testid="single-row-abcd-options"
-                      class="grid grid-cols-4 gap-2 sm:gap-3"
-                    >
-                      ${currentQ.options
-                        .slice(0, 4)
-                        .map((opt, idx) => {
-                          const optLetter = ['A', 'B', 'C', 'D'][idx] ?? 'A';
-                          const selected = currentAnswer === opt;
-                          return `
-                          <button
-                            type="button"
-                            data-action="select-mcq-option"
-                            data-option="${this.escapeHtml(opt)}"
-                            data-option-letter="${optLetter}"
-                            class="min-h-[44px] px-2.5 py-2 rounded-xl border text-center flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                              selected
-                                ? 'bg-[#4F46E5] border-[#4F46E5] text-white font-extrabold shadow-sm ring-2 ring-[#4F46E5]/25'
-                                : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-indigo-50/60 hover:border-indigo-300 text-slate-800 font-bold'
-                            }"
-                          >
-                            <span class="w-6 h-6 rounded-lg font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0 ${
-                              selected
-                                ? 'bg-white text-[#4F46E5]'
-                                : 'bg-white border border-slate-200 text-slate-800'
-                            }">
-                              ${optLetter}
-                            </span>
-                            <span class="text-xs font-extrabold hidden sm:inline truncate">Option ${optLetter}</span>
-                          </button>
-                        `;
-                        })
-                        .join('')}
-                    </div>
+                <div class="space-y-2 pt-2">
+                  <div class="flex items-center justify-between text-[11px] font-extrabold text-[#7C3AED]">
+                    <span>Select Isolated Option Letter (Accompanying Option Text Stripped for Automated Processing)</span>
+                    <span class="font-mono-tabular">Options: A · B · C · D</span>
+                  </div>
+                  <div
+                    data-testid="mcq-options-single-row"
+                    class="grid grid-cols-4 gap-3"
+                  >
+                    ${isolatedOptions
+                      .map((optLetter) => {
+                        const selected =
+                          extractIsolatedOptionLetterFromAnswer(
+                            currentAnswer,
+                            currentQ.options
+                          ) === optLetter && currentAnswer !== '';
+                        return `
+                        <button
+                          type="button"
+                          data-action="select-mcq-option"
+                          data-testid="isolated-option-letter-btn"
+                          data-option="${optLetter}"
+                          class="w-full min-h-[54px] p-3 rounded-2xl border-2 flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                            selected
+                              ? 'bg-gradient-to-r from-[#7C3AED] to-[#DB2777] border-transparent text-white font-extrabold shadow-md'
+                              : 'bg-[#FDF2F8] border-[#F5D0FE] hover:bg-pink-100/70 text-slate-900 font-extrabold'
+                          }"
+                        >
+                          <span class="w-8 h-8 rounded-xl font-mono-tabular text-sm font-extrabold flex items-center justify-center ${
+                            selected
+                              ? 'bg-white/20 text-white'
+                              : 'bg-white border border-[#F5D0FE] text-[#7C3AED]'
+                          }">${optLetter}</span>
+                        </button>
+                      `;
+                      })
+                      .join('')}
                   </div>
                 </div>
               `
                   : `
-                <div class="p-4 rounded-xl bg-[#F8FAFC] border border-[#E2E8F0] space-y-3 max-w-xs">
+                <div class="p-4 rounded-2xl bg-[#FDF2F8] border border-[#F5D0FE] space-y-3 max-w-xs">
                   <div class="flex items-center justify-between">
                     <span class="text-xs font-bold text-slate-600 uppercase">Numerical Response</span>
-                    <span class="font-mono-tabular text-sm font-bold text-[#4F46E5]">
+                    <span class="font-mono-tabular text-sm font-bold text-[#7C3AED]">
                       ${currentAnswer || '—'}
                     </span>
                   </div>
@@ -1476,7 +750,7 @@ export class CBTTestEngineModule {
                     type="text"
                     value="${this.escapeHtml(currentAnswer)}"
                     placeholder="Enter numerical value"
-                    class="w-full min-h-[42px] px-3 py-2 rounded-xl bg-white border border-[#E2E8F0] font-mono-tabular text-sm font-bold text-slate-900"
+                    class="w-full min-h-[44px] px-3 py-2 rounded-2xl bg-white border border-[#F5D0FE] font-mono-tabular text-sm font-bold text-slate-900"
                   />
                   <div class="grid grid-cols-4 gap-1.5">
                     ${['7', '8', '9', 'DEL', '4', '5', '6', '-', '1', '2', '3', '.', '0', 'CLR']
@@ -1486,7 +760,7 @@ export class CBTTestEngineModule {
                         type="button"
                         data-action="nat-keypad"
                         data-key="${key}"
-                        class="min-h-[38px] rounded-lg border border-[#E2E8F0] bg-white hover:bg-slate-100 font-mono-tabular text-xs font-bold text-slate-800 ${
+                        class="min-h-[40px] rounded-xl border border-[#F5D0FE] bg-white hover:bg-pink-50 font-mono-tabular text-xs font-bold text-slate-800 ${
                           key === 'CLR' ? 'col-span-2 text-[#EF4444]' : ''
                         }"
                       >
@@ -1502,21 +776,21 @@ export class CBTTestEngineModule {
             </div>
 
             <!-- Bottom NTA Control Bar -->
-            <div class="pt-5 mt-6 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
+            <div class="pt-5 mt-6 border-t border-[#F3E8FF] flex flex-wrap items-center justify-between gap-2">
               <div class="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   data-action="clear-response"
-                  class="min-h-[40px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-slate-700"
+                  class="min-h-[44px] px-4 py-2 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-xs font-extrabold text-slate-700 cursor-pointer"
                 >
                   Clear Response
                 </button>
                 <button
                   type="button"
                   data-action="mark-review-next"
-                  class="min-h-[40px] px-3.5 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-bold text-purple-700"
+                  class="min-h-[44px] px-4 py-2 rounded-2xl bg-purple-50 hover:bg-purple-100 border border-purple-200 text-xs font-extrabold text-[#7C3AED] cursor-pointer"
                 >
-                  Mark for Review & Next
+                  Mark for Review &amp; Next
                 </button>
               </div>
 
@@ -1525,16 +799,16 @@ export class CBTTestEngineModule {
                   type="button"
                   data-action="prev-question"
                   ${this.currentQuestionIndex === 0 ? 'disabled' : ''}
-                  class="min-h-[40px] px-3.5 py-2 rounded-xl bg-[#F8FAFC] hover:bg-slate-100 border border-[#E2E8F0] text-xs font-semibold text-slate-700 disabled:opacity-40"
+                  class="min-h-[44px] px-4 py-2 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-xs font-extrabold text-slate-700 disabled:opacity-40 cursor-pointer"
                 >
                   ← Prev
                 </button>
                 <button
                   type="button"
                   data-action="save-and-next"
-                  class="min-h-[40px] px-5 py-2 rounded-xl bg-[#4F46E5] hover:bg-indigo-700 text-white text-xs font-bold shadow-sm transition-colors"
+                  class="min-h-[44px] px-5 py-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs font-extrabold shadow-sm transition-colors cursor-pointer"
                 >
-                  Save & Next →
+                  Save &amp; Next →
                 </button>
               </div>
             </div>
@@ -1545,12 +819,12 @@ export class CBTTestEngineModule {
             aria-label="NTA Question Palette"
             class="${
               this.isPaletteDrawerOpen
-                ? 'fixed inset-x-4 bottom-20 z-40 lg:static'
+                ? 'fixed inset-x-4 bottom-24 z-40 lg:static'
                 : 'hidden lg:block'
-            } lg:col-span-4 bg-white border border-[#E2E8F0] rounded-2xl p-5 shadow-sm space-y-4"
+            } lg:col-span-4 bg-white border-2 border-[#F3E8FF] rounded-3xl p-5 shadow-sm space-y-4"
           >
-            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-              <h2 class="text-sm font-bold text-slate-900">NTA Question Palette</h2>
+            <div class="flex items-center justify-between pb-3 border-b border-[#F3E8FF]">
+              <h2 class="text-sm font-extrabold text-slate-900">NTA Question Palette</h2>
               <span class="text-xs font-mono-tabular text-slate-500">
                 ${filteredQuestions.length} Shown
               </span>
@@ -1589,14 +863,14 @@ export class CBTTestEngineModule {
                         ? 'bg-[#EF4444] text-white border-[#EF4444]'
                         : st === 'marked_review' || st === 'answered_marked_review'
                           ? 'bg-purple-600 text-white border-purple-600'
-                          : 'bg-[#F8FAFC] text-slate-700 border-[#E2E8F0]';
+                          : 'bg-[#FDF2F8] text-slate-700 border-[#F5D0FE]';
                   return `
                   <button
                     type="button"
                     data-action="jump-to-question"
                     data-index="${idx}"
-                    class="min-h-[40px] rounded-xl border font-mono-tabular text-xs font-bold transition-all ${colorClass} ${
-                      isCurrent ? 'ring-2 ring-slate-900 ring-offset-1' : ''
+                    class="min-h-[42px] rounded-2xl border font-mono-tabular text-xs font-bold transition-all cursor-pointer ${colorClass} ${
+                      isCurrent ? 'ring-2 ring-[#7C3AED] ring-offset-1' : ''
                     }"
                   >
                     ${q.number}
@@ -1606,55 +880,17 @@ export class CBTTestEngineModule {
                 .join('')}
             </div>
 
-            <div class="pt-3 border-t border-slate-100">
+            <div class="pt-3 border-t border-[#F3E8FF]">
               <button
                 type="button"
                 data-action="submit-cbt-paper"
-                class="w-full min-h-[42px] rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold transition-colors cursor-pointer"
+                class="w-full min-h-[46px] rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs font-extrabold transition-colors cursor-pointer"
               >
-                Final Submit & View Solutions Row-by-Row →
+                Final Submit &amp; View AI Results + Solutions →
               </button>
             </div>
           </aside>
         </div>
-
-        ${
-          this.isInExamInstructionsModalOpen
-            ? `
-          <div
-            role="dialog"
-            aria-modal="true"
-            aria-label="In-Exam NTA Instructions Modal"
-            data-testid="in-exam-instructions-modal"
-            class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4"
-          >
-            <div class="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full max-h-[88vh] overflow-y-auto p-6 shadow-2xl space-y-4">
-              <div class="flex items-center justify-between pb-3 border-b border-slate-100">
-                <div>
-                  <span class="text-[11px] font-mono-tabular font-extrabold uppercase tracking-wider text-indigo-600">
-                    📋 OFFICIAL NTA MOCK TEST INSTRUCTIONS
-                  </span>
-                  <h3 class="text-base sm:text-lg font-extrabold text-slate-900">
-                    ${this.escapeHtml(this.selectedMockSeriesTitle)}
-                  </h3>
-                </div>
-                <button
-                  type="button"
-                  data-action="toggle-in-exam-instructions"
-                  class="min-h-[36px] px-3.5 py-1.5 rounded-xl bg-slate-900 text-white text-xs font-extrabold cursor-pointer"
-                >
-                  Close Instructions ✕
-                </button>
-              </div>
-              ${this.renderNtaInstructionsBodyHtml(
-                Math.max(10, Math.round(this.initialDurationSeconds / 60)),
-                this.activeQuestions.length * 4
-              )}
-            </div>
-          </div>
-        `
-            : ''
-        }
       </div>
     `;
   }
@@ -1663,15 +899,15 @@ export class CBTTestEngineModule {
     const submissions = dataStore.getTestSubmissions();
     if (submissions.length === 0) {
       return `
-        <div class="bg-white border border-[#E2E8F0] rounded-3xl p-10 text-center space-y-3">
+        <div class="bg-white border-2 border-[#F3E8FF] rounded-3xl p-10 text-center space-y-3">
           <h2 class="text-lg font-extrabold text-slate-900">No Test History Yet</h2>
-          <p class="text-xs text-slate-500">Launch a Mock Test or Infinite Practice session to record your score, graphs, and row-by-row solutions.</p>
+          <p class="text-xs text-slate-500">Launch a Sequential Mock Test to record your score, D3.js graphs, AI performance summary, and row-by-row solutions.</p>
           <button
             type="button"
             data-action="reconfigure-cbt"
-            class="min-h-[42px] px-5 py-2.5 rounded-xl bg-[#4F46E5] text-white text-xs font-bold"
+            class="min-h-[44px] px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs font-extrabold"
           >
-            Go to Mock Test Hub →
+            Go to Sequential Mock Stream →
           </button>
         </div>
       `;
@@ -1687,7 +923,6 @@ export class CBTTestEngineModule {
     const accuracy = activeSub.accuracyPercent ?? 0;
     const subEntries = Object.values(activeSub.subjectBreakdown || {});
 
-    // Ensure questionRows are always available
     const questionRows: QuestionAttemptRow[] =
       activeSub.questionRows && activeSub.questionRows.length > 0
         ? activeSub.questionRows
@@ -1703,13 +938,16 @@ export class CBTTestEngineModule {
       questionRows.length - activeSub.correctCount - activeSub.wrongCount
     );
 
+    const aiSummaryData =
+      this.aiSummaryOverride ?? generateAutomatedResultsSummaryAndPathway(activeSub);
+
     return `
       <div class="space-y-6" data-testid="test-history-analytics-view">
         <!-- 1. Previous Test Attempts Selector Strip -->
-        <section class="bg-white border border-[#E2E8F0] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
+        <section class="bg-white border-2 border-[#F3E8FF] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
           <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
                 Firebase Synced Exam Archive
               </span>
               <h2 class="text-lg font-extrabold text-slate-900">
@@ -1719,9 +957,9 @@ export class CBTTestEngineModule {
             <button
               type="button"
               data-action="reconfigure-cbt"
-              class="min-h-[38px] px-4 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-[#4F46E5] text-xs font-extrabold self-start sm:self-auto"
+              class="min-h-[42px] px-4 py-2 rounded-2xl bg-[#FDF2F8] hover:bg-pink-100 border border-[#F5D0FE] text-[#7C3AED] text-xs font-extrabold self-start sm:self-auto cursor-pointer"
             >
-              + Attempt New Mock / Practice Test
+              + Attempt Next Sequential Mock
             </button>
           </div>
 
@@ -1736,16 +974,16 @@ export class CBTTestEngineModule {
                     type="button"
                     data-action="select-history-test"
                     data-test-id="${sub.testId}"
-                    class="p-4 rounded-2xl border text-left transition-all flex flex-col justify-between gap-3 ${
+                    class="p-4 rounded-2xl border-2 text-left transition-all flex flex-col justify-between gap-3 cursor-pointer ${
                       isSelected
-                        ? 'bg-indigo-50/70 border-[#4F46E5] ring-2 ring-[#4F46E5]/15'
-                        : 'bg-[#F8FAFC] border-[#E2E8F0] hover:bg-white'
+                        ? 'bg-[#FDF2F8] border-[#7C3AED] shadow-2xs'
+                        : 'bg-white border-[#F3E8FF] hover:bg-[#FDF2F8]/50'
                     }"
                   >
                     <div>
                       <div class="flex items-center justify-between gap-2">
-                        <span class="px-2 py-0.5 rounded bg-white border border-indigo-100 text-[10px] font-extrabold text-[#4F46E5] uppercase">
-                          ${sub.mode === 'INFINITE_PRACTICE' ? 'Infinite Practice' : `${sub.examType ?? 'JEE'} Mock`}
+                        <span class="px-2.5 py-0.5 rounded-full bg-white border border-[#F5D0FE] text-[10px] font-extrabold text-[#7C3AED] uppercase">
+                          ${sub.examType ?? 'JEE'} Mock Test
                         </span>
                         <span class="font-mono-tabular text-[11px] text-slate-500">${dateStr}</span>
                       </div>
@@ -1754,11 +992,11 @@ export class CBTTestEngineModule {
                       </div>
                     </div>
 
-                    <div class="pt-2.5 border-t border-slate-200/70 flex items-center justify-between text-xs">
+                    <div class="pt-2.5 border-t border-[#F3E8FF] flex items-center justify-between text-xs">
                       <span class="font-mono-tabular font-extrabold text-slate-900">
                         Score: ${sub.score} / ${subMax}
                       </span>
-                      <span class="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-mono-tabular text-[11px] font-bold">
+                      <span class="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-mono-tabular text-[11px] font-bold">
                         ${sub.accuracyPercent ?? 80}% Acc
                       </span>
                     </div>
@@ -1769,10 +1007,96 @@ export class CBTTestEngineModule {
           </div>
         </section>
 
-        <!-- 2. Visual Performance Graphs & Subject Score Analytics -->
+        <!-- 2. AUTOMATED AI PERFORMANCE SUMMARY & PERSONALIZED STUDY PATHWAY ON RESULTS SCREEN -->
+        <section
+          aria-label="Automated AI Performance Summary and Personalized Study Pathway"
+          data-testid="ai-performance-summary-card"
+          class="bg-gradient-to-br from-[#FDF2F8] via-white to-[#F5F3FF] border-2 border-[#F5D0FE] rounded-3xl p-5 sm:p-6 shadow-sm space-y-5"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-[#F3E8FF]">
+            <div>
+              <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-[#7C3AED] text-[11px] font-extrabold uppercase tracking-wider">
+                🤖 Automated AI Performance Summary &amp; Personalized Study Pathway
+              </span>
+              <h3 class="text-base sm:text-lg font-extrabold text-slate-900 mt-1.5">
+                AI Diagnostic Report for ${this.escapeHtml(activeSub.title || 'Selected Mock Test')}
+              </h3>
+            </div>
+            <button
+              type="button"
+              data-action="refresh-ai-test-summary"
+              data-testid="refresh-ai-summary-btn"
+              class="min-h-[44px] px-4 py-2 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs font-extrabold shadow-sm cursor-pointer shrink-0"
+            >
+              ${this.isGeneratingAISummary ? '✨ Generating Deep AI Analysis...' : '✨ Regenerate AI Performance Summary'}
+            </button>
+          </div>
+
+          <p class="text-xs sm:text-sm font-semibold text-slate-800 leading-relaxed bg-white/90 border border-[#F3E8FF] rounded-2xl p-4" data-testid="ai-executive-summary-text">
+            ${this.escapeHtml(aiSummaryData.executiveSummary)}
+          </p>
+
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div class="p-4 rounded-2xl bg-emerald-50/70 border border-emerald-200 space-y-2">
+              <div class="text-xs font-extrabold uppercase tracking-wider text-emerald-800">
+                ✓ Key Strengths Identified
+              </div>
+              <ul class="space-y-1.5 text-xs text-slate-700">
+                ${aiSummaryData.strengths
+                  .map((s) => `<li class="flex items-start gap-2"><span class="text-emerald-600 font-bold">•</span><span>${this.escapeHtml(s)}</span></li>`)
+                  .join('')}
+              </ul>
+            </div>
+            <div class="p-4 rounded-2xl bg-pink-50/70 border border-pink-200 space-y-2">
+              <div class="text-xs font-extrabold uppercase tracking-wider text-[#DB2777]">
+                🎯 High-Priority Focus Areas
+              </div>
+              <ul class="space-y-1.5 text-xs text-slate-700">
+                ${aiSummaryData.focusAreas
+                  .map((f) => `<li class="flex items-start gap-2"><span class="text-[#DB2777] font-bold">•</span><span>${this.escapeHtml(f)}</span></li>`)
+                  .join('')}
+              </ul>
+            </div>
+          </div>
+
+          <!-- Personalized 3-Step Study Pathway -->
+          <div class="space-y-2.5" data-testid="personalized-study-pathway">
+            <div class="text-xs font-extrabold uppercase tracking-wider text-[#7C3AED]">
+              🗺️ Personalized 3-Step Study Pathway
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+              ${aiSummaryData.personalizedPathway
+                .map(
+                  (stepItem) => `
+                <div class="p-4 rounded-2xl bg-white border border-[#F5D0FE] flex flex-col justify-between gap-2 shadow-2xs">
+                  <div class="space-y-1.5">
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="px-2.5 py-0.5 rounded-full bg-purple-100 text-[#7C3AED] font-mono-tabular text-[10px] font-extrabold">
+                        STEP 0${stepItem.step} · ${this.escapeHtml(stepItem.subject)}
+                      </span>
+                      <span class="text-[11px] font-mono-tabular font-bold text-slate-500">
+                        ⏱ ${this.escapeHtml(stepItem.timeEstimate)}
+                      </span>
+                    </div>
+                    <div class="text-xs sm:text-sm font-extrabold text-slate-900">
+                      ${this.escapeHtml(stepItem.actionTitle)}
+                    </div>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                      ${this.escapeHtml(stepItem.detail)}
+                    </p>
+                  </div>
+                </div>
+              `
+                )
+                .join('')}
+            </div>
+          </div>
+        </section>
+
+        <!-- 3. Visual Performance Graphs & Subject Score Analytics -->
         <div class="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          <!-- Left 5 Cols: Score Summary & Accuracy Distribution Bar -->
-          <section class="lg:col-span-5 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-sm flex flex-col justify-between space-y-5">
+          <!-- Left 5 Cols: Score Summary & Accuracy Distribution Bar + D3 Trend Chart -->
+          <section class="lg:col-span-5 bg-white border-2 border-[#F3E8FF] rounded-3xl p-6 shadow-sm flex flex-col justify-between space-y-5">
             <div class="space-y-2">
               <span class="px-2.5 py-0.5 rounded-md bg-emerald-50 text-[#10B981] text-xs font-extrabold uppercase">
                 Selected Attempt Scorecard
@@ -1785,8 +1109,8 @@ export class CBTTestEngineModule {
               </p>
 
               <div class="grid grid-cols-3 gap-2.5 pt-3 text-center">
-                <div class="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-100">
-                  <div class="text-[10px] font-bold uppercase text-[#4F46E5]">Net Score</div>
+                <div class="p-3 rounded-2xl bg-purple-50/70 border border-purple-100">
+                  <div class="text-[10px] font-bold uppercase text-[#7C3AED]">Net Score</div>
                   <div class="text-xl font-mono-tabular font-extrabold text-slate-900 mt-1">
                     ${activeSub.score}<span class="text-xs text-slate-400">/${maxScore}</span>
                   </div>
@@ -1797,8 +1121,8 @@ export class CBTTestEngineModule {
                     ${accuracy}%
                   </div>
                 </div>
-                <div class="p-3 rounded-2xl bg-amber-50/70 border border-amber-100">
-                  <div class="text-[10px] font-bold uppercase text-amber-700">Correct / Wrong</div>
+                <div class="p-3 rounded-2xl bg-pink-50/70 border border-pink-100">
+                  <div class="text-[10px] font-bold uppercase text-[#DB2777]">Correct / Wrong</div>
                   <div class="text-xl font-mono-tabular font-extrabold text-slate-900 mt-1">
                     <span class="text-[#10B981]">${activeSub.correctCount}</span>/<span class="text-[#EF4444]">${activeSub.wrongCount}</span>
                   </div>
@@ -1806,8 +1130,16 @@ export class CBTTestEngineModule {
               </div>
             </div>
 
-            <!-- Visual Distribution Bar + Certificate Download Button -->
-            <div class="pt-4 border-t border-slate-100 space-y-3">
+            <!-- D3.js Performance Trend Chart across Attempts -->
+            <div class="pt-3 border-t border-[#F3E8FF] space-y-1.5">
+              <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-500">
+                D3.js Accuracy Progression Across Mock Tests
+              </div>
+              <div id="d3-performance-trend-chart" class="w-full h-[135px]"></div>
+            </div>
+
+            <!-- Visual Distribution Bar -->
+            <div class="pt-3 border-t border-[#F3E8FF] space-y-2">
               <div class="flex items-center justify-between text-xs font-bold">
                 <span class="text-[#10B981]">✓ Correct: ${activeSub.correctCount}</span>
                 <span class="text-[#EF4444]">✕ Wrong: ${activeSub.wrongCount}</span>
@@ -1818,60 +1150,131 @@ export class CBTTestEngineModule {
                 <div style="width: ${(activeSub.wrongCount / Math.max(1, questionRows.length)) * 100}%" class="bg-[#EF4444]"></div>
                 <div style="width: ${(skippedCount / Math.max(1, questionRows.length)) * 100}%" class="bg-slate-300"></div>
               </div>
-              <button
-                type="button"
-                data-action="download-cbt-certificate"
-                data-testid="download-cbt-certificate-btn"
-                class="w-full min-h-[42px] px-4 py-2.5 rounded-xl bg-gradient-to-r from-[#4F46E5] to-emerald-600 hover:from-indigo-700 hover:to-emerald-700 text-white text-xs font-extrabold shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-              >
-                🎓 Download Achievement Certificate (PDF)
-              </button>
             </div>
           </section>
 
-          <!-- Right 7 Cols: D3.js Subject-Wise Score & Accuracy Graph + Trend -->
+          <!-- Right 7 Cols: D3.js Subject-Wise Score & Accuracy Bar Graph -->
           <section
             aria-label="Subject Performance Graph"
             data-testid="test-performance-graph"
-            class="lg:col-span-7 bg-white border border-[#E2E8F0] rounded-3xl p-6 shadow-sm space-y-4"
+            class="lg:col-span-7 bg-white border-2 border-[#F3E8FF] rounded-3xl p-6 shadow-sm space-y-4"
           >
-            <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center justify-between">
               <div>
                 <h3 class="text-base font-extrabold text-slate-900">
-                  D3.js Subject-Wise Accuracy & Performance Trend
+                  D3.js Subject-Wise Score &amp; Accuracy Graph
                 </h3>
                 <p class="text-xs text-slate-500">
-                  Interactive D3.js SVG visualization of subject accuracy and chronological mock improvement
+                  Visual comparison of marks scored and accuracy across subjects
                 </p>
               </div>
-              <a
-                href="/test-history.html"
-                class="px-3 py-1.5 rounded-xl bg-[#4F46E5] text-white text-xs font-extrabold hover:bg-indigo-700 transition-colors"
-              >
-                Open Dedicated Test History Page →
-              </a>
+              <span class="px-3 py-1 rounded-xl bg-[#FDF2F8] border border-[#F5D0FE] font-mono-tabular text-xs font-bold text-[#7C3AED]">
+                📊 D3.js Chart
+              </span>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div id="d3-cbt-subject-accuracy" class="w-full min-h-[210px]"></div>
-              <div id="d3-cbt-improvement-trend" class="w-full min-h-[210px]"></div>
+            <div id="d3-subject-accuracy-chart" class="w-full h-[170px]"></div>
+
+            <div class="space-y-3 pt-1">
+              ${subEntries
+                .map((sub) => {
+                  const pct = Math.min(
+                    100,
+                    Math.max(8, Math.round((Math.max(0, sub.score) / Math.max(1, sub.maxScore)) * 100))
+                  );
+                  const barGrad =
+                    sub.subject === 'Physics'
+                      ? 'from-[#7C3AED] to-indigo-600'
+                      : sub.subject === 'Chemistry'
+                        ? 'from-emerald-500 to-teal-600'
+                        : 'from-[#DB2777] to-rose-500';
+                  return `
+                  <div class="p-3 rounded-2xl bg-[#FDF2F8]/60 border border-[#F3E8FF] space-y-1.5">
+                    <div class="flex items-center justify-between text-xs font-extrabold text-slate-800">
+                      <span>${sub.subject} <span class="text-slate-400 font-normal">(+${sub.correct} / -${sub.wrong})</span></span>
+                      <span class="font-mono-tabular">${sub.score} / ${sub.maxScore} Marks · ${sub.accuracyPercent}% Acc</span>
+                    </div>
+                    <div class="w-full h-3 rounded-full bg-slate-200/80 overflow-hidden">
+                      <div
+                        class="h-full rounded-full bg-gradient-to-r ${barGrad}"
+                        style="width: ${pct}%"
+                      ></div>
+                    </div>
+                  </div>
+                `;
+                })
+                .join('')}
             </div>
           </section>
         </div>
 
-        <!-- 3. Row-by-Row Question, User Answer, Correct Key & Solution Table ("in a row") -->
+        <!-- 4. AUTOMATED AI DOUBT SOLVING DIRECTLY ON THE RESULTS SCREEN -->
+        <section
+          aria-label="Automated AI Doubt Solver on Results Screen"
+          data-testid="results-ai-doubt-solver"
+          class="bg-white border-2 border-[#F5D0FE] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4"
+        >
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div>
+              <span class="px-3 py-1 rounded-full bg-pink-100 text-[#DB2777] text-[11px] font-extrabold uppercase tracking-wider">
+                🤖 Instant AI Doubt Resolution on Results Screen
+              </span>
+              <h3 class="text-base sm:text-lg font-extrabold text-slate-900 mt-1">
+                Ask AI About Any Mistake or Click "🤖 Solve Doubt with AI" on Any Question Row Below
+              </h3>
+            </div>
+          </div>
+
+          <div class="flex flex-col sm:flex-row gap-2.5">
+            <input
+              id="results-ai-doubt-input"
+              type="text"
+              value="${this.escapeHtml(this.activeDoubtQuery)}"
+              placeholder="Ask why your answer was wrong or request a shortcut formula..."
+              class="flex-1 min-h-[46px] px-4 py-2.5 rounded-2xl bg-[#FDF2F8] border border-[#F5D0FE] text-xs sm:text-sm font-semibold text-slate-900"
+            />
+            <button
+              type="button"
+              data-action="submit-results-ai-doubt"
+              data-testid="results-ai-doubt-submit-btn"
+              class="min-h-[46px] px-5 py-2.5 rounded-2xl bg-gradient-to-r from-[#7C3AED] to-[#DB2777] text-white text-xs sm:text-sm font-extrabold shadow-sm cursor-pointer shrink-0"
+            >
+              ${this.isResolvingDoubt ? '🤖 Solving Doubt...' : '🤖 Solve Doubt with AI'}
+            </button>
+          </div>
+
+          ${
+            this.activeDoubtExplanation
+              ? `
+            <div
+              data-testid="results-ai-doubt-output"
+              class="p-4 rounded-2xl bg-gradient-to-r from-[#FDF2F8] to-[#F5F3FF] border border-[#F5D0FE] space-y-1.5"
+            >
+              <div class="text-xs font-extrabold text-[#7C3AED]">
+                🤖 AI Step-by-Step Doubt Resolution ${this.activeDoubtQuestionNumber ? `(Question #${this.activeDoubtQuestionNumber})` : ''}:
+              </div>
+              <p class="text-xs sm:text-sm text-slate-800 whitespace-pre-wrap leading-relaxed">${this.escapeHtml(
+                this.activeDoubtExplanation
+              )}</p>
+            </div>
+          `
+              : ''
+          }
+        </section>
+
+        <!-- 5. Row-by-Row Question, Isolated Option Key & AI Doubt Solver Table -->
         <section
           aria-label="Row-by-Row Question and Solution Review"
           data-testid="answer-key-row-list"
-          class="bg-white border border-[#E2E8F0] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4"
+          class="bg-white border-2 border-[#F3E8FF] rounded-3xl p-5 sm:p-6 shadow-sm space-y-4"
         >
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-[#F3E8FF]">
             <div>
-              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#4F46E5]">
-                Complete Answer Key & Solutions In A Row
+              <span class="text-[11px] font-extrabold uppercase tracking-wider text-[#7C3AED]">
+                Complete Answer Key &amp; AI Doubt Solving In A Row
               </span>
               <h3 class="text-lg font-extrabold text-slate-900">
-                Questions, Your Answers, Correct Keys & Official Solutions (${filteredRows.length} Rows)
+                Questions, Isolated Option Keys &amp; Instant AI Doubt Solver (${filteredRows.length} Rows)
               </h3>
             </div>
 
@@ -1883,10 +1286,10 @@ export class CBTTestEngineModule {
                   type="button"
                   data-action="filter-history-subject"
                   data-subject="${subj}"
-                  class="px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  class="min-h-[38px] px-3.5 py-1.5 rounded-2xl text-xs font-extrabold transition-colors cursor-pointer ${
                     this.historySubjectFilter === subj
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-[#F8FAFC] border border-[#E2E8F0] text-slate-600 hover:bg-slate-100'
+                      ? 'bg-[#7C3AED] text-white'
+                      : 'bg-[#FDF2F8] border border-[#F5D0FE] text-slate-600 hover:bg-pink-100'
                   }"
                 >
                   ${subj === 'ALL' ? 'All Subjects' : subj}
@@ -1902,23 +1305,23 @@ export class CBTTestEngineModule {
               .map((row) => {
                 const statusBadge =
                   row.status === 'CORRECT'
-                    ? `<span class="px-2.5 py-1 rounded-lg bg-emerald-100 text-emerald-800 text-[11px] font-extrabold">✓ CORRECT (+${row.marks})</span>`
+                    ? `<span class="px-2.5 py-1 rounded-xl bg-emerald-100 text-emerald-800 text-[11px] font-extrabold">✓ CORRECT (+${row.marks})</span>`
                     : row.status === 'WRONG'
-                      ? `<span class="px-2.5 py-1 rounded-lg bg-red-100 text-[#EF4444] text-[11px] font-extrabold">✕ WRONG (${row.marks})</span>`
-                      : `<span class="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-extrabold">○ UNATTEMPTED (0)</span>`;
+                      ? `<span class="px-2.5 py-1 rounded-xl bg-red-100 text-[#EF4444] text-[11px] font-extrabold">✕ WRONG (${row.marks})</span>`
+                      : `<span class="px-2.5 py-1 rounded-xl bg-slate-100 text-slate-600 text-[11px] font-extrabold">○ UNATTEMPTED (0)</span>`;
 
                 return `
                   <div
                     data-testid="answer-review-row"
-                    class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center p-4 rounded-2xl bg-[#F8FAFC] border border-[#E2E8F0] hover:bg-white hover:border-indigo-200 transition-all"
+                    class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-center p-4 rounded-2xl bg-[#FDF2F8]/50 border border-[#F3E8FF] hover:bg-white hover:border-[#F472B6] transition-all"
                   >
                     <!-- Col 1: Q# + Subject + Status (2 Cols) -->
                     <div class="lg:col-span-2 flex lg:flex-col justify-between gap-2">
                       <div class="flex items-center gap-2">
-                        <span class="w-8 h-8 rounded-xl bg-slate-900 text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">
+                        <span class="w-8 h-8 rounded-xl bg-[#7C3AED] text-white font-mono-tabular text-xs font-extrabold flex items-center justify-center shrink-0">
                           Q${row.number}
                         </span>
-                        <span class="px-2.5 py-1 rounded-lg bg-indigo-50 text-[#4F46E5] text-xs font-bold">
+                        <span class="px-2.5 py-1 rounded-xl bg-white border border-[#F5D0FE] text-[#DB2777] text-xs font-bold">
                           ${row.subject}
                         </span>
                       </div>
@@ -1930,18 +1333,15 @@ export class CBTTestEngineModule {
                       <div class="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
                         ${this.escapeHtml(row.topic)} · ${row.type}
                       </div>
-                      <p class="text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed">
-                        ${this.escapeHtml(row.prompt)}
-                      </p>
                       ${
                         row.questionImg
-                          ? `<img src="${row.questionImg}" alt="Question Crop" referrerpolicy="no-referrer" class="max-h-24 rounded-lg border border-slate-200 bg-white p-1 object-contain" />`
-                          : ''
+                          ? `<img src="${row.questionImg}" alt="Question Crop" referrerpolicy="no-referrer" class="max-h-56 w-full rounded-xl border border-slate-200 bg-white p-2 object-contain" />`
+                          : `<p class="text-xs sm:text-sm font-semibold text-slate-900 leading-relaxed">${this.escapeHtml(row.prompt)}</p>`
                       }
                     </div>
 
                     <!-- Col 3: Your Answer vs Correct Answer Key (3 Cols) -->
-                    <div class="lg:col-span-3 p-3 rounded-xl bg-white border border-[#E2E8F0] space-y-2">
+                    <div class="lg:col-span-3 p-3 rounded-2xl bg-white border border-[#F3E8FF] space-y-2">
                       <div>
                         <span class="block text-[10px] font-bold uppercase text-slate-400">Your Response</span>
                         <span class="text-xs font-extrabold ${
@@ -1955,24 +1355,43 @@ export class CBTTestEngineModule {
                         </span>
                       </div>
                       <div class="pt-1.5 border-t border-slate-100">
-                        <span class="block text-[10px] font-bold uppercase text-[#10B981]">Correct Answer Key</span>
+                        <span class="block text-[10px] font-bold uppercase text-[#10B981]">Correct Key</span>
                         <span class="text-xs font-extrabold text-emerald-900">
                           ${this.escapeHtml(row.correctAnswer)}
                         </span>
                       </div>
                     </div>
 
-                    <!-- Col 4: Step-by-Step Solution & Cropped Solution Image (3 Cols) -->
-                    <div class="lg:col-span-3 p-3 rounded-xl bg-indigo-50/50 border border-indigo-100 space-y-1.5">
-                      <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#4F46E5] block">
+                    <!-- Col 4: Official Solution + Instant AI Doubt Solver Button (3 Cols) -->
+                    <div class="lg:col-span-3 p-3 rounded-2xl bg-purple-50/60 border border-[#F3E8FF] space-y-2">
+                      <span class="text-[10px] font-extrabold uppercase tracking-wider text-[#7C3AED] block">
                         Official Step-by-Step Solution
                       </span>
-                      <p class="text-xs text-slate-700 leading-relaxed">
-                        ${this.escapeHtml(row.solution)}
-                      </p>
                       ${
                         row.solutionImg
-                          ? `<img src="${row.solutionImg}" alt="Solution Crop" referrerpolicy="no-referrer" class="max-h-24 rounded-lg border border-indigo-200 bg-white p-1 object-contain" />`
+                          ? `<img src="${row.solutionImg}" alt="Solution Crop" referrerpolicy="no-referrer" class="max-h-56 w-full rounded-xl border border-indigo-200 bg-white p-2 object-contain" />`
+                          : `<p class="text-xs text-slate-700 leading-relaxed">${this.escapeHtml(row.solution)}</p>`
+                      }
+                      <button
+                        type="button"
+                        data-action="solve-row-doubt-ai"
+                        data-testid="solve-row-doubt-ai-btn"
+                        data-row-number="${row.number}"
+                        class="w-full min-h-[38px] px-3 py-1.5 rounded-xl bg-white hover:bg-[#FDF2F8] border border-[#F5D0FE] text-[11px] font-extrabold text-[#DB2777] flex items-center justify-center gap-1.5 cursor-pointer transition-colors"
+                      >
+                        <span>🤖 Ask AI Doubt Solver (Q${row.number})</span>
+                      </button>
+                      ${
+                        this.activeDoubtExplanation &&
+                        this.activeDoubtQuestionNumber === row.number
+                          ? `
+                        <div class="p-2.5 rounded-xl bg-white border border-pink-200 text-[11px] text-slate-800 space-y-1">
+                          <div class="font-extrabold text-[#7C3AED]">🤖 AI Doubt Resolution (Q${row.number}):</div>
+                          <p class="whitespace-pre-wrap leading-relaxed">${this.escapeHtml(
+                            this.activeDoubtExplanation
+                          )}</p>
+                        </div>
+                      `
                           : ''
                       }
                     </div>
@@ -1986,8 +1405,185 @@ export class CBTTestEngineModule {
     `;
   }
 
+  private renderD3HistoryCharts(): void {
+    if (!this.containerEl) return;
+    const submissions = dataStore.getTestSubmissions();
+    if (submissions.length === 0) return;
+
+    const activeSub =
+      submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
+      this.lastSubmission ??
+      submissions[0];
+
+    const subHost = this.containerEl.querySelector<HTMLElement>('#d3-subject-accuracy-chart');
+    if (subHost) {
+      subHost.innerHTML = '';
+      const subEntries = Object.values(activeSub.subjectBreakdown || {});
+      const w = Math.max(subHost.clientWidth || 500, 300);
+      const h = 165;
+      const m = { top: 20, right: 20, bottom: 30, left: 40 };
+      const iw = w - m.left - m.right;
+      const ih = h - m.top - m.bottom;
+
+      const svg = d3
+        .select(subHost)
+        .append('svg')
+        .attr('viewBox', `0 0 ${w} ${h}`)
+        .attr('class', 'w-full h-full overflow-visible');
+
+      const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+      const x = d3
+        .scaleBand<string>()
+        .domain(subEntries.map((s) => s.subject))
+        .range([0, iw])
+        .padding(0.4);
+
+      const y = d3.scaleLinear().domain([0, 100]).range([ih, 0]);
+
+      g.append('g')
+        .selectAll('line')
+        .data([0, 50, 100])
+        .join('line')
+        .attr('x1', 0)
+        .attr('x2', iw)
+        .attr('y1', (d) => y(d))
+        .attr('y2', (d) => y(d))
+        .attr('stroke', '#F3E8FF')
+        .attr('stroke-dasharray', '3,3');
+
+      g.append('g')
+        .call(
+          d3
+            .axisLeft(y)
+            .ticks(3)
+            .tickFormat((d) => `${d}%`)
+        )
+        .call((ax) => ax.select('.domain').remove())
+        .call((ax) => ax.selectAll('line').remove())
+        .selectAll('text')
+        .attr('fill', '#64748B')
+        .attr('font-size', '10px')
+        .attr('font-weight', '600');
+
+      g.append('g')
+        .attr('transform', `translate(0,${ih})`)
+        .call(d3.axisBottom(x))
+        .call((ax) => ax.select('.domain').attr('stroke', '#F3E8FF'))
+        .call((ax) => ax.selectAll('line').remove())
+        .selectAll('text')
+        .attr('fill', '#1E1B4B')
+        .attr('font-size', '11px')
+        .attr('font-weight', '800');
+
+      const colorForSub = (sub: string) =>
+        sub === 'Physics' ? '#7C3AED' : sub === 'Chemistry' ? '#10B981' : '#DB2777';
+
+      g.selectAll('.sub-acc-bar')
+        .data(subEntries)
+        .join('rect')
+        .attr('class', 'sub-acc-bar')
+        .attr('x', (d) => x(d.subject) ?? 0)
+        .attr('y', (d) => y(d.accuracyPercent))
+        .attr('width', x.bandwidth())
+        .attr('height', (d) => Math.max(6, ih - y(d.accuracyPercent)))
+        .attr('rx', 8)
+        .attr('fill', (d) => colorForSub(d.subject));
+
+      g.selectAll('.sub-acc-label')
+        .data(subEntries)
+        .join('text')
+        .attr('x', (d) => (x(d.subject) ?? 0) + x.bandwidth() / 2)
+        .attr('y', (d) => Math.max(12, y(d.accuracyPercent) - 6))
+        .attr('text-anchor', 'middle')
+        .attr('fill', '#1E1B4B')
+        .attr('font-size', '11px')
+        .attr('font-weight', '800')
+        .text((d) => `${d.accuracyPercent}% (${d.score}/${d.maxScore})`);
+    }
+
+    const trendHost = this.containerEl.querySelector<HTMLElement>('#d3-performance-trend-chart');
+    if (trendHost) {
+      trendHost.innerHTML = '';
+      const ordered = [...submissions].reverse();
+      const trendData = ordered.map((s, idx) => ({
+        label: `T${idx + 1}`,
+        acc: s.accuracyPercent ?? 75,
+        isCurrent: s.testId === activeSub.testId,
+      }));
+
+      const w = Math.max(trendHost.clientWidth || 340, 260);
+      const h = 130;
+      const m = { top: 16, right: 18, bottom: 24, left: 34 };
+      const iw = w - m.left - m.right;
+      const ih = h - m.top - m.bottom;
+
+      const svg = d3
+        .select(trendHost)
+        .append('svg')
+        .attr('viewBox', `0 0 ${w} ${h}`)
+        .attr('class', 'w-full h-full overflow-visible');
+
+      const g = svg.append('g').attr('transform', `translate(${m.left},${m.top})`);
+
+      const x = d3
+        .scalePoint<string>()
+        .domain(trendData.map((d) => d.label))
+        .range([0, iw])
+        .padding(0.3);
+
+      const y = d3.scaleLinear().domain([0, 100]).range([ih, 0]);
+
+      g.append('g')
+        .call(
+          d3
+            .axisLeft(y)
+            .ticks(3)
+            .tickFormat((d) => `${d}%`)
+        )
+        .call((ax) => ax.select('.domain').remove())
+        .call((ax) => ax.selectAll('line').remove())
+        .selectAll('text')
+        .attr('fill', '#64748B')
+        .attr('font-size', '9px');
+
+      g.append('g')
+        .attr('transform', `translate(0,${ih})`)
+        .call(d3.axisBottom(x))
+        .call((ax) => ax.select('.domain').attr('stroke', '#F3E8FF'))
+        .call((ax) => ax.selectAll('line').remove())
+        .selectAll('text')
+        .attr('fill', '#1E1B4B')
+        .attr('font-size', '10px')
+        .attr('font-weight', '700');
+
+      const lineGen = d3
+        .line<(typeof trendData)[0]>()
+        .x((d) => x(d.label) ?? 0)
+        .y((d) => y(d.acc))
+        .curve(d3.curveMonotoneX);
+
+      g.append('path')
+        .datum(trendData)
+        .attr('fill', 'none')
+        .attr('stroke', '#7C3AED')
+        .attr('stroke-width', 2.5)
+        .attr('d', lineGen);
+
+      g.selectAll('.trend-dot')
+        .data(trendData)
+        .join('circle')
+        .attr('cx', (d) => x(d.label) ?? 0)
+        .attr('cy', (d) => y(d.acc))
+        .attr('r', (d) => (d.isCurrent ? 5.5 : 4))
+        .attr('fill', (d) => (d.isCurrent ? '#DB2777' : '#7C3AED'))
+        .attr('stroke', '#FFFFFF')
+        .attr('stroke-width', 2);
+    }
+  }
+
   private buildFallbackQuestionRows(): QuestionAttemptRow[] {
-    const pool = this.activeQuestions.length > 0 ? this.activeQuestions : CBT_QUESTION_BANK.slice(0, 6);
+    const pool = this.activeQuestions.length > 0 ? this.activeQuestions : this.buildCombinedQuestionPool().slice(0, 6);
     return pool.map((q, idx) => {
       const userAns = this.responses[q.id] ?? '';
       const trimmed = userAns.trim();
@@ -1996,7 +1592,8 @@ export class CBTTestEngineModule {
         !isUnattempted &&
         (q.type === 'NAT'
           ? Math.abs(Number(trimmed) - Number(q.correctAnswer)) < 0.05
-          : trimmed === q.correctAnswer);
+          : extractIsolatedOptionLetterFromAnswer(trimmed, q.options) ===
+            extractIsolatedOptionLetterFromAnswer(q.correctAnswer, q.options));
       return {
         id: q.id,
         number: idx + 1,
@@ -2015,60 +1612,21 @@ export class CBTTestEngineModule {
     });
   }
 
-  private mountHistoryD3Charts(): void {
-    if (!this.containerEl) return;
-    const submissions = dataStore.getTestSubmissions();
-    const activeSub =
-      submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
-      this.lastSubmission ??
-      submissions[0];
-
-    const accEl = this.containerEl.querySelector<HTMLElement>(
-      '#d3-cbt-subject-accuracy'
-    );
-    if (accEl) {
-      renderD3SubjectAccuracyChart(
-        accEl,
-        activeSub ? [activeSub] : submissions
-      );
-    }
-
-    const trendEl = this.containerEl.querySelector<HTMLElement>(
-      '#d3-cbt-improvement-trend'
-    );
-    if (trendEl) {
-      renderD3ImprovementTrendGraph(trendEl, submissions);
-    }
-  }
-
   private prepareExamPaper(mode: CBTEngineMode): void {
     const combinedPool = this.buildCombinedQuestionPool();
 
     if (mode === 'INFINITE_PRACTICE') {
-      const availableChapters = this.getAvailableInfiniteChapters();
-      const chosenChapters = availableChapters.filter((ch) =>
+      const allChapters: ChapterEntity[] = dataStore.getChapters();
+      const chosenChapters = allChapters.filter((ch) =>
         this.selectedChapterIds.has(ch.id)
       );
-      const effectiveChapters =
-        chosenChapters.length > 0
-          ? chosenChapters
-          : availableChapters.slice(0, 3);
-      const questionsPerChapter = Math.max(
-        1,
-        Math.round(this.infiniteTotalCount / Math.max(1, effectiveChapters.length))
+      const result = selectInfinitePracticeEqualByChapter(
+        combinedPool,
+        chosenChapters,
+        this.infiniteTotalCount
       );
-
-      // Generate from the 100 P&C questions/chapter pool (+ admin questions)
-      const pncResult = generateChapterPnCQuestions(
-        effectiveChapters,
-        questionsPerChapter,
-        dataStore.getAdminQuestions()
-      );
-      this.activeQuestions = pncResult.questions;
-      this.activePerChapterCounts = {};
-      for (const ch of effectiveChapters) {
-        this.activePerChapterCounts[ch.id] = questionsPerChapter;
-      }
+      this.activeQuestions = result.questions;
+      this.activePerChapterCounts = result.perChapterCounts;
     } else {
       const subjects = Array.from(this.selectedSubjects);
       this.activeQuestions = selectAutoBalancedQuestions(
@@ -2095,104 +1653,29 @@ export class CBTTestEngineModule {
     this.startTimer();
   }
 
-  private downloadCertificatePdf(sub: TestSubmission): void {
-    const user = dataStore.getUser();
-    const rankStats = dataStore.getStudentRankAndMonthlyLevel();
-    const maxScore = sub.maxScore ?? Math.max(4, (sub.totalQuestions ?? 6) * 4);
-    const dateStr = (sub.timestamp || new Date().toISOString()).split('T')[0];
-    const cleanText = (s: string) =>
-      s.replace(/[()\\]/g, '').replace(/[^\x20-\x7E]/g, ' ');
-
-    const lines = [
-      'BT',
-      '/F1 20 Tf',
-      '50 750 Td',
-      `(PREPSKM.IN - CERTIFICATE OF ACHIEVEMENT) Tj`,
-      '/F1 12 Tf',
-      '0 -32 Td',
-      `(Awarded To: ${cleanText(user.name)} | Email: ${cleanText(user.email || 'Student')}) Tj`,
-      '0 -22 Td',
-      `(Class / Cohort: ${cleanText(sub.classYear || user.classYear)} | Exam Stream: ${cleanText(sub.examType || user.targetExam)}) Tj`,
-      '0 -22 Td',
-      `(Assessment: ${cleanText(sub.title || 'CBT Practice Session')}) Tj`,
-      '0 -26 Td',
-      `(Net Score: ${sub.score} / ${maxScore} | Accuracy: ${sub.accuracyPercent ?? 0}% | Correct: ${sub.correctCount} | Wrong: ${sub.wrongCount}) Tj`,
-      '0 -22 Td',
-      `(All-India Live Rank: #${rankStats.currentUserRank} | Monthly Level: Level ${rankStats.level}) Tj`,
-      '0 -22 Td',
-      `(Issued Date: ${dateStr} | Verified by prepskm.in Examination Engine) Tj`,
-      'ET',
-    ].join('\n');
-
-    const pdfContent = `%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
-endobj
-4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>
-endobj
-5 0 obj
-<< /Length ${lines.length} >>
-stream
-${lines}
-endstream
-endobj
-xref
-0 6
-0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000229 00000 n 
-0000000302 00000 n 
-trailer
-<< /Size 6 /Root 1 0 R >>
-startxref
-${355 + lines.length}
-%%EOF`;
-
-    const blob = new Blob([pdfContent], { type: 'application/pdf' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `prepskm_certificate_${user.name.toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${dateStr}.pdf`;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 1500);
-
-    this.callbacks.onShowToast(
-      `🎓 Downloaded Achievement Certificate PDF for ${user.name}!`
-    );
-  }
-
-  private openInstructionsBeforeExam(): void {
-    this.engineMode = 'MOCK';
-    this.isInstructionsConsentChecked = true;
-    this.stage = 'instructions';
-    this.rerender();
-    window.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-
   private startExam(): void {
-    this.engineMode = 'MOCK';
-    this.prepareExamPaper('MOCK');
+    const currentUser = dataStore.getUser();
+    if (currentUser.isGuest || !currentUser.email) {
+      this.callbacks.onShowToast(
+        'Please sign in with Google to start a Sequential Mock Test.'
+      );
+      window.dispatchEvent(new CustomEvent('prepskm:open-google-auth'));
+      return;
+    }
+
+    this.prepareExamPaper(this.engineMode);
     this.stage = 'exam';
-    this.isInExamInstructionsModalOpen = false;
 
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.delete('tab');
-    nextUrl.searchParams.set('session', 'mock');
+    nextUrl.searchParams.set(
+      'session',
+      this.engineMode === 'INFINITE_PRACTICE' ? 'infinite' : 'mock'
+    );
     window.history.pushState({}, '', nextUrl.toString());
 
     this.callbacks.onShowToast(
-      `${this.selectedExam} (${this.selectedClassYear}) Mock Test started (${this.activeQuestions.length} Qs)`
+      `${this.selectedExam} (${this.selectedClassYear}) Sequential Mock opened in dedicated exam page (${this.activeQuestions.length} Qs)`
     );
     this.rerender();
   }
@@ -2239,7 +1722,7 @@ ${355 + lines.length}
     }
   }
 
-  private submitPaper(): void {
+  private async submitPaper(): Promise<void> {
     this.stopTimer();
     const evalResult = evaluateCBTSubmission(this.activeQuestions, this.responses);
     const diagnosis = generateAIStudyDiagnosis(
@@ -2254,10 +1737,7 @@ ${355 + lines.length}
     const submission: TestSubmission = {
       testId,
       uid: user.uid,
-      title:
-        this.engineMode === 'INFINITE_PRACTICE'
-          ? `Infinite Practice Equal-Distribution Drill (${this.activeQuestions.length} Qs · ${this.selectedClassYear})`
-          : `${this.selectedMockSeriesTitle} (${this.selectedExam} · ${this.selectedClassYear})`,
+      title: `${this.selectedMockSeriesTitle} (${this.selectedExam} · ${this.selectedClassYear})`,
       classYear: this.selectedClassYear,
       examType: this.selectedExam,
       mode: this.engineMode,
@@ -2277,7 +1757,18 @@ ${355 + lines.length}
 
     this.lastSubmission = submission;
     this.selectedHistoryTestId = testId;
-    void dataStore.saveTestSubmission(submission);
+    this.aiSummaryOverride = null;
+
+    const firstTargetRow =
+      questionRows.find((r) => r.status === 'WRONG') ?? questionRows[0];
+    if (firstTargetRow) {
+      this.activeDoubtQuestionNumber = firstTargetRow.number;
+      const isolatedKey =
+        firstTargetRow.type === 'NAT'
+          ? firstTargetRow.correctAnswer
+          : extractIsolatedOptionLetterFromAnswer(firstTargetRow.correctAnswer);
+      this.activeDoubtExplanation = `1. Automated AI Doubt Diagnosis (${firstTargetRow.subject} · ${firstTargetRow.topic}): ${firstTargetRow.solution}\n2. Isolated Option Key Verification: Lock Option (${isolatedKey}) to eliminate negative marking (-1).`;
+    }
 
     const nextUrl = new URL(window.location.href);
     nextUrl.searchParams.delete('session');
@@ -2285,8 +1776,9 @@ ${355 + lines.length}
     window.history.replaceState({}, '', nextUrl.toString());
 
     this.stage = 'history';
+    await dataStore.saveTestSubmission(submission);
     this.callbacks.onShowToast(
-      `Test submitted! Net Score: ${evalResult.totalScore}/${evalResult.maxPossibleScore} — View graphs & row-by-row solutions below.`
+      `Test submitted! Net Score: ${evalResult.totalScore}/${evalResult.maxPossibleScore} — AI Performance Summary & Doubt Solver ready below.`
     );
     this.rerender();
   }
@@ -2305,9 +1797,16 @@ ${355 + lines.length}
       });
     }
 
+    const doubtInput = this.containerEl.querySelector<HTMLInputElement>(
+      '#results-ai-doubt-input'
+    );
+    doubtInput?.addEventListener('input', () => {
+      this.activeDoubtQuery = doubtInput.value;
+    });
+
     this.containerEl.querySelectorAll<HTMLElement>('[data-action]').forEach((el) => {
       const action = el.dataset.action;
-      el.addEventListener('click', () => {
+      el.addEventListener('click', async () => {
         switch (action) {
           case 'switch-engine-mode': {
             const mode = el.dataset.mode as CBTEngineMode;
@@ -2335,15 +1834,8 @@ ${355 + lines.length}
             this.copyTestInviteLink(el.dataset.title);
             break;
           }
-          case 'prompt-guest-signup': {
-            window.dispatchEvent(
-              new CustomEvent('prepskm:open-auth-modal', {
-                detail: {
-                  reason:
-                    'Sign Up Required: Please sign up with your Gmail to attempt Mock Tests and save your All-India Rank!',
-                },
-              })
-            );
+          case 'google-signin-unlock-test': {
+            window.dispatchEvent(new CustomEvent('prepskm:open-google-auth'));
             break;
           }
           case 'launch-series-mock': {
@@ -2352,30 +1844,7 @@ ${355 + lines.length}
             if (title) this.selectedMockSeriesTitle = title;
             this.totalQuestionCount = count;
             this.engineMode = 'MOCK';
-            this.openInstructionsBeforeExam();
-            break;
-          }
-          case 'back-to-test-hub': {
-            this.stage = 'hub';
-            this.rerender();
-            break;
-          }
-          case 'confirm-start-mock-exam': {
-            const consentEl = this.containerEl?.querySelector<HTMLInputElement>(
-              '#nta-instructions-consent-checkbox'
-            );
-            if (consentEl && !consentEl.checked) {
-              this.callbacks.onShowToast(
-                'Please check the Candidate Declaration box to confirm you have read the instructions.'
-              );
-              return;
-            }
             this.startExam();
-            break;
-          }
-          case 'toggle-in-exam-instructions': {
-            this.isInExamInstructionsModalOpen = !this.isInExamInstructionsModalOpen;
-            this.rerender();
             break;
           }
           case 'exit-exam-to-hub': {
@@ -2392,47 +1861,75 @@ ${355 + lines.length}
             const tid = el.dataset.testId;
             if (tid) {
               this.selectedHistoryTestId = tid;
-              window.location.href = `/test-history.html?testId=${encodeURIComponent(tid)}&view=single`;
-            }
-            break;
-          }
-          case 'quick-select-chapter-count': {
-            const targetCount = Math.max(1, Number(el.dataset.count) || 1);
-            const availableChapters = this.getAvailableInfiniteChapters();
-            this.selectedChapterIds = new Set(
-              availableChapters.slice(0, targetCount).map((c) => c.id)
-            );
-            const validMultiples = getValidInfinitePracticeCounts(
-              this.selectedChapterIds.size
-            );
-            this.infiniteTotalCount = validMultiples[1] ?? validMultiples[0];
-            this.rerender();
-            break;
-          }
-          case 'select-all-subject-chapters': {
-            const subj = el.dataset.subject as SubjectName;
-            if (subj) {
-              const availableChapters = this.getAvailableInfiniteChapters();
-              availableChapters
-                .filter((c) => c.subject === subj)
-                .forEach((c) => this.selectedChapterIds.add(c.id));
-              const validMultiples = getValidInfinitePracticeCounts(
-                this.selectedChapterIds.size
-              );
-              this.infiniteTotalCount = validMultiples[1] ?? validMultiples[0];
+              this.aiSummaryOverride = null;
+              this.activeDoubtExplanation = '';
               this.rerender();
             }
             break;
           }
-          case 'download-cbt-certificate': {
+          case 'refresh-ai-test-summary': {
             const submissions = dataStore.getTestSubmissions();
             const activeSub =
               submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
               this.lastSubmission ??
               submissions[0];
-            if (activeSub) {
-              this.downloadCertificatePdf(activeSub);
-            }
+            if (!activeSub) return;
+            this.isGeneratingAISummary = true;
+            this.rerender();
+            this.aiSummaryOverride = await generateResultsAISummaryWithAI(activeSub);
+            this.isGeneratingAISummary = false;
+            this.callbacks.onShowToast('✨ Updated AI Performance Summary & Personalized Study Pathway!');
+            this.rerender();
+            break;
+          }
+          case 'solve-row-doubt-ai': {
+            const rowNum = Number(el.dataset.rowNumber || 1);
+            const submissions = dataStore.getTestSubmissions();
+            const activeSub =
+              submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
+              this.lastSubmission ??
+              submissions[0];
+            const rows =
+              activeSub?.questionRows && activeSub.questionRows.length > 0
+                ? activeSub.questionRows
+                : this.buildFallbackQuestionRows();
+            const targetRow = rows.find((r) => r.number === rowNum) ?? rows[0];
+            if (!targetRow) return;
+            this.isResolvingDoubt = true;
+            this.activeDoubtQuestionNumber = targetRow.number;
+            this.rerender();
+            this.activeDoubtExplanation = await resolveResultsDoubtWithAI(
+              targetRow,
+              this.activeDoubtQuery
+            );
+            this.isResolvingDoubt = false;
+            this.callbacks.onShowToast(`🤖 AI Doubt Solver resolved Question #${targetRow.number}!`);
+            this.rerender();
+            break;
+          }
+          case 'submit-results-ai-doubt': {
+            const submissions = dataStore.getTestSubmissions();
+            const activeSub =
+              submissions.find((s) => s.testId === this.selectedHistoryTestId) ??
+              this.lastSubmission ??
+              submissions[0];
+            const rows =
+              activeSub?.questionRows && activeSub.questionRows.length > 0
+                ? activeSub.questionRows
+                : this.buildFallbackQuestionRows();
+            const targetRow =
+              rows.find((r) => r.status === 'WRONG') ?? rows[0];
+            if (!targetRow) return;
+            this.isResolvingDoubt = true;
+            this.activeDoubtQuestionNumber = targetRow.number;
+            this.rerender();
+            this.activeDoubtExplanation = await resolveResultsDoubtWithAI(
+              targetRow,
+              this.activeDoubtQuery || 'Explain the fastest method to solve this question and avoid negative marking.'
+            );
+            this.isResolvingDoubt = false;
+            this.callbacks.onShowToast('🤖 AI Doubt Resolution generated on results screen!');
+            this.rerender();
             break;
           }
           case 'filter-history-subject': {
@@ -2462,54 +1959,8 @@ ${355 + lines.length}
             }
             break;
           }
-          case 'toggle-cbt-subject': {
-            const sub = el.dataset.subject as SubjectName;
-            if (!sub) return;
-            if (this.selectedSubjects.has(sub)) {
-              if (this.selectedSubjects.size > 1) {
-                this.selectedSubjects.delete(sub);
-              }
-            } else {
-              this.selectedSubjects.add(sub);
-            }
-            this.rerender();
-            break;
-          }
-          case 'select-cbt-count': {
-            const cnt = Number(el.dataset.count);
-            if ([5, 10, 15].includes(cnt)) {
-              this.totalQuestionCount = cnt;
-              this.rerender();
-            }
-            break;
-          }
-          case 'toggle-infinite-chapter': {
-            const chId = el.dataset.chapterId;
-            if (!chId) return;
-            if (this.selectedChapterIds.has(chId)) {
-              if (this.selectedChapterIds.size > 1) {
-                this.selectedChapterIds.delete(chId);
-              }
-            } else {
-              this.selectedChapterIds.add(chId);
-            }
-            const validMultiples = getValidInfinitePracticeCounts(
-              this.selectedChapterIds.size
-            );
-            this.infiniteTotalCount = validMultiples[1] ?? validMultiples[0];
-            this.rerender();
-            break;
-          }
-          case 'select-infinite-multiple': {
-            const total = Number(el.dataset.total);
-            if (total > 0) {
-              this.infiniteTotalCount = total;
-              this.rerender();
-            }
-            break;
-          }
           case 'start-cbt-exam': {
-            this.openInstructionsBeforeExam();
+            this.startExam();
             break;
           }
           case 'select-mcq-option': {

@@ -1,16 +1,18 @@
 @import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Space+Grotesk:wght@600;700&family=JetBrains+Mono:wght@500;600;700&display=swap');
 
 @layer base {
   :root {
     --font-sans: 'Plus Jakarta Sans', 'Inter', system-ui, -apple-system, sans-serif;
+    --font-display: 'Space Grotesk', sans-serif;
     --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
-    --canvas-alabaster: #F8FAFC;
-    --surface-ivory: #FFFFFF;
-    --ink-obsidian: #0F172A;
-    --accent-primary: #4F46E5;
-    --accent-vermilion: #F97316;
-    --accent-jade: #059669;
-    --border-architectural: #E2E8F0;
+    --brand-primary: #7C3AED;
+    --brand-secondary: #10B981;
+    --brand-accent: #EC4899;
+    --brand-surface: #FFF9FB;
+    --brand-card: #FFFFFF;
+    --brand-cream-soft: #FDF2F8;
+    --brand-border: #F3E8FF;
   }
 
   html,
@@ -18,11 +20,17 @@
     margin: 0;
     padding: 0;
     min-height: 100%;
-    background-color: #F8FAFC;
-    color: #0F172A;
+    background-color: var(--brand-surface, #FFF9FB);
+    background-image:
+      radial-gradient(at 0% 0%, rgba(244, 114, 182, 0.13) 0px, transparent 48%),
+      radial-gradient(at 100% 0%, rgba(167, 139, 250, 0.14) 0px, transparent 50%),
+      radial-gradient(at 50% 100%, rgba(110, 231, 183, 0.11) 0px, transparent 52%);
+    background-attachment: fixed;
+    color: #1E1B4B;
     font-family: var(--font-sans);
     overflow-x: hidden;
     scroll-behavior: smooth;
+    -webkit-font-smoothing: antialiased;
   }
 }
 
@@ -31,25 +39,124 @@
   font-variant-numeric: tabular-nums;
 }
 
-/* Clean Luminous Light Scrollbars */
+/* Cohesive Pookie UI Rounded Modular Pastel Surfaces & Soft Shadows */
+.pookie-card,
+.cream-surface {
+  background: linear-gradient(180deg, #FFFFFF 0%, #FFF9FC 100%);
+  border: 1.5px solid #F3E8FF;
+  border-radius: 1.5rem;
+  box-shadow:
+    0 14px 34px -10px rgba(236, 72, 153, 0.12),
+    0 6px 16px -6px rgba(124, 58, 237, 0.08);
+}
+
+.pookie-pill {
+  background: linear-gradient(135deg, #FDF2F8 0%, #F5F3FF 100%);
+  border: 1px solid #F5D0FE;
+}
+
+.bg-white,
+.bg-\[\#FFFDF9\] {
+  background-color: #FFFFFF;
+}
+
+.bg-slate-50,
+.bg-\[\#FAF6EE\] {
+  background-color: #FDF4F9;
+}
+
+.border-slate-200,
+.border-\[\#E8DFD1\] {
+  border-color: #F3E8FF;
+}
+
+/* Soft rounded modular upgrade for cards across the app */
+main section,
+main article {
+  border-radius: 1.5rem;
+  box-shadow:
+    0 12px 30px -10px rgba(236, 72, 153, 0.10),
+    0 4px 12px -4px rgba(124, 58, 237, 0.06);
+}
+
+/* Replace harsh dark backgrounds with Soft Pastel Lavender-Berry Accents */
+.bg-slate-900,
+.bg-slate-950,
+.bg-zinc-900,
+.bg-zinc-950 {
+  background: linear-gradient(135deg, #7C3AED 0%, #DB2777 100%) !important;
+  color: #FFFFFF !important;
+  border-color: #C084FC !important;
+}
+
+/* Celebratory Streak Task-Completion Micro-Animations */
+@keyframes streakCelebratePop {
+  0% {
+    transform: scale(0.94);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.55);
+  }
+  50% {
+    transform: scale(1.02);
+    box-shadow: 0 0 0 14px rgba(245, 158, 11, 0);
+  }
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(245, 158, 11, 0);
+  }
+}
+
+@keyframes streakFlameBounce {
+  0%, 100% {
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-4px) scale(1.16) rotate(-6deg);
+  }
+}
+
+@keyframes confettiRise {
+  0% {
+    opacity: 1;
+    transform: translateY(0) scale(0.75) rotate(0deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-28px) scale(1.25) rotate(24deg);
+  }
+}
+
+.animate-streak-celebrate {
+  animation: streakCelebratePop 0.75s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.animate-streak-flame {
+  animation: streakFlameBounce 1.4s ease-in-out infinite;
+}
+
+.animate-confetti-rise {
+  animation: confettiRise 1.15s ease-out forwards;
+}
+
+/* Custom subtle scrollbars for Warm Cream Theme */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  background: #F1F5F9;
+  background: #F5EFE6;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #CBD5E1;
+  background: #D4C5AE;
   border-radius: 9999px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #6366F1;
+  background: #B8A487;
 }
 
+/* Hide scrollbars on horizontal swipeable pill bars */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
@@ -58,6 +165,7 @@
   scrollbar-width: none;
 }
 
+/* Privacy Video Player dynamic watermark drift */
 @keyframes watermarkDrift {
   0% {
     transform: translate(0px, 0px);
@@ -72,193 +180,4 @@
 
 .privacy-watermark {
   animation: watermarkDrift 14s ease-in-out infinite;
-}
-
-/* Luminous Daylight Academic Canvas & Unique Light Bento Surfaces */
-.editorial-canvas-bg {
-  background-color: #F8FAFC;
-  background-image:
-    radial-gradient(at 0% 0%, rgba(79, 70, 229, 0.06) 0px, transparent 48%),
-    radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.06) 0px, transparent 48%),
-    radial-gradient(#CBD5E1 0.85px, transparent 0.85px);
-  background-size: 100% 100%, 100% 100%, 24px 24px;
-}
-
-.bento-widget-card {
-  background: #FFFFFF;
-  border: 1.5px solid #E2E8F0;
-  box-shadow:
-    0 10px 28px -10px rgba(15, 23, 42, 0.06),
-    0 2px 6px -1px rgba(79, 70, 229, 0.04);
-  border-radius: 1.35rem;
-  transition: transform 180ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 180ms ease, border-color 180ms ease;
-}
-
-.bento-widget-card:hover {
-  border-color: #C7D2FE;
-  box-shadow:
-    0 16px 34px -12px rgba(79, 70, 229, 0.1),
-    0 4px 10px -2px rgba(15, 23, 42, 0.04);
-}
-
-.bento-widget-soft {
-  background: #FFFFFF;
-  border: 1px solid #E2E8F0;
-  box-shadow: 0 8px 24px -8px rgba(15, 23, 42, 0.05);
-  border-radius: 1.25rem;
-}
-
-/* Luminous Prism Hero Card (Replaces old dark obsidian card with airy light prism surface) */
-.obsidian-widget-card {
-  background: linear-gradient(135deg, #FFFFFF 0%, #EEF2FF 52%, #ECFDF5 100%);
-  color: #0F172A;
-  border: 1.5px solid #C7D2FE;
-  box-shadow:
-    0 16px 36px -12px rgba(79, 70, 229, 0.12),
-    inset 0 1px 0 #FFFFFF;
-  border-radius: 1.5rem;
-}
-
-.vermilion-cta-btn {
-  background: linear-gradient(135deg, #4F46E5 0%, #6366F1 100%);
-  color: #FFFFFF;
-  border: 1px solid #4338CA;
-  box-shadow: 0 6px 16px -4px rgba(79, 70, 229, 0.38);
-  transition: all 150ms cubic-bezier(0.22, 1, 0.36, 1);
-}
-
-.vermilion-cta-btn:hover {
-  background: linear-gradient(135deg, #4338CA 0%, #4F46E5 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 10px 20px -4px rgba(79, 70, 229, 0.48);
-}
-
-.vermilion-cta-btn:active {
-  transform: translateY(0px);
-}
-
-/* Eliminate Pitch-Black (#121316 / #18181B) across legacy buttons & pills in favor of Royal Indigo */
-.bg-\[\#121316\],
-.bg-\[\#18181B\] {
-  background-color: #4F46E5 !important;
-}
-.hover\:bg-\[\#121316\]:hover,
-.hover\:bg-black:hover {
-  background-color: #4338CA !important;
-}
-
-/* ==========================================================================
-   STREAK WIDGET MICRO-ANIMATIONS (Task Completion Consistency Feedback)
-   ========================================================================== */
-
-@keyframes streakFlamePulse {
-  0% {
-    transform: scale(1) rotate(0deg);
-    filter: drop-shadow(0 0 0 rgba(249, 115, 22, 0));
-  }
-  25% {
-    transform: scale(1.28) rotate(-8deg);
-    filter: drop-shadow(0 0 14px rgba(249, 115, 22, 0.65));
-  }
-  50% {
-    transform: scale(1.18) rotate(8deg);
-    filter: drop-shadow(0 0 18px rgba(245, 158, 11, 0.75));
-  }
-  75% {
-    transform: scale(1.24) rotate(-4deg);
-    filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.55));
-  }
-  100% {
-    transform: scale(1) rotate(0deg);
-    filter: drop-shadow(0 0 0 rgba(249, 115, 22, 0));
-  }
-}
-
-@keyframes streakCardCelebrate {
-  0% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 0 rgba(249, 115, 22, 0.45), 0 10px 28px -10px rgba(15, 23, 42, 0.06);
-    border-color: #F97316;
-  }
-  35% {
-    transform: translateY(-3px) scale(1.008);
-    box-shadow: 0 0 0 6px rgba(249, 115, 22, 0.16), 0 18px 36px -8px rgba(249, 115, 22, 0.22);
-    border-color: #10B981;
-  }
-  100% {
-    transform: translateY(0) scale(1);
-    box-shadow: 0 0 0 0 rgba(16, 185, 129, 0), 0 10px 28px -10px rgba(15, 23, 42, 0.06);
-    border-color: #A7F3D0;
-  }
-}
-
-@keyframes streakDayNodePop {
-  0% {
-    transform: scale(0.85);
-  }
-  45% {
-    transform: scale(1.14) translateY(-3px);
-  }
-  75% {
-    transform: scale(0.97) translateY(0px);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
-@keyframes streakXpFloatBadge {
-  0% {
-    opacity: 0;
-    transform: translateY(10px) scale(0.85);
-  }
-  20% {
-    opacity: 1;
-    transform: translateY(0px) scale(1.05);
-  }
-  80% {
-    opacity: 1;
-    transform: translateY(-2px) scale(1);
-  }
-  100% {
-    opacity: 0.96;
-    transform: translateY(0px) scale(1);
-  }
-}
-
-@keyframes streakShimmerSweep {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-.streak-flame-burst {
-  animation: streakFlamePulse 950ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.streak-widget-celebrating {
-  animation: streakCardCelebrate 1100ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  background: linear-gradient(135deg, #FFFFFF 0%, #FFFBEB 48%, #ECFDF5 100%) !important;
-}
-
-.streak-day-celebrate-pop {
-  animation: streakDayNodePop 700ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
-}
-
-.streak-xp-float-pill {
-  animation: streakXpFloatBadge 650ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
-.streak-consistency-shimmer {
-  background: linear-gradient(
-    90deg,
-    rgba(254, 243, 199, 0.65) 0%,
-    rgba(209, 250, 229, 0.9) 50%,
-    rgba(238, 242, 255, 0.75) 100%
-  );
-  background-size: 200% 100%;
-  animation: streakShimmerSweep 2.2s ease-in-out infinite;
 }

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 450" width="800" height="450">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1E1B4B" />
+      <stop offset="55%" stop-color="#312E81" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+    <linearGradient id="accent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#10B981" />
+    </linearGradient>
+  </defs>
+  <rect width="800" height="450" fill="url(#bg)" rx="24" />
+  <circle cx="680" cy="90" r="140" fill="#4F46E5" opacity="0.18" />
+  <circle cx="120" cy="380" r="160" fill="#10B981" opacity="0.14" />
+  <rect x="56" y="52" width="185" height="34" rx="17" fill="#4F46E5" />
+  <text x="148" y="74" fill="#FFFFFF" font-family="system-ui, sans-serif" font-size="13" font-weight="800" text-anchor="middle">PREPSKM HD LECTURE</text>
+  <text x="56" y="155" fill="#F8FAFC" font-family="system-ui, sans-serif" font-size="34" font-weight="800">Master Conceptual Physics &amp; Calculus</text>
+  <text x="56" y="198" fill="#CBD5E1" font-family="system-ui, sans-serif" font-size="18" font-weight="600">Offline-Ready Chapter Stream • Formula Vault • NTA PYQ Analysis</text>
+  <rect x="56" y="236" width="340" height="6" rx="3" fill="url(#accent)" />
+  <g transform="translate(56, 285)">
+    <rect width="240" height="54" rx="14" fill="#FFFFFF" opacity="0.1" stroke="#818CF8" stroke-width="1.5" />
+    <text x="120" y="33" fill="#E0E7FF" font-family="system-ui, sans-serif" font-size="15" font-weight="700" text-anchor="middle">⚡ Service Worker Cached</text>
+  </g>
+</svg>

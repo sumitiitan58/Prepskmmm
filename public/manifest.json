@@ -1,0 +1,26 @@
+{
+  "id": "prepskm-edtech-pwa",
+  "name": "prepskm.in — JEE, NEET & Foundation Ed-Tech Platform",
+  "short_name": "prepskm",
+  "description": "All-in-one study vault, offline lecture player, NTA CBT Mock Test engine, and 1:1 mentorship platform for JEE, NEET, Class 9–12, and Dropper students.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#FAF7F2",
+  "theme_color": "#4F46E5",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/assets/mentor-sumit.svg",
+      "sizes": "192x192",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/assets/mentor-sumit.svg",
+      "sizes": "512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

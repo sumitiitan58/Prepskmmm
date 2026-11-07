@@ -3,47 +3,9 @@ export type SubjectName = 'Physics' | 'Chemistry' | 'Math' | 'Biology';
 export type TaskBucket = 'Today' | 'Backlog';
 export type TaskPriority = 'High' | 'Medium' | 'Low';
 export type ModuleId = 'dashboard' | 'player' | 'live' | 'cbt';
-export type PageId =
-  | 'home'
-  | 'study'
-  | 'mentorship'
-  | 'test'
-  | 'test-history'
-  | 'planner'
-  | 'player'
-  | 'admin'
-  | 'profile';
+export type PageId = 'home' | 'planner' | 'study' | 'mentorship' | 'test' | 'admin' | 'profile' | 'player';
 export type ProficiencyLevel = 'Weak' | 'Moderate' | 'Strong';
-export type StudentClassYear =
-  | 'Class 9'
-  | 'Class 10'
-  | 'Class 10 Foundation'
-  | 'Class 11'
-  | 'Class 11 Foundation'
-  | 'Class 12'
-  | 'Dropper';
-
-export interface StreakNotificationItem {
-  id: string;
-  uid: string;
-  studentName: string;
-  currentStreak: number;
-  riskLevel: 'SAFE' | 'WARNING' | 'CRITICAL';
-  hoursRemaining: number;
-  title: string;
-  message: string;
-  actionHref: string;
-  isRead?: boolean;
-  createdAt: string;
-}
-
-export interface ElementStyleOverride {
-  selectorKey: string;
-  label?: string;
-  text?: string;
-  color?: string;
-  bgColor?: string;
-}
+export type StudentClassYear = 'Class 9' | 'Class 10' | 'Class 11' | 'Class 12' | 'Dropper';
 
 export interface AspirantUser {
   uid: string;
@@ -55,57 +17,8 @@ export interface AspirantUser {
   isGuest: boolean;
   currentStreak: number;
   dailyGoalTasks?: number;
-  totalFocusMinutes?: number;
-  subjectFocusMinutes?: Record<SubjectName, number>;
-  xpPoints?: number;
-  monthlyLevel?: number;
-  lastPromotedMonth?: string;
-  completedSyllabusTopics?: string[];
   lastActiveDate: string;
   createdAt: string;
-}
-
-export interface SyllabusTopicItem {
-  id: string;
-  subject: SubjectName;
-  chapterName: string;
-  weightageLabel: string;
-  estimatedHours: number;
-  examTypes: TargetExam[];
-}
-
-export interface SubjectSyllabusSummary {
-  subject: SubjectName;
-  totalTopics: number;
-  completedTopics: number;
-  completionPercent: number;
-  remainingTopics: SyllabusTopicItem[];
-  allTopics: Array<SyllabusTopicItem & { completed: boolean }>;
-}
-
-export interface FocusSessionRecord {
-  id: string;
-  uid: string;
-  studentName: string;
-  subject: SubjectName;
-  durationMinutes: number;
-  modeLabel: string;
-  completedAt: string;
-}
-
-export interface GroupCallSchedule {
-  id: string;
-  title: string;
-  mentorId: string;
-  mentorName: string;
-  scheduledTimeText: string;
-  scheduledTime?: string;
-  targetCohort: string;
-  jitsiRoom: string;
-  isActive: boolean;
-  joinedStudents: { uid: string; name: string; joinedAt: string }[];
-  participantNames?: string[];
-  updatedAt: string;
 }
 
 export interface StreakCalendarDay {
@@ -186,17 +99,6 @@ export interface SiteThemeSettings {
   surfaceTint: string;
   surfaceBg: string;
   presetName: string;
-  elementOverrides?: Record<string, ElementStyleOverride>;
-  cohortThemeOverrides?: Record<
-    string,
-    {
-      headline?: string;
-      subheadline?: string;
-      primaryColor?: string;
-      secondaryColor?: string;
-      surfaceBg?: string;
-    }
-  >;
   updatedAt: string;
 }
 
@@ -253,10 +155,6 @@ export interface LeaderboardEntry {
   bestMockScore: number;
   currentStreak: number;
   compositePoints: number;
-  xpPoints?: number;
-  monthlyLevel?: number;
-  isGuest?: boolean;
-  weekKey?: string;
 }
 
 export interface StudyTask {
@@ -343,14 +241,20 @@ export interface MentorshipMessage {
   senderRole: 'student' | 'admin';
   text: string;
   timestamp: string;
-  attachmentType?: 'IMAGE' | 'VIDEO' | 'FILE' | 'APPOINTMENT';
-  attachmentUrl?: string;
-  attachmentName?: string;
-  appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  appointmentTime?: string;
-  scheduledCallTime?: string;
-  requestedCallTime?: string;
-  appointmentTopic?: string;
+  imageDataUrl?: string;
+  appointmentSlot?: string;
+}
+
+export interface MentorAppointmentItem {
+  id: string;
+  mentorId: string;
+  mentorName: string;
+  studentName: string;
+  dateStr: string;
+  timeSlot: string;
+  topic: string;
+  status: 'CONFIRMED' | 'PENDING';
+  createdAt: string;
 }
 
 export interface MentorshipSessionItem {
@@ -363,21 +267,14 @@ export interface MentorshipSessionItem {
   jitsiRoom?: string;
   requestType: 'CHAT' | 'AUDIO' | 'VIDEO';
   status: 'PENDING' | 'ACTIVE' | 'COMPLETED';
-  appointmentStatus?: 'PENDING' | 'ACCEPTED' | 'REJECTED';
-  scheduledCallTime?: string;
-  requestedCallTime?: string;
-  appointmentTopic?: string;
-  appointmentNote?: string;
   messages: MentorshipMessage[];
+  appointments?: MentorAppointmentItem[];
   updatedAt: string;
 }
 
 export interface AdminQuestionItem {
   id: string;
   classId: string;
-  classCohort?: StudentClassYear;
-  targetExam?: TargetExam;
-  mockTestTitle?: string;
   subjectId: string;
   chapterId?: string;
   subjectName: SubjectName;

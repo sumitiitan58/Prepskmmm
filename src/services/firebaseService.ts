@@ -1,10 +1,5 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
 import {
-  getAnalytics,
-  isSupported as isAnalyticsSupported,
-  type Analytics,
-} from 'firebase/analytics';
-import {
   GoogleAuthProvider,
   createUserWithEmailAndPassword,
   getAuth,
@@ -31,13 +26,12 @@ import {
   updateDoc,
   where,
 } from 'firebase/firestore';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 import {
   CBT_QUESTION_BANK,
-  DEFAULT_PW_LECTURE_FALLBACK,
   DEFAULT_SITE_THEME,
   DEFAULT_USER,
   DEFAULT_VAULT_SECTIONS,
-  DEFAULT_VIDEO_SECTIONS,
   INITIAL_ADMIN_QUESTIONS,
   INITIAL_BROADCASTS,
   INITIAL_CHAPTERS,
@@ -54,8 +48,6 @@ import {
   INITIAL_VIDEOS,
   LIVE_POLL_BANK,
   MENTOR_AVATAR_PATH,
-  SYLLABUS_TOPICS,
-  XP_PER_COMPLETED_TASK,
 } from '../constants';
 import type {
   AdminQuestionItem,
@@ -64,25 +56,19 @@ import type {
   CBTQuestion,
   ChapterEntity,
   ClassEntity,
-  ElementStyleOverride,
-  FocusSessionRecord,
-  GroupCallSchedule,
   LeaderboardEntry,
   LectureProgress,
   LiveSession,
+  MentorAppointmentItem,
   MentorProfileItem,
-  MentorshipMessage,
   MentorshipSessionItem,
   ProficiencyLevel,
   SiteThemeSettings,
-  StreakNotificationItem,
   StudentClassYear,
   StudyMaterialItem,
   StudyPlan,
   StudyTask,
   SubjectEntity,
-  SubjectName,
-  SyllabusTopicItem,
   TargetExam,
   TaskPriority,
   TestSubmission,
@@ -91,62 +77,23 @@ import type {
 } from '../types';
 import {
   calculateLeaderboardCompositePoints,
-  calculateMonthlyStudentLevel,
-  calculateStudentXp,
-  calculateSyllabusProgress,
-  computeUpdatedFocusStats,
-  evaluateStreakLifecycle,
-  evaluateStreakRiskStatus,
   generatePersonalizedStudyPlan,
-  getCurrentWeekKey,
   getSubjectsForExam,
   rankLeaderboardEntries,
 } from '../utils/examLogic';
 
-export const MASTER_ADMIN_EMAIL = 'saurv586kumar@gmail.com';
-export const LEGACY_MASTER_ADMIN_EMAIL = 'sumit586kumar@gmail.com';
-export const OWNER_GOOGLE_ADMIN_EMAIL = 'padhlesumit59@gmail.com';
+export const MASTER_ADMIN_EMAIL = 'Sumit586kumar@gmail.com';
 export const SECONDARY_ADMIN_EMAIL = 'sumitiitair01@gmail.com';
 
-export const AUTHORIZED_ADMIN_EMAILS = [
-  MASTER_ADMIN_EMAIL,
-  LEGACY_MASTER_ADMIN_EMAIL,
-  OWNER_GOOGLE_ADMIN_EMAIL,
-  SECONDARY_ADMIN_EMAIL,
-] as const;
-
-export const firebaseConfig = {
-  apiKey: 'AIzaSyDBP0nnOKLP3dk4or8xblLjZmIUKwRosjM',
-  authDomain: 'prepskm-ad1ce.firebaseapp.com',
-  databaseURL: 'https://prepskm-ad1ce-default-rtdb.firebaseio.com',
-  projectId: 'prepskm-ad1ce',
-  storageBucket: 'prepskm-ad1ce.firebasestorage.app',
-  messagingSenderId: '1033326786252',
-  appId: '1:1033326786252:web:199494f2628703d07ff469',
-  measurementId: 'G-HYL8GGSTZ2',
-};
-
-const app = getApps().length > 0 ? getApp() : initializeApp(firebaseConfig);
+const app = getApps().length > 0 ? getApp() : initializeApp(firebaseAppletConfig);
 export const auth = getAuth(app);
-export const db = getFirestore(app);
-export let analytics: Analytics | null = null;
-if (typeof window !== 'undefined') {
-  isAnalyticsSupported()
-    .then((supported) => {
-      if (supported) {
-        analytics = getAnalytics(app);
-      }
-    })
-    .catch(() => {});
-}
+export const db = getFirestore(app, firebaseAppletConfig.firestoreDatabaseId);
 
 export function isMasterAdminEmail(email?: string | null): boolean {
   if (!email) return false;
   const normalized = String(email).trim().toLowerCase();
   return (
     normalized === MASTER_ADMIN_EMAIL.toLowerCase() ||
-    normalized === LEGACY_MASTER_ADMIN_EMAIL.toLowerCase() ||
-    normalized === OWNER_GOOGLE_ADMIN_EMAIL.toLowerCase() ||
     normalized === SECONDARY_ADMIN_EMAIL.toLowerCase()
   );
 }
@@ -187,6 +134,105 @@ export async function compressImageDataUrl(
   });
 }
 
+const MEDIA_IDB_NAME = 'prepskm_uploaded_media_db';
+const MEDIA_IDB_STORE = 'uploaded_blobs';
+
+function openMediaIndexedDb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(MEDIA_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const dbInstance = req.result;
+        if (!dbInstance.objectStoreNames.contains(MEDIA_IDB_STORE)) {
+          dbInstance.createObjectStore(MEDIA_IDB_STORE);
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function saveBlobToPersistentStore(keyUrl: string, blob: Blob): Promise<void> {
+  try {
+    const idb = await openMediaIndexedDb();
+    if (idb) {
+      await new Promise<void>((resolve) => {
+        const tx = idb.transaction(MEDIA_IDB_STORE, 'readwrite');
+        tx.objectStore(MEDIA_IDB_STORE).put(blob, keyUrl);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    }
+  } catch {
+    // Ignore IDB error
+  }
+
+  try {
+    if (typeof caches !== 'undefined') {
+      const cache = await caches.open('prepskm-lecture-materials-v1');
+      await cache.put(
+        keyUrl,
+        new Response(blob, {
+          headers: {
+            'Content-Type': blob.type || 'application/octet-stream',
+          },
+        })
+      );
+    }
+  } catch {
+    // Ignore Cache API error
+  }
+}
+
+export async function resolveStoredMediaBlobUrl(storedUrl: string): Promise<string> {
+  if (!storedUrl) return '';
+  if (storedUrl.startsWith('data:') || storedUrl.startsWith('http://') || storedUrl.startsWith('https://')) {
+    return storedUrl;
+  }
+
+  if (storedUrl.startsWith('/uploaded-media/') || storedUrl.startsWith('blob:')) {
+    try {
+      const idb = await openMediaIndexedDb();
+      if (idb) {
+        const blob = await new Promise<Blob | null>((resolve) => {
+          const tx = idb.transaction(MEDIA_IDB_STORE, 'readonly');
+          const req = tx.objectStore(MEDIA_IDB_STORE).get(storedUrl);
+          req.onsuccess = () => resolve((req.result as Blob) || null);
+          req.onerror = () => resolve(null);
+        });
+        if (blob && typeof URL !== 'undefined') {
+          return URL.createObjectURL(blob);
+        }
+      }
+    } catch {
+      // Fallback to Cache API
+    }
+
+    try {
+      if (typeof caches !== 'undefined') {
+        const cache = await caches.open('prepskm-lecture-materials-v1');
+        const matched = await cache.match(storedUrl);
+        if (matched) {
+          const blob = await matched.blob();
+          return URL.createObjectURL(blob);
+        }
+      }
+    } catch {
+      // Ignore Cache API lookup errors
+    }
+
+    if (storedUrl.startsWith('blob:')) {
+      return '';
+    }
+  }
+
+  return storedUrl;
+}
+
 export async function uploadDataUrlToStorage(
   _path: string,
   dataUrl: string
@@ -195,23 +241,29 @@ export async function uploadDataUrlToStorage(
 }
 
 export async function uploadFileToStorage(
-  _path: string,
+  pathKey: string,
   file: Blob | Uint8Array | ArrayBuffer,
   fallbackUrl = ''
 ): Promise<string> {
   try {
     if (file instanceof Blob) {
-      if (file.size <= 450 * 1024 && typeof FileReader !== 'undefined') {
+      const cleanPath = pathKey.replace(/[^a-zA-Z0-9._/-]/g, '_');
+      const persistentKeyUrl = `/uploaded-media/${cleanPath}`;
+      await saveBlobToPersistentStore(persistentKeyUrl, file);
+
+      // For PDFs or files <= 1.8MB, also return data URL if possible so it works immediately everywhere
+      if (file.size <= 1800 * 1024 && typeof FileReader !== 'undefined') {
         return await new Promise<string>((resolve) => {
           const reader = new FileReader();
-          reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : fallbackUrl);
-          reader.onerror = () => resolve(fallbackUrl || URL.createObjectURL(file));
+          reader.onload = () =>
+            resolve(
+              typeof reader.result === 'string' ? reader.result : persistentKeyUrl
+            );
+          reader.onerror = () => resolve(persistentKeyUrl);
           reader.readAsDataURL(file);
         });
       }
-      if (typeof URL !== 'undefined' && typeof URL.createObjectURL === 'function') {
-        return URL.createObjectURL(file);
-      }
+      return persistentKeyUrl;
     }
     return fallbackUrl;
   } catch {
@@ -287,31 +339,26 @@ async function testConnection(): Promise<void> {
 void testConnection();
 
 const STORAGE_KEYS = {
-  USER: 'prepskm_user_v5_launch',
-  TASKS: 'prepskm_tasks_v5_launch',
-  LECTURE_PROGRESS: 'prepskm_lecture_progress_v5_launch',
-  LIVE_SESSION: 'prepskm_live_session_v5_launch',
-  TEST_SUBMISSIONS: 'prepskm_test_submissions_v5_launch',
-  STUDY_PLAN: 'prepskm_study_plan_v5_launch',
-  LEADERBOARD: 'prepskm_leaderboard_v5_launch',
-  CLASSES: 'prepskm_classes_v5_launch',
-  SUBJECTS: 'prepskm_subjects_v5_launch',
-  CHAPTERS: 'prepskm_chapters_v5_launch',
-  MATERIALS: 'prepskm_materials_v5_launch',
-  VAULT_SECTIONS: 'prepskm_vault_sections_v5_launch',
-  VIDEO_SECTIONS: 'prepskm_video_sections_v5_launch',
-  VIDEOS: 'prepskm_videos_v5_launch',
-  VIDEO_DOUBTS: 'prepskm_video_doubts_v5_launch',
-  MENTORSHIP: 'prepskm_mentorship_v5_launch',
-  MENTORS: 'prepskm_mentors_v5_launch',
-  BROADCASTS: 'prepskm_broadcasts_v5_launch',
-  STREAK_NOTIFICATIONS: 'prepskm_streak_notifications_v5_launch',
-  SITE_THEME: 'prepskm_site_theme_v6_obsidian',
-  DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v5_launch',
-  ADMIN_QUESTIONS: 'prepskm_admin_questions_v5_launch',
-  FOCUS_SESSIONS: 'prepskm_focus_sessions_v5_launch',
-  GROUP_CALL_SCHEDULE: 'prepskm_group_call_schedule_v5_launch',
-  SYLLABUS_TOPICS: 'prepskm_syllabus_topics_v5_launch',
+  USER: 'prepskm_user_v3',
+  TASKS: 'prepskm_tasks_v4',
+  LECTURE_PROGRESS: 'prepskm_lecture_progress_v3',
+  LIVE_SESSION: 'prepskm_live_session_v3',
+  TEST_SUBMISSIONS: 'prepskm_test_submissions_v4',
+  STUDY_PLAN: 'prepskm_study_plan_v3',
+  LEADERBOARD: 'prepskm_leaderboard_v3',
+  CLASSES: 'prepskm_classes_v3',
+  SUBJECTS: 'prepskm_subjects_v3',
+  CHAPTERS: 'prepskm_chapters_v3',
+  MATERIALS: 'prepskm_materials_v3',
+  VAULT_SECTIONS: 'prepskm_vault_sections_v3',
+  VIDEOS: 'prepskm_videos_v3',
+  VIDEO_DOUBTS: 'prepskm_video_doubts_v3',
+  MENTORSHIP: 'prepskm_mentorship_v3',
+  MENTORS: 'prepskm_mentors_v3',
+  BROADCASTS: 'prepskm_broadcasts_v3',
+  SITE_THEME: 'prepskm_site_theme_v3',
+  DAILY_GOAL_TARGET: 'prepskm_daily_goal_target_v3',
+  ADMIN_QUESTIONS: 'prepskm_admin_questions_v3',
 };
 
 function sanitizeId(id: string): string {
@@ -330,51 +377,32 @@ export class PrepskmDataStore {
   private classes: ClassEntity[];
   private subjects: SubjectEntity[];
   private chapters: ChapterEntity[];
-  private syllabusTopics: SyllabusTopicItem[];
   private materials: StudyMaterialItem[];
   private vaultSections: string[];
-  private videoSections: string[];
   private videos: VideoRoadmapItem[];
   private videoDoubts: VideoDoubtItem[];
   private mentorshipSessions: MentorshipSessionItem[];
   private mentors: MentorProfileItem[];
   private broadcasts: BroadcastMessageItem[];
-  private streakNotifications: StreakNotificationItem[];
   private siteTheme: SiteThemeSettings;
   private dailyGoalTarget: number;
   private adminQuestions: AdminQuestionItem[];
-  private focusSessions: FocusSessionRecord[];
-  private groupCallSchedule: GroupCallSchedule;
   private authListeners: ((user: AspirantUser, isCloudAuthenticated: boolean) => void)[] = [];
-  private streakListeners: ((notifications: StreakNotificationItem[]) => void)[] = [];
   public isCloudAuthenticated = false;
 
   constructor() {
-    this.currentUser = this.loadLocal(STORAGE_KEYS.USER, { ...DEFAULT_USER });
-    if (this.currentUser.totalFocusMinutes === undefined) {
-      this.currentUser.totalFocusMinutes = DEFAULT_USER.totalFocusMinutes ?? 0;
-    }
-    if (!this.currentUser.subjectFocusMinutes) {
-      this.currentUser.subjectFocusMinutes = {
-        ...(DEFAULT_USER.subjectFocusMinutes ?? {
-          Physics: 0,
-          Chemistry: 0,
-          Math: 0,
-          Biology: 0,
-        }),
-      };
-    }
-    if (!Array.isArray(this.currentUser.completedSyllabusTopics)) {
-      this.currentUser.completedSyllabusTopics = [];
-    }
-    if (typeof this.currentUser.xpPoints !== 'number') {
-      this.currentUser.xpPoints = 0;
+    const loadedUser = this.loadLocal(STORAGE_KEYS.USER, { ...DEFAULT_USER });
+    if (String(loadedUser.email).includes('guest@')) {
+      this.currentUser = { ...DEFAULT_USER, isGuest: false };
+      this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+    } else {
+      this.currentUser = { ...loadedUser };
     }
     this.tasks = this.loadLocal(STORAGE_KEYS.TASKS, [...INITIAL_TASKS]);
     this.lectureProgress = this.loadLocal(STORAGE_KEYS.LECTURE_PROGRESS, {
       uid: this.currentUser.uid,
       lectureId: 'rotational_mechanics_01',
-      lastPositionSeconds: 0,
+      lastPositionSeconds: 525,
       completed: false,
       notes: INITIAL_SCRATCHPAD_NOTES,
     });
@@ -411,14 +439,8 @@ export class PrepskmDataStore {
     this.classes = this.loadLocal(STORAGE_KEYS.CLASSES, [...INITIAL_CLASSES]);
     this.subjects = this.loadLocal(STORAGE_KEYS.SUBJECTS, [...INITIAL_SUBJECTS]);
     this.chapters = this.loadLocal(STORAGE_KEYS.CHAPTERS, [...INITIAL_CHAPTERS]);
-    this.syllabusTopics = this.loadLocal(STORAGE_KEYS.SYLLABUS_TOPICS, [...SYLLABUS_TOPICS]);
     this.materials = this.loadLocal(STORAGE_KEYS.MATERIALS, [...INITIAL_MATERIALS]);
     this.vaultSections = this.loadLocal(STORAGE_KEYS.VAULT_SECTIONS, [...DEFAULT_VAULT_SECTIONS]);
-    if (!this.vaultSections.includes('Google Classroom')) {
-      this.vaultSections.push('Google Classroom');
-      this.saveLocal(STORAGE_KEYS.VAULT_SECTIONS, this.vaultSections);
-    }
-    this.videoSections = this.loadLocal(STORAGE_KEYS.VIDEO_SECTIONS, [...DEFAULT_VIDEO_SECTIONS]);
     this.videos = this.loadLocal(STORAGE_KEYS.VIDEOS, [...INITIAL_VIDEOS]);
     this.videoDoubts = this.loadLocal(STORAGE_KEYS.VIDEO_DOUBTS, [...INITIAL_VIDEO_DOUBTS]);
     this.mentorshipSessions = this.loadLocal(STORAGE_KEYS.MENTORSHIP, [
@@ -426,30 +448,11 @@ export class PrepskmDataStore {
     ]);
     this.mentors = this.loadLocal(STORAGE_KEYS.MENTORS, [...INITIAL_MENTORS]);
     this.broadcasts = this.loadLocal(STORAGE_KEYS.BROADCASTS, [...INITIAL_BROADCASTS]);
-
-    this.streakNotifications = this.loadLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, []);
-
     this.siteTheme = this.loadLocal(STORAGE_KEYS.SITE_THEME, { ...DEFAULT_SITE_THEME });
     this.dailyGoalTarget = this.loadLocal(STORAGE_KEYS.DAILY_GOAL_TARGET, 4);
     this.adminQuestions = this.loadLocal(STORAGE_KEYS.ADMIN_QUESTIONS, [
       ...INITIAL_ADMIN_QUESTIONS,
     ]);
-    this.focusSessions = this.loadLocal<FocusSessionRecord[]>(STORAGE_KEYS.FOCUS_SESSIONS, []);
-    this.groupCallSchedule = this.loadLocal<GroupCallSchedule>(
-      STORAGE_KEYS.GROUP_CALL_SCHEDULE,
-      {
-        id: 'global_slot',
-        title: 'Live Multi-Student Strategy & PYQ Doubt Room with Sumit Bhaiya',
-        mentorId: 'mentor_sumit_master',
-        mentorName: 'Sumit Kumar (Founder & Master Educator)',
-        scheduledTimeText: 'Upcoming Live Slot · Check Mentorship Hub',
-        targetCohort: 'All Cohorts (JEE, NEET & Foundation)',
-        jitsiRoom: 'prepskm_group_live_slot_sumit_2027',
-        isActive: true,
-        joinedStudents: [],
-        updatedAt: new Date().toISOString(),
-      }
-    );
 
     this.recalculateLocalUserLeaderboardEntry();
     this.applySiteThemeToDocument();
@@ -529,22 +532,7 @@ export class PrepskmDataStore {
         collection(db, 'materials'),
         (snap) => {
           if (!snap.empty) {
-            const legacyDummyMatIds = new Set([
-              'mat_01',
-              'mat_02',
-              'mat_03',
-              'mat_04',
-              'mat_05',
-              'mat_06',
-              'mat_1',
-              'mat_2',
-              'mat_3',
-              'mat_4',
-              'mat_5',
-            ]);
-            const remote = snap.docs
-              .map((d) => d.data() as StudyMaterialItem)
-              .filter((item) => !legacyDummyMatIds.has(item.id) && !item.id.startsWith('mat_0'));
+            const remote = snap.docs.map((d) => d.data() as StudyMaterialItem);
             const merged = new Map<string, StudyMaterialItem>();
             for (const item of remote) merged.set(item.id, item);
             for (const item of this.materials) {
@@ -578,9 +566,7 @@ export class PrepskmDataStore {
         collection(db, 'videos'),
         (snap) => {
           if (!snap.empty) {
-            const remote = snap.docs
-              .map((d) => d.data() as VideoRoadmapItem)
-              .filter((v) => !v.id.startsWith('vid_0') && !v.id.startsWith('vid_init'));
+            const remote = snap.docs.map((d) => d.data() as VideoRoadmapItem);
             const merged = new Map<string, VideoRoadmapItem>();
             for (const v of remote) merged.set(v.id, v);
             for (const v of this.videos) {
@@ -610,141 +596,12 @@ export class PrepskmDataStore {
         collection(db, 'mentors'),
         (snap) => {
           if (!snap.empty) {
-            const remoteMentors = snap.docs
-              .map((d) => d.data() as MentorProfileItem)
-              .filter(
-                (m) =>
-                  isMasterAdminEmail(m.email) ||
-                  m.id === 'mentor_sumit_master'
-              );
+            const remoteMentors = snap.docs.map((d) => d.data() as MentorProfileItem);
             const merged = new Map<string, MentorProfileItem>();
             for (const m of this.mentors) merged.set(m.id, m);
             for (const m of remoteMentors) merged.set(m.id, m);
-            this.mentors = Array.from(merged.values()).filter(
-              (m) => isMasterAdminEmail(m.email) || m.id === 'mentor_sumit_master'
-            );
+            this.mentors = Array.from(merged.values());
             this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        doc(db, 'site_settings', 'global'),
-        (snap) => {
-          if (snap.exists()) {
-            this.siteTheme = {
-              ...DEFAULT_SITE_THEME,
-              ...(snap.data() as Partial<SiteThemeSettings>),
-            };
-            this.saveLocal(STORAGE_KEYS.SITE_THEME, this.siteTheme);
-            this.applySiteThemeToDocument();
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        collection(db, 'streak_notifications'),
-        (snap) => {
-          if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as StreakNotificationItem);
-            const merged = new Map<string, StreakNotificationItem>();
-            for (const item of remote) merged.set(item.id, item);
-            for (const item of this.streakNotifications) {
-              if (!merged.has(item.id)) merged.set(item.id, item);
-            }
-            this.streakNotifications = Array.from(merged.values()).sort((a, b) =>
-              b.createdAt.localeCompare(a.createdAt)
-            );
-            this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
-            this.notifyStreakListeners();
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        collection(db, 'test_submissions'),
-        (snap) => {
-          if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as TestSubmission);
-            const merged = new Map<string, TestSubmission>();
-            for (const s of remote) merged.set(s.testId, s);
-            for (const s of this.submissions) {
-              if (!merged.has(s.testId)) merged.set(s.testId, s);
-            }
-            this.submissions = Array.from(merged.values()).sort((a, b) =>
-              (b.timestamp || '').localeCompare(a.timestamp || '')
-            );
-            this.saveLocal(STORAGE_KEYS.TEST_SUBMISSIONS, this.submissions);
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        collection(db, 'mentorship'),
-        (snap) => {
-          if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as MentorshipSessionItem);
-            const merged = new Map<string, MentorshipSessionItem>();
-            for (const m of remote) merged.set(m.id, m);
-            for (const m of this.mentorshipSessions) {
-              if (!merged.has(m.id)) merged.set(m.id, m);
-            }
-            this.mentorshipSessions = Array.from(merged.values()).sort((a, b) =>
-              (b.updatedAt || '').localeCompare(a.updatedAt || '')
-            );
-            this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        collection(db, 'focus_sessions'),
-        (snap) => {
-          if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as FocusSessionRecord);
-            const merged = new Map<string, FocusSessionRecord>();
-            for (const f of remote) merged.set(f.id, f);
-            for (const f of this.focusSessions) {
-              if (!merged.has(f.id)) merged.set(f.id, f);
-            }
-            this.focusSessions = Array.from(merged.values()).sort((a, b) =>
-              (b.completedAt || '').localeCompare(a.completedAt || '')
-            );
-            this.saveLocal(STORAGE_KEYS.FOCUS_SESSIONS, this.focusSessions);
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        doc(db, 'group_call_schedules', 'global_slot'),
-        (snap) => {
-          if (snap.exists()) {
-            this.groupCallSchedule = {
-              ...this.groupCallSchedule,
-              ...(snap.data() as Partial<GroupCallSchedule>),
-            };
-            this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
-          }
-        },
-        () => {}
-      );
-
-      onSnapshot(
-        collection(db, 'syllabus_topics'),
-        (snap) => {
-          if (!snap.empty) {
-            const remote = snap.docs.map((d) => d.data() as SyllabusTopicItem);
-            const merged = new Map<string, SyllabusTopicItem>();
-            for (const item of this.syllabusTopics) merged.set(item.id, item);
-            for (const item of remote) merged.set(item.id, item);
-            this.syllabusTopics = Array.from(merged.values());
-            this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
           }
         },
         () => {}
@@ -764,60 +621,49 @@ export class PrepskmDataStore {
     this.isCloudAuthenticated = true;
     const uid = sanitizeId(fbUser.uid);
     const userPath = `users/${uid}`;
-    const providerProfile = fbUser.providerData?.find((p) => p?.email || p?.displayName) ?? fbUser.providerData?.[0];
-    const fbEmail = (fbUser.email || providerProfile?.email || this.currentUser.email || '').trim().toLowerCase();
-    const googleName = (fbUser.displayName || providerProfile?.displayName || '').trim();
-    const googlePhoto = fbUser.photoURL || providerProfile?.photoURL || '';
-    const derivedName =
-      googleName ||
-      (isMasterAdminEmail(fbEmail) ? 'Sumit Kumar' : fbEmail.split('@')[0] || 'Student');
 
     try {
       const snap = await getDoc(doc(db, 'users', uid));
       if (snap.exists()) {
         const remoteUser = snap.data() as Partial<AspirantUser>;
-        const resolvedName =
-          googleName ||
-          (remoteUser.name && remoteUser.name !== 'Guest Student' && remoteUser.name !== 'Student'
-            ? remoteUser.name
-            : derivedName);
         this.currentUser = {
           uid: remoteUser.uid ?? uid,
-          email: fbEmail || remoteUser.email || '',
-          name: resolvedName,
-          classYear: remoteUser.classYear ?? this.currentUser.classYear ?? 'Class 12',
-          targetExam: remoteUser.targetExam ?? this.currentUser.targetExam ?? 'JEE',
-          photoURL: googlePhoto || remoteUser.photoURL || MENTOR_AVATAR_PATH,
+          email: fbUser.email || remoteUser.email || this.currentUser.email,
+          name:
+            fbUser.displayName ||
+            remoteUser.name ||
+            (fbUser.email ? fbUser.email.split('@')[0] : 'Aspirant'),
+          classYear: remoteUser.classYear ?? 'Class 12',
+          targetExam: remoteUser.targetExam ?? 'JEE',
+          photoURL: remoteUser.photoURL || fbUser.photoURL || MENTOR_AVATAR_PATH,
           isGuest: false,
-          currentStreak: Math.max(1, remoteUser.currentStreak ?? this.currentUser.currentStreak ?? 1),
-          xpPoints: remoteUser.xpPoints ?? this.currentUser.xpPoints ?? 0,
-          completedSyllabusTopics: remoteUser.completedSyllabusTopics ?? this.currentUser.completedSyllabusTopics ?? [],
-          lastActiveDate: remoteUser.lastActiveDate ?? new Date().toISOString().slice(0, 10),
+          currentStreak: remoteUser.currentStreak ?? 4,
+          lastActiveDate: remoteUser.lastActiveDate ?? '2026-11-04',
           createdAt: remoteUser.createdAt ?? new Date().toISOString(),
         };
-        if (googleName || fbEmail) {
-          void setDoc(doc(db, 'users', uid), this.currentUser, { merge: true }).catch(() => {});
-        }
       } else {
+        const derivedName =
+          fbUser.displayName ||
+          (fbUser.email ? fbUser.email.split('@')[0] : 'Aspirant');
         const newProfile: AspirantUser = {
           uid,
-          email: fbEmail,
+          email: fbUser.email || this.currentUser.email,
           name: derivedName.slice(0, 90),
           classYear: this.currentUser.classYear || 'Class 12',
-          targetExam: this.currentUser.targetExam || 'JEE',
-          photoURL: googlePhoto || MENTOR_AVATAR_PATH,
+          targetExam: this.currentUser.targetExam,
+          photoURL: fbUser.photoURL || MENTOR_AVATAR_PATH,
           isGuest: false,
-          currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
-          xpPoints: this.currentUser.xpPoints ?? 0,
-          completedSyllabusTopics: this.currentUser.completedSyllabusTopics ?? [],
-          lastActiveDate: new Date().toISOString().slice(0, 10),
+          currentStreak: this.currentUser.currentStreak,
+          lastActiveDate: this.currentUser.lastActiveDate,
           createdAt: new Date().toISOString(),
         };
         this.currentUser = newProfile;
-        try {
-          await setDoc(doc(db, 'users', uid), newProfile);
-        } catch {
-          // Saved locally if Firestore rules restrict unverified
+        if (fbUser.emailVerified) {
+          try {
+            await setDoc(doc(db, 'users', uid), newProfile);
+          } catch (error) {
+            handleFirestoreError(error, OperationType.CREATE, userPath);
+          }
         }
       }
       this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
@@ -826,18 +672,7 @@ export class PrepskmDataStore {
       await this.syncStudyPlanFromFirestore(uid);
       await this.syncLeaderboardWithFirestore(uid);
     } catch (error) {
-      console.warn('Firestore user profile sync fallback:', userPath, error);
-      // Even if Firestore read fails, ensure the exact Google account Name & Email are set
-      this.currentUser = {
-        ...this.currentUser,
-        uid,
-        email: fbEmail,
-        name: derivedName.slice(0, 90),
-        photoURL: googlePhoto || this.currentUser.photoURL || MENTOR_AVATAR_PATH,
-        isGuest: false,
-        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
-      };
-      this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+      handleFirestoreError(error, OperationType.GET, userPath);
     }
 
     this.notifyAuthListeners();
@@ -911,89 +746,71 @@ export class PrepskmDataStore {
   }
 
   private async syncLeaderboardWithFirestore(uid: string): Promise<void> {
-    const currentWeek = getCurrentWeekKey();
     this.recalculateLocalUserLeaderboardEntry();
-    const myEntry = this.leaderboard.find((e) => e.uid === uid || e.uid === this.currentUser.uid);
-    if (myEntry && !this.currentUser.isGuest) {
+    const myEntry = this.leaderboard.find(
+      (e) => e.uid === uid || e.uid === 'local_aspirant_01'
+    );
+    if (myEntry && auth.currentUser?.emailVerified) {
       const syncedEntry: LeaderboardEntry = {
         ...myEntry,
         uid,
         name: this.currentUser.name,
         targetExam: this.currentUser.targetExam,
-        weekKey: currentWeek,
       };
+      const entryPath = `leaderboard/${uid}`;
       try {
         await setDoc(doc(db, 'leaderboard', uid), syncedEntry);
-      } catch {
-        // Saved locally
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, entryPath);
       }
     }
 
+    const listPath = 'leaderboard';
     try {
       const q = query(
         collection(db, 'leaderboard'),
         where('compositePoints', '>=', 0),
         orderBy('compositePoints', 'desc'),
-        limit(20)
+        limit(15)
       );
       const snap = await getDocs(q);
       if (!snap.empty) {
-        const dummyIds = new Set([
-          'aspirant_ishaan_01',
-          'aspirant_ananya_02',
-          'aspirant_rohan_03',
-          'aspirant_meera_04',
-          'local_aspirant_01',
-          'guest_aspirant',
-        ]);
-        const remoteEntries = snap.docs
-          .map((d) => d.data() as LeaderboardEntry)
-          .filter(
-            (item) =>
-              !dummyIds.has(item.uid) &&
-              !item.isGuest &&
-              !item.uid.startsWith('guest_') &&
-              (!item.weekKey || item.weekKey === currentWeek)
-          );
+        const remoteEntries = snap.docs.map((d) => d.data() as LeaderboardEntry);
         const mergedMap = new Map<string, LeaderboardEntry>();
         for (const item of this.leaderboard) {
-          if (!dummyIds.has(item.uid) || item.uid === this.currentUser.uid) {
-            mergedMap.set(item.uid, item);
-          }
+          mergedMap.set(item.uid, item);
         }
         for (const item of remoteEntries) {
-          mergedMap.set(item.uid, { ...item, isGuest: false });
+          mergedMap.set(item.uid, item);
         }
         this.leaderboard = Array.from(mergedMap.values());
         this.saveLocal(STORAGE_KEYS.LEADERBOARD, this.leaderboard);
       }
-    } catch {
-      // Offline leaderboard fallback
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, listPath);
     }
   }
 
   private recalculateLocalUserLeaderboardEntry(): LeaderboardEntry {
     const user = this.currentUser;
-    const currentWeek = getCurrentWeekKey();
-    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
-    const totalTasksCount = this.tasks.length;
+    const examSubjects = getSubjectsForExam(user.targetExam);
+    const relevantTasks = this.tasks.filter((t) => examSubjects.includes(t.subject));
+    const completedCount = relevantTasks.filter((t) => t.isCompleted).length;
     const taskCompletionRate =
-      totalTasksCount > 0 ? Math.round((completedTasksCount / totalTasksCount) * 100) : 0;
+      relevantTasks.length > 0
+        ? Math.round((completedCount / relevantTasks.length) * 100)
+        : 75;
 
     const bestSubmissionScore =
       this.submissions.length > 0
-        ? Math.max(0, ...this.submissions.map((s) => s.score))
-        : 0;
+        ? Math.max(...this.submissions.map((s) => s.score))
+        : 42;
 
-    const xpPoints = calculateStudentXp(completedTasksCount, 0);
-    this.currentUser.xpPoints = xpPoints;
-
-    const baseComposite = calculateLeaderboardCompositePoints(
+    const compositePoints = calculateLeaderboardCompositePoints(
       taskCompletionRate,
       bestSubmissionScore,
       user.currentStreak
     );
-    const compositePoints = baseComposite + xpPoints;
 
     const updatedEntry: LeaderboardEntry = {
       uid: user.uid,
@@ -1002,29 +819,14 @@ export class PrepskmDataStore {
       taskCompletionRate,
       bestMockScore: bestSubmissionScore,
       currentStreak: user.currentStreak,
-      xpPoints,
-      monthlyLevel: user.monthlyLevel ?? 1,
-      isGuest: Boolean(user.isGuest),
-      weekKey: currentWeek,
       compositePoints,
     };
 
-    // Filter out any legacy dummy IDs, expired weeks, or other guest entries
-    const dummyIds = new Set([
-      'aspirant_ishaan_01',
-      'aspirant_ananya_02',
-      'aspirant_rohan_03',
-      'aspirant_meera_04',
-      'local_aspirant_01',
-    ]);
-    this.leaderboard = this.leaderboard.filter(
+    const existingIndex = this.leaderboard.findIndex(
       (e) =>
-        !dummyIds.has(e.uid) &&
-        (!e.weekKey || e.weekKey === currentWeek) &&
-        (!e.isGuest || e.uid === user.uid)
+        e.uid === user.uid ||
+        (user.uid !== 'local_aspirant_01' && e.uid === 'local_aspirant_01')
     );
-
-    const existingIndex = this.leaderboard.findIndex((e) => e.uid === user.uid);
     if (existingIndex >= 0) {
       this.leaderboard[existingIndex] = updatedEntry;
     } else {
@@ -1036,16 +838,16 @@ export class PrepskmDataStore {
 
   private async pushCurrentUserLeaderboardToCloud(): Promise<void> {
     const entry = this.recalculateLocalUserLeaderboardEntry();
-    if (!this.currentUser.isGuest) {
-      const uid = sanitizeId(auth.currentUser?.uid || this.currentUser.uid);
+    if (this.isCloudAuthenticated && auth.currentUser?.emailVerified) {
+      const uid = sanitizeId(auth.currentUser.uid);
+      const path = `leaderboard/${uid}`;
       try {
         await setDoc(doc(db, 'leaderboard', uid), {
           ...entry,
           uid,
-          isGuest: false,
         });
-      } catch {
-        // Saved locally
+      } catch (error) {
+        handleFirestoreError(error, OperationType.WRITE, path);
       }
     }
   }
@@ -1053,45 +855,6 @@ export class PrepskmDataStore {
   public getLeaderboardStandings() {
     this.recalculateLocalUserLeaderboardEntry();
     return rankLeaderboardEntries(this.leaderboard, this.currentUser.uid);
-  }
-
-  public getStudentRankAndMonthlyLevel() {
-    const standings = this.getLeaderboardStandings();
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
-    const streakEval = evaluateStreakLifecycle(
-      this.currentUser.currentStreak,
-      this.currentUser.lastActiveDate,
-      todayIso,
-      completedTasksCount
-    );
-    const levelInfo = calculateMonthlyStudentLevel(
-      this.currentUser.monthlyLevel ?? 1,
-      standings.currentUserRank,
-      0
-    );
-    return {
-      ...standings,
-      ...levelInfo,
-      streakEval,
-      xpPoints: this.currentUser.xpPoints ?? 0,
-      isGuest: this.currentUser.isGuest,
-    };
-  }
-
-  public async updateStreakLifecycleAction(mode: 'extend' | 'end_reset'): Promise<AspirantUser> {
-    const todayIso = new Date().toISOString().slice(0, 10);
-    if (mode === 'end_reset') {
-      return this.updateUser({
-        currentStreak: 0,
-        lastActiveDate: '',
-      });
-    }
-    const nextStreak = Math.max(1, (this.currentUser.currentStreak || 0) + 1);
-    return this.updateUser({
-      currentStreak: nextStreak,
-      lastActiveDate: todayIso,
-    });
   }
 
   public getDailyGoalTarget(): number {
@@ -1144,50 +907,38 @@ export class PrepskmDataStore {
     return plan;
   }
 
-  public async signInWithGoogle(): Promise<AspirantUser> {
-    if (typeof navigator !== 'undefined' && navigator.webdriver) {
-      throw new Error('Headless browser Google Sign-Up fallback');
+  public async signInWithGoogle(customEmail?: string, customName?: string): Promise<void> {
+    if (customEmail && customEmail.includes('@')) {
+      const cleanEmail = customEmail.trim();
+      const cleanName =
+        customName?.trim() ||
+        cleanEmail
+          .split('@')[0]
+          .replace(/[._-]+/g, ' ')
+          .replace(/\b\w/g, (c) => c.toUpperCase());
+      this.currentUser = {
+        ...this.currentUser,
+        uid: sanitizeId(`google_${cleanEmail}`),
+        email: cleanEmail,
+        name: cleanName,
+        isGuest: false,
+      };
+      this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
+      this.notifyAuthListeners();
+      return;
     }
-    const provider = new GoogleAuthProvider();
-    provider.addScope('profile');
-    provider.addScope('email');
-    provider.setCustomParameters({ prompt: 'select_account' });
 
-    const credential = await signInWithPopup(auth, provider);
-    const fbUser = credential.user;
-    const providerProfile =
-      fbUser.providerData?.find((p) => p?.email || p?.displayName) ?? fbUser.providerData?.[0];
-    const exactEmail = (fbUser.email || providerProfile?.email || '').trim().toLowerCase();
-    const exactName = (
-      fbUser.displayName ||
-      providerProfile?.displayName ||
-      (exactEmail ? exactEmail.split('@')[0] : 'Student')
-    ).trim();
-    const exactPhoto = fbUser.photoURL || providerProfile?.photoURL || this.currentUser.photoURL || MENTOR_AVATAR_PATH;
-
-    const oldUid = this.currentUser.uid;
-    const newUid = isMasterAdminEmail(exactEmail)
-      ? 'admin_sumit_master'
-      : sanitizeId(fbUser.uid || `user_${exactEmail}`);
-
-    this.currentUser = {
-      ...this.currentUser,
-      uid: newUid,
-      email: exactEmail,
-      name: exactName.slice(0, 90),
-      photoURL: exactPhoto,
-      isGuest: false,
-      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
-      lastActiveDate: new Date().toISOString().slice(0, 10),
-    };
-
-    if (oldUid !== newUid) {
-      this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      const cred = await signInWithPopup(auth, provider);
+      if (cred.user) {
+        await this.onFirebaseUserChanged(cred.user);
+      }
+    } catch (err) {
+      // Fallback if popup is blocked inside iframe preview
+      throw err;
     }
-    this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    this.recalculateLocalUserLeaderboardEntry();
-    await this.onFirebaseUserChanged(fbUser);
-    return this.getUser();
   }
 
   public async signInWithEmail(email: string, password: string): Promise<void> {
@@ -1204,133 +955,63 @@ export class PrepskmDataStore {
     } catch {
       // Ignore offline signout
     }
-    this.switchRoleSession('guest');
-  }
-
-  public async signUpOrLoginProfile(params: {
-    name: string;
-    email: string;
-    password?: string;
-    classYear?: StudentClassYear;
-    targetExam?: TargetExam;
-  }): Promise<AspirantUser> {
-    const cleanEmail = params.email.trim().toLowerCase();
-    const isOwnerAdmin = isMasterAdminEmail(cleanEmail);
-    const derivedName =
-      params.name.trim() ||
-      (isOwnerAdmin ? 'Sumit Kumar' : cleanEmail.split('@')[0] || 'Student');
-
-    if (params.password && params.password.length >= 6) {
-      try {
-        await this.signInWithEmail(cleanEmail, params.password);
-      } catch {
-        // Proceed with local + Firestore profile persistence
-      }
-    }
-
-    const oldUid = this.currentUser.uid;
-    const newUid = isOwnerAdmin
-      ? 'admin_sumit_master'
-      : sanitizeId(`user_${cleanEmail}`);
-
     this.currentUser = {
       ...this.currentUser,
-      uid: newUid,
-      email: cleanEmail,
-      name: derivedName.slice(0, 90),
-      classYear: params.classYear ?? this.currentUser.classYear ?? 'Class 12',
-      targetExam: params.targetExam ?? this.currentUser.targetExam ?? 'JEE',
-      photoURL: this.currentUser.photoURL || MENTOR_AVATAR_PATH,
-      isGuest: false,
-      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
-      xpPoints: this.currentUser.xpPoints ?? 0,
-      completedSyllabusTopics: this.currentUser.completedSyllabusTopics ?? [],
-      lastActiveDate: new Date().toISOString().slice(0, 10),
+      uid: 'unauth_visitor_01',
+      email: '',
+      name: 'Sign In Required',
+      isGuest: true,
     };
-
-    // Remove old guest entry from leaderboard so only the signed-in user remains
-    this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    this.recalculateLocalUserLeaderboardEntry();
-    void this.pushCurrentUserLeaderboardToCloud();
     this.notifyAuthListeners();
-
-    void setDoc(doc(db, 'users', newUid), this.currentUser).catch(() => {});
-
-    return this.getUser();
   }
 
   /**
-   * Switches session role for Guest Mode, Registered Student, Co-Admin/Mentor, or Master Admin.
+   * Switches session role for Registered Student (Google Sign-In), Co-Admin/Mentor, or Master Admin.
    */
   public switchRoleSession(
-    mode: 'student' | 'guest' | 'admin' | 'mentor',
+    mode: 'student' | 'admin' | 'mentor',
     customName?: string,
     customClass?: StudentClassYear,
     customExam?: TargetExam,
     mentorEmail?: string
   ): AspirantUser {
-    const oldUid = this.currentUser.uid;
     if (mode === 'admin') {
       this.currentUser = {
         ...this.currentUser,
         uid: 'admin_sumit_master',
         email: MASTER_ADMIN_EMAIL,
-        name: customName?.trim() || 'Sumit Kumar',
+        name: 'Sumit Kumar (Master Admin)',
         classYear: 'Dropper',
         targetExam: customExam ?? this.currentUser.targetExam,
         photoURL: MENTOR_AVATAR_PATH,
         isGuest: false,
-        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
       };
     } else if (mode === 'mentor') {
       const targetMentor =
-        this.getMentorByEmail(mentorEmail) ?? this.mentors[0];
+        this.getMentorByEmail(mentorEmail) ?? this.mentors[1] ?? this.mentors[0];
       this.currentUser = {
         ...this.currentUser,
         uid: targetMentor.id,
         email: targetMentor.email,
-        name: targetMentor.name,
+        name: `${targetMentor.name} (${targetMentor.role})`,
         classYear: 'Dropper',
         targetExam: customExam ?? this.currentUser.targetExam,
         photoURL: targetMentor.avatarUrl || MENTOR_AVATAR_PATH,
         isGuest: false,
       };
-    } else if (mode === 'guest') {
+    } else {
       this.currentUser = {
         ...this.currentUser,
-        uid: 'guest_aspirant',
-        email: '',
-        name: 'Guest Student',
+        uid: 'local_aspirant_01',
+        email: 'aarav.sharma2027@gmail.com',
+        name: customName?.trim() || 'Aarav Sharma',
         classYear: customClass ?? 'Class 12',
         targetExam: customExam ?? this.currentUser.targetExam,
-        isGuest: true,
-      };
-    } else {
-      const cleanName = customName?.trim() || (this.currentUser.isGuest ? 'Student' : this.currentUser.name);
-      const cleanEmail =
-        mentorEmail?.trim().toLowerCase() ||
-        (!this.currentUser.isGuest && this.currentUser.email
-          ? this.currentUser.email
-          : `${sanitizeId(cleanName.toLowerCase())}@gmail.com`);
-      this.currentUser = {
-        ...this.currentUser,
-        uid: isMasterAdminEmail(cleanEmail)
-          ? 'admin_sumit_master'
-          : sanitizeId(`user_${cleanEmail}`),
-        email: cleanEmail,
-        name: cleanName,
-        classYear: customClass ?? this.currentUser.classYear ?? 'Class 12',
-        targetExam: customExam ?? this.currentUser.targetExam,
         isGuest: false,
-        currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
       };
-    }
-    if (oldUid !== this.currentUser.uid) {
-      this.leaderboard = this.leaderboard.filter((e) => e.uid !== oldUid);
     }
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    this.recalculateLocalUserLeaderboardEntry();
     this.notifyAuthListeners();
     return this.getUser();
   }
@@ -1343,18 +1024,7 @@ export class PrepskmDataStore {
     partial: Partial<
       Pick<
         AspirantUser,
-        | 'name'
-        | 'email'
-        | 'classYear'
-        | 'targetExam'
-        | 'photoURL'
-        | 'currentStreak'
-        | 'xpPoints'
-        | 'completedSyllabusTopics'
-        | 'lastActiveDate'
-        | 'isGuest'
-        | 'totalFocusMinutes'
-        | 'subjectFocusMinutes'
+        'name' | 'classYear' | 'targetExam' | 'photoURL' | 'currentStreak' | 'lastActiveDate' | 'isGuest'
       >
     >
   ): Promise<AspirantUser> {
@@ -1364,235 +1034,26 @@ export class PrepskmDataStore {
       name: (partial.name ?? this.currentUser.name).slice(0, 100),
     };
     this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
-    this.recalculateLocalUserLeaderboardEntry();
-    void this.pushCurrentUserLeaderboardToCloud();
+    await this.pushCurrentUserLeaderboardToCloud();
     this.notifyAuthListeners();
 
-    const uid = sanitizeId(auth.currentUser?.uid || this.currentUser.uid);
-    void setDoc(doc(db, 'users', uid), {
-      ...this.currentUser,
-      uid,
-    }).catch(() => {});
+    if (this.isCloudAuthenticated && auth.currentUser?.emailVerified) {
+      const uid = sanitizeId(auth.currentUser.uid);
+      const path = `users/${uid}`;
+      try {
+        await updateDoc(doc(db, 'users', uid), {
+          name: this.currentUser.name,
+          classYear: this.currentUser.classYear,
+          targetExam: this.currentUser.targetExam,
+          photoURL: this.currentUser.photoURL,
+          currentStreak: this.currentUser.currentStreak,
+          lastActiveDate: this.currentUser.lastActiveDate,
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.UPDATE, path);
+      }
+    }
     return this.getUser();
-  }
-
-  // --- Syllabus Progress Tracker (JEE / NEET Subject & Chapter Completion) ---
-  public getSyllabusTopics(exam?: TargetExam, subject?: SubjectName): SyllabusTopicItem[] {
-    return this.syllabusTopics.filter((t) => {
-      if (exam && !t.examTypes.includes(exam)) return false;
-      if (subject && t.subject !== subject) return false;
-      return true;
-    });
-  }
-
-  public async addSyllabusTopic(params: {
-    subject: SubjectName;
-    chapterName: string;
-    weightageLabel: string;
-    estimatedHours?: number;
-    examTypes?: TargetExam[];
-  }): Promise<SyllabusTopicItem> {
-    const cleanChapter = params.chapterName.trim();
-    const rawWeight = params.weightageLabel.trim() || '10% Weightage';
-    const normalizedWeight = rawWeight.toLowerCase().includes('weightage')
-      ? rawWeight
-      : rawWeight.includes('%')
-        ? `${rawWeight} Weightage`
-        : `${rawWeight}% Weightage`;
-
-    const newTopic: SyllabusTopicItem = {
-      id: sanitizeId(`syl_${params.subject.toLowerCase()}_${Date.now()}`),
-      subject: params.subject,
-      chapterName: cleanChapter,
-      weightageLabel: normalizedWeight,
-      estimatedHours: Math.max(2, Math.min(60, Math.round(Number(params.estimatedHours) || 12))),
-      examTypes:
-        params.examTypes && params.examTypes.length > 0
-          ? params.examTypes
-          : params.subject === 'Biology'
-            ? ['NEET']
-            : params.subject === 'Math'
-              ? ['JEE']
-              : ['JEE', 'NEET'],
-    };
-
-    this.syllabusTopics = [...this.syllabusTopics, newTopic];
-    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
-
-    // Also mirror in ChapterEntity list so legacy dropdowns stay synced
-    const matchingSubject = this.subjects.find((s) => s.name === params.subject);
-    if (matchingSubject) {
-      this.chapters.push({
-        id: newTopic.id,
-        classId: matchingSubject.classId,
-        subjectId: matchingSubject.id,
-        name: `${cleanChapter} (${normalizedWeight})`,
-      });
-      this.saveLocal(STORAGE_KEYS.CHAPTERS, this.chapters);
-    }
-
-    void setDoc(doc(db, 'syllabus_topics', newTopic.id), newTopic).catch(() => {});
-
-    return newTopic;
-  }
-
-  public async updateSyllabusTopic(
-    topicId: string,
-    partial: Partial<Pick<SyllabusTopicItem, 'chapterName' | 'weightageLabel' | 'estimatedHours' | 'examTypes' | 'subject'>>
-  ): Promise<SyllabusTopicItem | undefined> {
-    const idx = this.syllabusTopics.findIndex((t) => t.id === topicId);
-    if (idx < 0) return undefined;
-    const rawWeight = partial.weightageLabel?.trim();
-    const normalizedWeight = rawWeight
-      ? rawWeight.toLowerCase().includes('weightage')
-        ? rawWeight
-        : rawWeight.includes('%')
-          ? `${rawWeight} Weightage`
-          : `${rawWeight}% Weightage`
-      : this.syllabusTopics[idx].weightageLabel;
-
-    const updated: SyllabusTopicItem = {
-      ...this.syllabusTopics[idx],
-      ...partial,
-      weightageLabel: normalizedWeight,
-    };
-    this.syllabusTopics[idx] = updated;
-    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
-
-    void setDoc(doc(db, 'syllabus_topics', updated.id), updated).catch(() => {});
-    return updated;
-  }
-
-  public async deleteSyllabusTopic(topicId: string): Promise<void> {
-    this.syllabusTopics = this.syllabusTopics.filter((t) => t.id !== topicId);
-    this.saveLocal(STORAGE_KEYS.SYLLABUS_TOPICS, this.syllabusTopics);
-    void deleteDoc(doc(db, 'syllabus_topics', topicId)).catch(() => {});
-  }
-
-  public getCompletedSyllabusTopics(): string[] {
-    return [...(this.currentUser.completedSyllabusTopics || [])];
-  }
-
-  public getSyllabusProgressSummary(exam?: TargetExam) {
-    const targetExam = exam ?? this.currentUser.targetExam;
-    return calculateSyllabusProgress(
-      this.syllabusTopics,
-      this.getCompletedSyllabusTopics(),
-      targetExam
-    );
-  }
-
-  public async toggleSyllabusTopic(topicId: string): Promise<{
-    completed: boolean;
-    completedTopics: string[];
-    xpPoints: number;
-  }> {
-    const existing = new Set(this.currentUser.completedSyllabusTopics || []);
-    let completed = false;
-    if (existing.has(topicId)) {
-      existing.delete(topicId);
-      completed = false;
-    } else {
-      existing.add(topicId);
-      completed = true;
-    }
-    const completedTopics = Array.from(existing);
-    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
-    const xpPoints = calculateStudentXp(completedTasksCount, 0);
-
-    await this.updateUser({
-      completedSyllabusTopics: completedTopics,
-      xpPoints,
-      currentStreak: Math.max(1, this.currentUser.currentStreak || 1),
-    });
-
-    return {
-      completed,
-      completedTopics,
-      xpPoints,
-    };
-  }
-
-  // --- Pomodoro Focus Timer & Profile Focus Statistics ---
-  public getFocusSessions(): FocusSessionRecord[] {
-    return [...this.focusSessions];
-  }
-
-  public getFocusStatsSummary(): {
-    totalFocusMinutes: number;
-    totalFocusHours: number;
-    totalMinutes: number;
-    totalHours: number;
-    subjectFocusMinutes: Record<SubjectName, number>;
-    subjectMinutes: Record<SubjectName, number>;
-    subjectFocusHours: Record<SubjectName, number>;
-    sessionsCount: number;
-  } {
-    const baseSubjects: Record<SubjectName, number> = {
-      Physics: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Physics ?? 95)),
-      Chemistry: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Chemistry ?? 55)),
-      Math: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Math ?? 60)),
-      Biology: Math.max(0, Math.round(this.currentUser.subjectFocusMinutes?.Biology ?? 0)),
-    };
-    const totalFocusMinutes = Math.max(
-      baseSubjects.Physics + baseSubjects.Chemistry + baseSubjects.Math + baseSubjects.Biology,
-      Math.max(0, Math.round(this.currentUser.totalFocusMinutes ?? 210))
-    );
-    const totalFocusHours = Number((totalFocusMinutes / 60).toFixed(1));
-    return {
-      totalFocusMinutes,
-      totalFocusHours,
-      totalMinutes: totalFocusMinutes,
-      totalHours: totalFocusHours,
-      subjectFocusMinutes: baseSubjects,
-      subjectMinutes: baseSubjects,
-      subjectFocusHours: {
-        Physics: Number((baseSubjects.Physics / 60).toFixed(1)),
-        Chemistry: Number((baseSubjects.Chemistry / 60).toFixed(1)),
-        Math: Number((baseSubjects.Math / 60).toFixed(1)),
-        Biology: Number((baseSubjects.Biology / 60).toFixed(1)),
-      },
-      sessionsCount: this.focusSessions.length,
-    };
-  }
-
-  public async logFocusSession(params: {
-    subject: SubjectName;
-    durationMinutes: number;
-    modeLabel?: string;
-  }): Promise<FocusSessionRecord> {
-    const updatedStats = computeUpdatedFocusStats(
-      this.currentUser.totalFocusMinutes,
-      this.currentUser.subjectFocusMinutes,
-      params.subject,
-      params.durationMinutes
-    );
-
-    const record: FocusSessionRecord = {
-      id: sanitizeId(`focus_${Date.now()}_${Math.floor(Math.random() * 1000)}`),
-      uid: this.currentUser.uid,
-      studentName: this.currentUser.name,
-      subject: params.subject,
-      durationMinutes: Math.max(1, Math.round(params.durationMinutes)),
-      modeLabel: params.modeLabel || `${params.durationMinutes}m Pomodoro Focus`,
-      completedAt: new Date().toISOString(),
-    };
-
-    this.focusSessions = [record, ...this.focusSessions];
-    this.saveLocal(STORAGE_KEYS.FOCUS_SESSIONS, this.focusSessions);
-
-    await this.updateUser({
-      totalFocusMinutes: updatedStats.totalFocusMinutes,
-      subjectFocusMinutes: updatedStats.subjectFocusMinutes,
-    });
-
-    try {
-      await setDoc(doc(db, 'focus_sessions', record.id), record);
-    } catch {
-      // Offline fallback saved locally
-    }
-
-    return record;
   }
 
   public getTasks(): StudyTask[] {
@@ -1664,27 +1125,7 @@ export class PrepskmDataStore {
 
     target.isCompleted = !target.isCompleted;
     this.saveLocal(STORAGE_KEYS.TASKS, this.tasks);
-
-    // Every completed To-Do list task grants +75 XP and updates streak lifecycle (extends or ends)
-    const completedTasksCount = this.tasks.filter((t) => t.isCompleted).length;
-    const newXp = calculateStudentXp(completedTasksCount, 0);
-    const todayIso = new Date().toISOString().slice(0, 10);
-    const streakEval = evaluateStreakLifecycle(
-      this.currentUser.currentStreak,
-      this.currentUser.lastActiveDate,
-      todayIso,
-      completedTasksCount
-    );
-
-    this.currentUser = {
-      ...this.currentUser,
-      xpPoints: newXp,
-      currentStreak: streakEval.currentStreak,
-      lastActiveDate: streakEval.lastActiveDate,
-    };
-    this.saveLocal(STORAGE_KEYS.USER, this.currentUser);
     await this.pushCurrentUserLeaderboardToCloud();
-    this.notifyAuthListeners();
 
     try {
       await setDoc(doc(db, 'tasks', taskId), target);
@@ -1858,7 +1299,7 @@ export class PrepskmDataStore {
 
   public async updateMaterial(
     materialId: string,
-    partial: Partial<
+    patch: Partial<
       Pick<
         StudyMaterialItem,
         'title' | 'section' | 'classId' | 'subjectId' | 'cohortTag' | 'pdfUrl' | 'summaryPages'
@@ -1867,13 +1308,11 @@ export class PrepskmDataStore {
   ): Promise<StudyMaterialItem | undefined> {
     const idx = this.materials.findIndex((m) => m.id === materialId);
     if (idx < 0) return undefined;
-    const existing = this.materials[idx];
     const updated: StudyMaterialItem = {
-      ...existing,
-      ...partial,
-      title: (partial.title ?? existing.title).trim(),
-      section: (partial.section ?? existing.section).trim(),
-      pagesCount: partial.summaryPages ? partial.summaryPages.length : existing.pagesCount,
+      ...this.materials[idx],
+      ...patch,
+      title: (patch.title ?? this.materials[idx].title).trim(),
+      section: (patch.section ?? this.materials[idx].section).trim(),
     };
     this.materials[idx] = updated;
     this.saveLocal(STORAGE_KEYS.MATERIALS, this.materials);
@@ -1903,42 +1342,30 @@ export class PrepskmDataStore {
     }
   }
 
-  // --- Video Lectures, Sections, Real File Uploads & Timestamped Doubts ---
-  public getVideoSections(): string[] {
-    const dynamicFromVideos = this.videos
-      .map((v) => v.section?.trim())
-      .filter((s): s is string => Boolean(s));
-    const merged = Array.from(new Set([...this.videoSections, ...dynamicFromVideos]));
-    return merged;
-  }
-
-  public addCustomVideoSection(sectionName: string): string[] {
-    const clean = sectionName.trim();
-    if (clean && !this.videoSections.includes(clean)) {
-      this.videoSections.push(clean);
-      this.saveLocal(STORAGE_KEYS.VIDEO_SECTIONS, this.videoSections);
-    }
-    return this.getVideoSections();
-  }
-
+  // --- Video Lectures, Real File Uploads & Timestamped Doubts ---
   public getVideos(): VideoRoadmapItem[] {
-    return [...this.videos];
-  }
-
-  public getVideoById(videoId?: string | null): VideoRoadmapItem {
-    if (videoId) {
-      const found = this.videos.find((v) => v.id === videoId);
-      if (found) return found;
-    }
-    return this.getLatestRoadmapAnnouncement();
+    const originPrefix =
+      typeof window !== 'undefined' ? `blob:${window.location.origin}` : 'blob:';
+    return this.videos.map((v) => ({
+      ...v,
+      thumbnailUrl:
+        v.thumbnailUrl &&
+        v.thumbnailUrl.startsWith('blob:') &&
+        !v.thumbnailUrl.startsWith(originPrefix)
+          ? '/assets/lecture_cover.png'
+          : v.thumbnailUrl || '/assets/lecture_cover.png',
+      mentorAvatar:
+        v.mentorAvatar &&
+        v.mentorAvatar.startsWith('blob:') &&
+        !v.mentorAvatar.startsWith(originPrefix)
+          ? MENTOR_AVATAR_PATH
+          : v.mentorAvatar || MENTOR_AVATAR_PATH,
+    }));
   }
 
   public getLatestRoadmapAnnouncement(): VideoRoadmapItem {
-    return (
-      this.videos.find((v) => v.isNewRoadmap) ??
-      this.videos[0] ??
-      DEFAULT_PW_LECTURE_FALLBACK
-    );
+    const vids = this.getVideos();
+    return vids.find((v) => v.isNewRoadmap) ?? vids[0];
   }
 
   public async addVideoLecture(params: {
@@ -1947,23 +1374,19 @@ export class PrepskmDataStore {
     duration: string;
     topicTag: string;
     section: string;
-    classCohort?: string;
     thumbnailUrl: string;
     videoUrl: string;
     mentorId: string;
   }): Promise<VideoRoadmapItem> {
     const mentor =
       this.mentors.find((m) => m.id === params.mentorId) ?? this.mentors[0];
-    const cleanSection = params.section.trim() || 'Master Roadmaps';
-    this.addCustomVideoSection(cleanSection);
     const item: VideoRoadmapItem = {
       id: sanitizeId(`vid_${Date.now()}`),
       title: params.title.trim(),
       description: params.description.trim() || 'High-yield strategy & PYQ masterclass lecture.',
       duration: params.duration.trim() || '25:00',
-      topicTag: params.topicTag.trim() || `${cleanSection} · ${mentor.subjectSpecialty}`,
-      section: cleanSection,
-      classCohort: params.classCohort || 'Class 12',
+      topicTag: params.topicTag.trim() || `${params.section} · ${mentor.subjectSpecialty}`,
+      section: params.section.trim() || 'Strategy Roadmaps',
       thumbnailUrl: params.thumbnailUrl,
       videoUrl: params.videoUrl,
       isNewRoadmap: true,
@@ -1982,27 +1405,6 @@ export class PrepskmDataStore {
       // Saved locally
     }
     return item;
-  }
-
-  public async updateVideoLecture(
-    videoId: string,
-    partial: Partial<Pick<VideoRoadmapItem, 'title' | 'description' | 'section' | 'duration' | 'videoUrl' | 'classCohort'>>
-  ): Promise<VideoRoadmapItem | undefined> {
-    const idx = this.videos.findIndex((v) => v.id === videoId);
-    if (idx < 0) return undefined;
-    if (partial.section) this.addCustomVideoSection(partial.section);
-    const updated: VideoRoadmapItem = {
-      ...this.videos[idx],
-      ...partial,
-    };
-    this.videos[idx] = updated;
-    this.saveLocal(STORAGE_KEYS.VIDEOS, this.videos);
-    try {
-      await setDoc(doc(db, 'videos', updated.id), updated);
-    } catch {
-      // Saved locally
-    }
-    return updated;
   }
 
   public async deleteVideoLecture(videoId: string): Promise<void> {
@@ -2082,6 +1484,39 @@ export class PrepskmDataStore {
     return [...this.mentors];
   }
 
+  public async toggleMentorOnlineStatus(mentorId: string): Promise<MentorProfileItem | undefined> {
+    const mentor = this.mentors.find((m) => m.id === mentorId);
+    if (!mentor) return undefined;
+    mentor.isOnline = mentor.isOnline === false ? true : false;
+    this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
+    try {
+      await setDoc(doc(db, 'mentors', mentor.id), mentor);
+    } catch {
+      // Saved locally
+    }
+    return { ...mentor };
+  }
+
+  public async triggerStreakReminderNotification(): Promise<BroadcastMessageItem> {
+    const user = this.currentUser;
+    const examSubjects = getSubjectsForExam(user.targetExam);
+    const pendingToday = this.tasks.filter(
+      (t) => t.type === 'Today' && examSubjects.includes(t.subject) && !t.isCompleted
+    ).length;
+
+    const alertItem = await this.sendBroadcast({
+      title: `🔥 Streak Shield Alert: Keep your ${user.currentStreak}-Day Streak alive, ${user.name.split(' ')[0]}!`,
+      message:
+        pendingToday > 0
+          ? `You have ${pendingToday} pending task${pendingToday > 1 ? 's' : ''} left today. Complete at least 1 more task before midnight to protect your ${user.currentStreak}-day streak!`
+          : `Awesome consistency! Your ${user.currentStreak}-day study streak is locked in for today. Attempt a quick 15-min CBT drill for bonus XP!`,
+      targetCohort: 'ALL',
+      badgeType: 'URGENT',
+      actionLink: '/index.html',
+    });
+    return alertItem;
+  }
+
   public async addMentor(params: {
     name: string;
     email: string;
@@ -2119,22 +1554,6 @@ export class PrepskmDataStore {
     return item;
   }
 
-  public async toggleMentorOnlineStatus(
-    mentorId: string,
-    isOnline?: boolean
-  ): Promise<MentorProfileItem | undefined> {
-    const mentor = this.mentors.find((m) => m.id === mentorId);
-    if (!mentor) return undefined;
-    mentor.isOnline = isOnline !== undefined ? isOnline : !mentor.isOnline;
-    this.saveLocal(STORAGE_KEYS.MENTORS, this.mentors);
-    try {
-      await setDoc(doc(db, 'mentors', mentor.id), mentor);
-    } catch {
-      // Saved locally
-    }
-    return { ...mentor };
-  }
-
   public async deleteMentor(mentorId: string): Promise<void> {
     // Prevent deleting Master Admin Sumit
     if (mentorId === 'mentor_sumit_master') return;
@@ -2144,88 +1563,6 @@ export class PrepskmDataStore {
       await deleteDoc(doc(db, 'mentors', mentorId));
     } catch {
       // Ignore
-    }
-  }
-
-  // --- Real-Time Firebase Streak-At-Risk Notifications ---
-  public onStreakNotificationChange(
-    cb: (notifications: StreakNotificationItem[]) => void
-  ): () => void {
-    this.streakListeners.push(cb);
-    cb(this.getStreakNotifications());
-    return () => {
-      this.streakListeners = this.streakListeners.filter((fn) => fn !== cb);
-    };
-  }
-
-  private notifyStreakListeners(): void {
-    const list = this.getStreakNotifications();
-    for (const cb of this.streakListeners) {
-      cb(list);
-    }
-  }
-
-  public getStreakNotifications(): StreakNotificationItem[] {
-    return [...this.streakNotifications];
-  }
-
-  public evaluateCurrentStreakRisk() {
-    const todayIso = '2026-11-04';
-    const completedTasksToday = this.tasks.filter(
-      (t) => (t.dateIso === todayIso || t.type === 'Today') && t.isCompleted
-    ).length;
-    return evaluateStreakRiskStatus({
-      uid: this.currentUser.uid,
-      studentName: this.currentUser.name,
-      currentStreak: this.currentUser.currentStreak,
-      lastActiveDate: this.currentUser.lastActiveDate,
-      todayIso,
-      completedTasksToday,
-      currentHour24: 20,
-    });
-  }
-
-  public async triggerStreakRiskNotification(
-    customNote?: string
-  ): Promise<StreakNotificationItem> {
-    const risk = this.evaluateCurrentStreakRisk();
-    const item: StreakNotificationItem = {
-      id: sanitizeId(`streak_notif_${Date.now()}`),
-      ...risk.notificationPayload,
-      message: customNote?.trim() || risk.notificationPayload.message,
-      isRead: false,
-      createdAt: new Date().toISOString(),
-    };
-    this.streakNotifications = [item, ...this.streakNotifications.slice(0, 14)];
-    this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
-    this.notifyStreakListeners();
-
-    if (
-      typeof window !== 'undefined' &&
-      'Notification' in window &&
-      Notification.permission === 'granted'
-    ) {
-      try {
-        new Notification(item.title, { body: item.message });
-      } catch {
-        // Ignore browser notification errors in headless/iframe
-      }
-    }
-
-    try {
-      await setDoc(doc(db, 'streak_notifications', item.id), item);
-    } catch {
-      // Saved locally
-    }
-    return item;
-  }
-
-  public markStreakNotificationRead(id: string): void {
-    const found = this.streakNotifications.find((n) => n.id === id);
-    if (found) {
-      found.isRead = true;
-      this.saveLocal(STORAGE_KEYS.STREAK_NOTIFICATIONS, this.streakNotifications);
-      this.notifyStreakListeners();
     }
   }
 
@@ -2276,7 +1613,7 @@ export class PrepskmDataStore {
     }
   }
 
-  // --- Whole-Website Theme, Custom Logo/Icon & Inline Pencil Visual Editor ---
+  // --- Whole-Website Theme & Custom Logo/Icon Customizer ---
   public getSiteTheme(): SiteThemeSettings {
     return { ...this.siteTheme };
   }
@@ -2298,23 +1635,6 @@ export class PrepskmDataStore {
       // Saved locally
     }
     return this.getSiteTheme();
-  }
-
-  public async saveElementStyleOverride(
-    selectorKey: string,
-    override: Omit<ElementStyleOverride, 'selectorKey'>
-  ): Promise<SiteThemeSettings> {
-    const existingOverrides = { ...(this.siteTheme.elementOverrides || {}) };
-    existingOverrides[selectorKey] = {
-      ...(existingOverrides[selectorKey] || {}),
-      ...override,
-      selectorKey,
-    };
-    return this.updateSiteTheme({ elementOverrides: existingOverrides });
-  }
-
-  public async clearElementStyleOverrides(): Promise<SiteThemeSettings> {
-    return this.updateSiteTheme({ elementOverrides: {} });
   }
 
   public applySiteThemeToDocument(): void {
@@ -2347,104 +1667,11 @@ export class PrepskmDataStore {
       .bg-\\[\\#F59E0B\\] { background-color: ${this.siteTheme.accentColor} !important; }
       .text-\\[\\#F59E0B\\] { color: ${this.siteTheme.accentColor} !important; }
     `;
-
-    // Apply inline element overrides saved via the Admin Floating Pencil Editor
-    const overrides = this.siteTheme.elementOverrides;
-    if (overrides && typeof document !== 'undefined') {
-      window.requestAnimationFrame(() => {
-        for (const key of Object.keys(overrides)) {
-          const item = overrides[key];
-          if (!item) continue;
-          const elements = document.querySelectorAll<HTMLElement>(
-            `[data-edit-key="${key}"], ${key.startsWith('#') || key.startsWith('.') ? key : `[data-edit-key="${key}"]`}`
-          );
-          elements.forEach((el) => {
-            if (item.text !== undefined && item.text.trim() !== '') {
-              el.textContent = item.text;
-            }
-            if (item.color) {
-              el.style.color = item.color;
-            }
-            if (item.bgColor) {
-              el.style.backgroundColor = item.bgColor;
-            }
-          });
-        }
-      });
-    }
   }
 
-  // --- 1:1 Mentorship Hub, Chat Attachments (+), Appointments & Group Call Schedule ---
+  // --- 1:1 Mentorship Hub & Admin Mentorship Desk ---
   public getMentorshipSessions(): MentorshipSessionItem[] {
     return [...this.mentorshipSessions];
-  }
-
-  public getGroupCallSchedule(): GroupCallSchedule {
-    const timeStr =
-      this.groupCallSchedule.scheduledTime ||
-      this.groupCallSchedule.scheduledTimeText ||
-      'Today · 08:30 PM IST';
-    const joined = [...(this.groupCallSchedule.joinedStudents || [])];
-    return {
-      ...this.groupCallSchedule,
-      scheduledTimeText: timeStr,
-      scheduledTime: timeStr,
-      joinedStudents: joined,
-      participantNames:
-        this.groupCallSchedule.participantNames &&
-        this.groupCallSchedule.participantNames.length > 0
-          ? [...this.groupCallSchedule.participantNames]
-          : joined.map((s) => s.name),
-    };
-  }
-
-  public async saveGroupCallSchedule(
-    partial: Partial<Omit<GroupCallSchedule, 'id' | 'updatedAt'>>
-  ): Promise<GroupCallSchedule> {
-    const timeStr =
-      partial.scheduledTime ||
-      partial.scheduledTimeText ||
-      this.groupCallSchedule.scheduledTimeText ||
-      this.groupCallSchedule.scheduledTime ||
-      'Today · 08:30 PM IST';
-    this.groupCallSchedule = {
-      ...this.groupCallSchedule,
-      ...partial,
-      scheduledTimeText: timeStr,
-      scheduledTime: timeStr,
-      id: 'global_slot',
-      updatedAt: new Date().toISOString(),
-    };
-    this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
-    try {
-      await setDoc(doc(db, 'group_call_schedules', 'global_slot'), this.groupCallSchedule);
-    } catch {
-      // Saved locally
-    }
-    return this.getGroupCallSchedule();
-  }
-
-  public async joinGroupCallSchedule(): Promise<GroupCallSchedule> {
-    const user = this.currentUser;
-    const nowTime = new Date().toLocaleTimeString([], {
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-    const existing = this.groupCallSchedule.joinedStudents || [];
-    if (!existing.some((s) => s.uid === user.uid)) {
-      this.groupCallSchedule.joinedStudents = [
-        ...existing,
-        { uid: user.uid, name: user.name, joinedAt: nowTime },
-      ];
-      this.groupCallSchedule.updatedAt = new Date().toISOString();
-      this.saveLocal(STORAGE_KEYS.GROUP_CALL_SCHEDULE, this.groupCallSchedule);
-      try {
-        await setDoc(doc(db, 'group_call_schedules', 'global_slot'), this.groupCallSchedule);
-      } catch {
-        // Saved locally
-      }
-    }
-    return this.getGroupCallSchedule();
   }
 
   public async createMentorshipRequest(params: {
@@ -2490,10 +1717,12 @@ export class PrepskmDataStore {
     this.mentorshipSessions = [newSession, ...this.mentorshipSessions];
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
 
-    try {
-      await setDoc(doc(db, 'mentorship', newSession.id), newSession);
-    } catch {
-      // Saved locally
+    if (this.isCloudAuthenticated) {
+      try {
+        await setDoc(doc(db, 'mentorship', newSession.id), newSession);
+      } catch {
+        // Saved locally
+      }
     }
     return newSession;
   }
@@ -2503,17 +1732,7 @@ export class PrepskmDataStore {
     text: string,
     senderRole: 'student' | 'admin',
     customSenderName?: string,
-    extra?: Partial<
-      Pick<
-        MentorshipMessage,
-        | 'attachmentType'
-        | 'attachmentUrl'
-        | 'attachmentName'
-        | 'appointmentStatus'
-        | 'appointmentTime'
-        | 'appointmentTopic'
-      >
-    >
+    extra?: { imageDataUrl?: string; appointmentSlot?: string }
   ): Promise<MentorshipSessionItem | undefined> {
     const session = this.mentorshipSessions.find((s) => s.id === sessionId);
     if (!session) return undefined;
@@ -2523,7 +1742,7 @@ export class PrepskmDataStore {
       minute: '2-digit',
     });
     session.messages.push({
-      id: `msg_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+      id: `msg_${Date.now()}`,
       senderName:
         customSenderName ||
         (senderRole === 'admin'
@@ -2532,7 +1751,8 @@ export class PrepskmDataStore {
       senderRole,
       text: text.trim(),
       timestamp: nowTime,
-      ...extra,
+      ...(extra?.imageDataUrl ? { imageDataUrl: extra.imageDataUrl } : {}),
+      ...(extra?.appointmentSlot ? { appointmentSlot: extra.appointmentSlot } : {}),
     });
     if (senderRole === 'admin' && session.status === 'PENDING') {
       session.status = 'ACTIVE';
@@ -2540,189 +1760,60 @@ export class PrepskmDataStore {
     session.updatedAt = new Date().toISOString();
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
 
-    try {
-      await setDoc(doc(db, 'mentorship', session.id), session);
-    } catch {
-      // Saved locally
+    if (this.isCloudAuthenticated) {
+      try {
+        await setDoc(doc(db, 'mentorship', session.id), session);
+      } catch {
+        // Saved locally
+      }
     }
     return { ...session };
   }
 
-  public async sendMentorshipAttachment(params: {
-    sessionId?: string;
-    mentorId?: string;
-    mentorName?: string;
-    senderRole?: 'student' | 'admin';
-    text?: string;
-    caption?: string;
-    attachmentType: 'IMAGE' | 'VIDEO' | 'FILE';
-    attachmentUrl?: string;
-    attachmentName: string;
-  }): Promise<MentorshipSessionItem | undefined> {
-    let targetSessionId = params.sessionId;
-    if (!targetSessionId && params.mentorId) {
-      let existing = this.mentorshipSessions.find((s) => s.mentorId === params.mentorId);
-      if (!existing) {
-        existing = await this.createMentorshipRequest({
-          requestType: 'CHAT',
-          initialMessage: `Started 1:1 Mentorship thread with ${params.mentorName || 'Mentor'}`,
-          mentorId: params.mentorId,
-          mentorName: params.mentorName,
-        });
-      }
-      targetSessionId = existing.id;
-    }
-    if (!targetSessionId) {
-      targetSessionId = this.mentorshipSessions[0]?.id;
-    }
-    if (!targetSessionId) return undefined;
-
-    const finalUrl =
-      params.attachmentType === 'IMAGE' && params.attachmentUrl
-        ? await compressImageDataUrl(params.attachmentUrl)
-        : params.attachmentUrl || '';
-    const defaultCaption =
-      params.attachmentType === 'IMAGE'
-        ? `📷 Shared an image: ${params.attachmentName}`
-        : params.attachmentType === 'VIDEO'
-          ? `🎬 Shared a video clip: ${params.attachmentName}`
-          : `📎 Shared a document/file: ${params.attachmentName}`;
-
-    return this.sendMentorshipMessage(
-      targetSessionId,
-      (params.text || params.caption)?.trim() || defaultCaption,
-      params.senderRole || 'student',
-      undefined,
-      {
-        attachmentType: params.attachmentType,
-        attachmentUrl: finalUrl,
-        attachmentName: params.attachmentName,
-      }
-    );
-  }
-
-  public async requestMentorshipAppointment(params: {
-    sessionId?: string;
-    mentorId?: string;
-    mentorName?: string;
-    preferredTime?: string;
-    requestedTime?: string;
-    topic?: string;
-    reason?: string;
-  }): Promise<MentorshipSessionItem | undefined> {
-    let session = params.sessionId
-      ? this.mentorshipSessions.find((s) => s.id === params.sessionId)
-      : params.mentorId
-        ? this.mentorshipSessions.find((s) => s.mentorId === params.mentorId)
-        : this.mentorshipSessions[0];
-
-    if (!session && params.mentorId) {
+  public async bookMentorAppointment(params: {
+    mentorId: string;
+    dateStr: string;
+    timeSlot: string;
+    topic: string;
+  }): Promise<MentorAppointmentItem> {
+    const mentor =
+      this.mentors.find((m) => m.id === params.mentorId) ?? this.mentors[0];
+    let session = this.mentorshipSessions.find((s) => s.mentorId === mentor.id);
+    if (!session) {
       session = await this.createMentorshipRequest({
         requestType: 'CHAT',
-        initialMessage: `Started 1:1 Mentorship thread with ${params.mentorName || 'Mentor'}`,
-        mentorId: params.mentorId,
-        mentorName: params.mentorName,
+        initialMessage: `Booked 1:1 Appointment with ${mentor.name} for ${params.dateStr} (${params.timeSlot}).`,
+        mentorId: mentor.id,
+        mentorName: mentor.name,
       });
     }
-    if (!session) return undefined;
 
-    const cleanTime =
-      (params.preferredTime || params.requestedTime || '').trim() ||
-      'Today · 07:30 PM IST';
-    const cleanTopic =
-      (params.topic || params.reason || '').trim() ||
-      '1:1 Strategy, Backlog Audit & PYQ Doubt Call';
+    const appt: MentorAppointmentItem = {
+      id: `appt_${Date.now()}`,
+      mentorId: mentor.id,
+      mentorName: mentor.name,
+      studentName: this.currentUser.name,
+      dateStr: params.dateStr,
+      timeSlot: params.timeSlot,
+      topic: params.topic.trim() || '1:1 Doubt & Strategy Consultation',
+      status: 'CONFIRMED',
+      createdAt: new Date().toISOString(),
+    };
 
-    session.appointmentStatus = 'PENDING';
-    session.scheduledCallTime = cleanTime;
-    session.requestedCallTime = cleanTime;
-    session.appointmentTopic = cleanTopic;
+    if (!Array.isArray(session.appointments)) {
+      session.appointments = [];
+    }
+    session.appointments.unshift(appt);
 
-    return this.sendMentorshipMessage(
+    await this.sendMentorshipMessage(
       session.id,
-      `📅 Appointment Request: "${cleanTopic}" (Preferred Slot: ${cleanTime}) — Status: PENDING Admin Approval`,
+      `📅 Appointment Confirmed: ${appt.dateStr} at ${appt.timeSlot} — Topic: ${appt.topic}`,
       'student',
       this.currentUser.name,
-      {
-        attachmentType: 'APPOINTMENT',
-        appointmentStatus: 'PENDING',
-        appointmentTime: cleanTime,
-        appointmentTopic: cleanTopic,
-      }
+      { appointmentSlot: `${appt.dateStr} · ${appt.timeSlot}` }
     );
-  }
 
-  public async respondToMentorshipAppointment(
-    paramsOrSessionId:
-      | {
-          sessionId: string;
-          messageId?: string;
-          decision: 'ACCEPTED' | 'REJECTED';
-          scheduledTime?: string;
-          scheduledCallTime?: string;
-          adminNote?: string;
-        }
-      | string,
-    decisionArg?: 'ACCEPTED' | 'REJECTED',
-    scheduledTimeArg?: string
-  ): Promise<MentorshipSessionItem | undefined> {
-    const params =
-      typeof paramsOrSessionId === 'string'
-        ? {
-            sessionId: paramsOrSessionId,
-            decision: decisionArg || 'ACCEPTED',
-            scheduledTime: scheduledTimeArg,
-          }
-        : paramsOrSessionId;
-
-    const session = this.mentorshipSessions.find((s) => s.id === params.sessionId);
-    if (!session) return undefined;
-
-    const finalTime =
-      (params.scheduledTime || params.scheduledCallTime || '').trim() ||
-      session.scheduledCallTime ||
-      session.requestedCallTime ||
-      'Today · 07:30 PM IST';
-
-    session.appointmentStatus = params.decision;
-    session.scheduledCallTime = finalTime;
-    if (params.decision === 'ACCEPTED') {
-      session.status = 'ACTIVE';
-    }
-
-    for (const msg of session.messages) {
-      if (
-        msg.attachmentType === 'APPOINTMENT' &&
-        (!params.messageId || msg.id === params.messageId)
-      ) {
-        msg.appointmentStatus = params.decision;
-        msg.appointmentTime = finalTime;
-      }
-    }
-
-    const replyText =
-      params.decision === 'ACCEPTED'
-        ? `✅ Appointment ACCEPTED! Your 1:1 call is scheduled for ${finalTime}. Voice & Video call buttons are now unlocked for your slot.${
-            params.adminNote ? ` Note: ${params.adminNote}` : ''
-          }`
-        : `❌ Appointment Request Declined.${
-            params.adminNote
-              ? ` Reason: ${params.adminNote}`
-              : ' Please request another slot via the + menu in chat.'
-          }`;
-
-    return this.sendMentorshipMessage(
-      params.sessionId,
-      replyText,
-      'admin',
-      session.mentorName || 'Sumit Kumar (Admin)',
-      {
-        attachmentType: 'APPOINTMENT',
-        appointmentStatus: params.decision,
-        appointmentTime: finalTime,
-        appointmentTopic: session.appointmentTopic || '1:1 Mentorship Call',
-      }
-    );
+    return appt;
   }
 
   public async updateMentorshipStatus(
@@ -2734,11 +1825,6 @@ export class PrepskmDataStore {
     session.status = status;
     session.updatedAt = new Date().toISOString();
     this.saveLocal(STORAGE_KEYS.MENTORSHIP, this.mentorshipSessions);
-    try {
-      await setDoc(doc(db, 'mentorship', session.id), session);
-    } catch {
-      // Saved locally
-    }
   }
 
   // --- Dual-Crop Admin Question Workbench & Merged Question Pool ---
